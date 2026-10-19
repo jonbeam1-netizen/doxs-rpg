@@ -11,7 +11,7 @@ export class GameTime {
   }
 
   get day() { return Math.floor(this.total / 1440) + 1; }
-  get minuteOfDay() { return ((this.total % 1440) + 1440) % 1440; }
+  get minuteOfDay() { return Math.floor(((this.total % 1440) + 1440) % 1440); }
   get hour() { return Math.floor(this.minuteOfDay / 60); }
   get minute() { return this.minuteOfDay % 60; }
   get isNight() { const h = this.hour; return h >= 20 || h < 6; }

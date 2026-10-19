@@ -27,7 +27,7 @@ export function createMaterials() {
   side.userData.baseRough = 0.95; A.wet.push(side); A.env.push(side);
   reg('marking', new THREE.MeshStandardMaterial({ map: T.toTex(T.wornPaintCanvas()), vertexColors: true, roughness: 0.75, polygonOffset: true, polygonOffsetFactor: -3, polygonOffsetUnits: -6 }));
   reg('decal_dark', new THREE.MeshStandardMaterial({ map: T.toTex(T.groundCanvas()), vertexColors: true, roughness: 0.9, polygonOffset: true, polygonOffsetFactor: -3, polygonOffsetUnits: -6 }));
-  const puddle = reg('puddle', new THREE.MeshStandardMaterial({ color: 0x07080a, roughness: 0.04, metalness: 0.2, transparent: true, opacity: 0.88, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -8 }));
+  const puddle = reg('puddle', new THREE.MeshStandardMaterial({ color: 0x050607, roughness: 0.14, metalness: 0.6, transparent: true, opacity: 0.85, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -8 }));
   A.env.push(puddle);
 
   // ---- facades
@@ -39,7 +39,7 @@ export function createMaterials() {
       normalMap: t.normalMap ?? null, normalScale: new THREE.Vector2(0.8, 0.8),
       vertexColors: true, roughness: glass ? 0.25 : 0.9, metalness: glass ? 0.55 : 0.02,
     });
-    m.userData.nightGain = glass ? 1.1 : 1.35;
+    m.userData.nightGain = glass ? 0.85 : 1.0;
     A.night.push(m);
     if (glass) A.env.push(m);
     reg('f_' + f, m, { cast: true });
@@ -64,7 +64,7 @@ export function createMaterials() {
   alias('props_d', 'props', { detail: true, cast: false });
   reg('metal', new THREE.MeshStandardMaterial({ map: pg, vertexColors: true, roughness: 0.5, metalness: 0.6 }), { cast: true });
   alias('metal_d', 'metal', { detail: true, cast: false });
-  const glassDark = reg('glassdark', new THREE.MeshStandardMaterial({ color: 0x14181b, roughness: 0.08, metalness: 0.6, vertexColors: true }));
+  const glassDark = reg('glassdark', new THREE.MeshStandardMaterial({ color: 0x14181b, roughness: 0.15, metalness: 0.6, vertexColors: true }));
   A.env.push(glassDark);
   const gold = reg('gold', new THREE.MeshStandardMaterial({ map: grimeTexture('#d8b040', { grime: 0.35, size: 256 }), color: 0xffd060, roughness: 0.28, metalness: 0.95, vertexColors: true }), { cast: true });
   A.env.push(gold);
@@ -102,7 +102,7 @@ export function createMaterials() {
   const beam = reg('beam', new THREE.MeshBasicMaterial({ map: T.toTex(T.beamCanvas(), { repeat: false }), color: 0xffb070, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, fog: false, vertexColors: true }), { recv: false, order: 3, detail: true });
   const bulbTex = T.toTex(T.bulbCanvas());
   const chase = reg('chase', new THREE.MeshBasicMaterial({ map: bulbTex, vertexColors: true }));
-  chase.userData.lo = 0.8; chase.userData.hi = 2.5; A.neon.push(chase);
+  chase.userData.lo = 0.7; chase.userData.hi = 1.5; A.neon.push(chase);
 
   // Flames for fire barrels: animated shader on crossed quads.
   const flame = reg('flame', new THREE.ShaderMaterial({
@@ -152,6 +152,16 @@ export function createMaterials() {
     return m;
   }
 
+  // Albedo boost: the procedural textures are painted dark/grimy; lift them so
+  // ACES + the grade still read. Per-key multipliers.
+  const BOOST = { ground: 1.5, asphalt: 1.9, sidewalk: 1.35, marking: 1.0, decal_dark: 1.0, roof: 1.6, shingle: 1.6, corr: 1.4, rust: 1.4, wood: 1.5, container: 1.3, props: 1.45, metal: 1.3, doors: 1.3, signs: 1.2, ads: 1.25 };
+  for (const [k, def] of Object.entries(M)) {
+    const m = def.mat;
+    if (!m?.isMeshStandardMaterial || !m.map || def !== M[k] || m.userData.boosted) continue;
+    const b = BOOST[k] ?? (k.startsWith('f_') ? (k.startsWith('f_glass') ? 1.3 : 2.0) : k.startsWith('store') ? 1.6 : 1);
+    m.color.multiplyScalar(b); m.userData.base = b; m.userData.boosted = true;
+  }
+
   let envMap = null;
   const state = { night: 0, wet: 0 };
   function setEnv(tex) {
@@ -182,18 +192,18 @@ export function createMaterials() {
     beacon.color.setRGB(b, 0.05, 0.02);
     const am2 = (Math.floor(t * 1.4) % 2) ? 3 : 0.15;
     amber.color.setRGB(am2, am2 * 0.55, 0.02);
-    glow.opacity = night * 0.85;
-    beam.opacity = night * 0.11;
+    glow.opacity = night * 0.42;
+    beam.opacity = night * 0.055;
     chase.map.offset.x = Math.floor(t * 6) / 8;
     flame.uniforms.uTime.value = t;
     wn.offset.set(t * 0.004, t * 0.0025);
     // wet streets: glossier + darker
     for (const m of A.wet) {
-      m.roughness = m.userData.baseRough - wet * 0.62;
-      m.color.setScalar(1 - wet * 0.35);
+      m.roughness = Math.max(0.18, m.userData.baseRough - wet * 0.62);
+      m.color.setScalar((m.userData.base ?? 1) * (1 - wet * 0.35));
       m.envMapIntensity = 0.12 + wet * 0.9;
     }
-    puddle.envMapIntensity = 0.55 + wet * 0.6;
+    puddle.envMapIntensity = 0.25 + wet * 0.5 + night * 0.2;
     puddle.opacity = 0.75 + wet * 0.2;
     water.envMapIntensity = 0.5 + daylight * 0.3;
     gold.envMapIntensity = 0.7;

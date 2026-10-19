@@ -54,6 +54,7 @@ export class WorldGeo {
   push() { this.stack.push(this.m.clone()); return this; }
   pop() { this.m.copy(this.stack.pop()); return this; }
   reset() { this.m.identity(); this.stack.length = 0; this.chunkAt = null; return this; }
+  identity() { this.m.identity(); return this; }
   translate(x, y, z) { this.m.multiply(_m.makeTranslation(x, y, z)); return this; }
   rotY(a) { if (a) this.m.multiply(_m.makeRotationY(a)); return this; }
   rotX(a) { if (a) this.m.multiply(_m.makeRotationX(a)); return this; }
@@ -92,7 +93,7 @@ export class WorldGeo {
     let nx = uy * vz - uz * vy, ny = uz * vx - ux * vz, nz = ux * vy - uy * vx;
     const nl = Math.hypot(nx, ny, nz) || 1; nx /= nl; ny /= nl; nz /= nl;
     const bk = this._bucket(mat, (W[0] + W[6]) / 2, (W[2] + W[8]) / 2);
-    const col = lin(color);
+    const col = o?.colors ? WHITE : lin(color ?? WHITE);
     const base = bk.vc;
     for (let k = 0; k < 4; k++) {
       bk.p.push(W[k * 3], W[k * 3 + 1], W[k * 3 + 2]);
@@ -101,7 +102,7 @@ export class WorldGeo {
         const s = o?.uvScale ?? 4;
         bk.uv.push(W[k * 3] / s + (o?.uvOff?.[0] ?? 0), -W[k * 3 + 2] / s + (o?.uvOff?.[1] ?? 0));
       } else bk.uv.push(uvs ? uvs[k * 2] : 0, uvs ? uvs[k * 2 + 1] : 0);
-      bk.c.push(col[0], col[1], col[2]);
+      if (o?.colors) { const cc = o.colors[k]; bk.c.push(cc[0], cc[1], cc[2]); } else bk.c.push(col[0], col[1], col[2]);
     }
     bk.i.push(base, base + 1, base + 2, base, base + 2, base + 3);
     bk.vc += 4;
@@ -183,9 +184,20 @@ export class WorldGeo {
       this.quad(mat,
         [x + s0 * rBot, y0, z + c0 * rBot], [x + s1 * rBot, y0, z + c1 * rBot],
         [x + s1 * rTop, y1, z + c1 * rTop], [x + s0 * rTop, y1, z + c0 * rTop],
-        [u0, y0 / su, u1, y0 / su, u1, y1 / su, u0, y1 / su], color);
+        o.vflip ? [u0, 1 - y0 / su, u1, 1 - y0 / su, u1, 1 - y1 / su, u0, 1 - y1 / su] : [u0, y0 / su, u1, y0 / su, u1, y1 / su, u0, y1 / su], color);
       if (o.capTop !== false && rTop > 0.001) this.quad(mat, [x, y1, z], [x + s0 * rTop, y1, z + c0 * rTop], [x + s1 * rTop, y1, z + c1 * rTop], [x + s1 * rTop, y1, z + c1 * rTop], [0.5, 0.5, 0.5 + s0 * 0.5, 0.5 + c0 * 0.5, 0.5 + s1 * 0.5, 0.5 + c1 * 0.5, 0.5 + s1 * 0.5, 0.5 + c1 * 0.5], o.capColor ?? color);
       if (o.capBottom) this.quad(mat, [x, y0, z], [x + s1 * rBot, y0, z + c1 * rBot], [x + s0 * rBot, y0, z + c0 * rBot], [x + s0 * rBot, y0, z + c0 * rBot], [0.5, 0.5, 0, 0, 1, 0, 1, 0], color);
+    }
+  }
+
+  // Flat horizontal disc (fan of quads), facing up.
+  disc(mat, x, y, z, r, seg = 8, o = {}) {
+    const color = o.color ?? WHITE;
+    const P = (i) => { const a = (i / seg) * Math.PI * 2; return [x + Math.sin(a) * r, y, z + Math.cos(a) * r]; };
+    const U = (i) => { const a = (i / seg) * Math.PI * 2; return [0.5 + Math.sin(a) * 0.5, 0.5 + Math.cos(a) * 0.5]; };
+    for (let i = 0; i < seg; i += 2) {
+      const a = P(i), b = P(i + 1), c = P(i + 2), ua = U(i), ub = U(i + 1), uc = U(i + 2);
+      this.quad(mat, [x, y, z], a, b, c, o.uv === 'world' ? 'world' : [0.5, 0.5, ua[0], ua[1], ub[0], ub[1], uc[0], uc[1]], color, o);
     }
   }
 

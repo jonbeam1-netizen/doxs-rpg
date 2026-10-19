@@ -31,13 +31,28 @@ async function boot() {
 
   game.addSystem(game.cameraRig);
 
+  // The world's post-processing has its own grain + vignette; only show the
+  // cheap CSS overlays when post-fx is off (Low graphics).
+  const overlays = [document.getElementById('grain'), document.getElementById('vignette')];
+  let hadPost = null;
+  game.addSystem({
+    name: 'overlays',
+    update() {
+      const post = !!game.renderFn;
+      if (post === hadPost) return;
+      hadPost = post;
+      for (const el of overlays) el?.classList.toggle('hidden', post);
+    },
+  });
+
   // Put the player back where they saved (or at home) when a game starts.
   game.bus.on('game:start', ({ isNew }) => {
     const p = game.state.p;
     if (!isNew && p.pos) game.player.spawn(p.pos.x, p.pos.z, p.pos.facing ?? 0);
     else {
       const home = game.locations.get(p.home);
-      if (home) game.player.spawn(home.doorX, home.doorZ, 0);
+      // Face the building so the camera starts out on the street, not in a wall.
+      if (home) game.player.spawn(home.doorX, home.doorZ, Math.atan2(home.x - home.doorX, home.z - home.doorZ));
       else game.player.spawn(sp.x, sp.z, sp.facing ?? 0);
     }
     game.cameraRig.yaw = game.player.facing + Math.PI;

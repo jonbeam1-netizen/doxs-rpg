@@ -25,6 +25,12 @@ export class Player {
     this.moveLocked = false;  // cutscenes, arrests, etc.
     this.aiming = false;      // combat sets when holding a gun
 
+    // Soft light that follows the player so a black stick figure stays readable
+    // against dark grimy walls and at night.
+    this.glow = new THREE.PointLight(0xffe2b0, 6, 7, 1.6);
+    this.glow.castShadow = false;
+    game.scene.add(this.glow);
+
     // Outfit changes (clothing store, loading a save) rebuild the stick figure.
     // Anything attached to the old model (weapon meshes) should re-attach on 'player:model-rebuilt'.
     const rebuild = () => this.applyLook(game.state.p.look);
@@ -62,6 +68,9 @@ export class Player {
 
   update(dt) {
     const g = this.game;
+    const gp = this.vehicle ? this.vehicle.group.position : this.group.position;
+    this.glow.position.set(gp.x, gp.y + 2.6, gp.z + 0.3);
+    this.glow.intensity = this.vehicle ? 0 : 3 + 6 * (1 - g.time.daylight);
     if (this.vehicle) { this.group.visible = false; return; }
     this.group.visible = true;
 

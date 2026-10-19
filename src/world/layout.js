@@ -253,7 +253,7 @@ export const LOC_SPECS = {
 
 // Generic fill styles per district
 const FILL = {
-  downtown: { w: [15, 36], d: [18, 36], gapP: 0.3, gap: [3, 6], setback: [0.4, 0.8] },
+  downtown: { w: [15, 33], d: [21, 30], gapP: 0.18, gap: [3, 5], setback: [0.4, 0.8] },
   gutterside: { w: [12, 24], d: [12, 24], gapP: 0.4, gap: [2, 5], setback: [0.4, 1.2] },
   hilltop: { w: [36, 60], d: [32, 54], gapP: 1, gap: [4, 10], setback: [0.6, 0.6] },
   rustyards: { w: [30, 66], d: [24, 50], gapP: 1, gap: [4, 10], setback: [0.6, 3] },
@@ -305,6 +305,7 @@ export function buildLayout() {
   reserve(-420, 424, 420, 456, 'overpass');                 // elevated highway corridor (gutterside)
   reserve(-680, 236, -380, 248.5, 'bleachers');             // drag strip stands (north side)
   reserve(-680, 271.5, -400, 282, 'dragpits');              // pit area south side
+  reserve(-680, 183, -368, 207, 'track'); reserve(-686, 183, -650, 236, 'track'); reserve(-392, 200, -368, 236, 'track'); // race loop
   reserve(-1000, -1000, 1000, -BOUND, 'edge'); reserve(-1000, BOUND, 1000, 1000, 'edge');
   reserve(-1000, -1000, -BOUND, 1000, 'edge');
 
