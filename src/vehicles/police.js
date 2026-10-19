@@ -897,7 +897,7 @@ export class PoliceFleet {
       h.cone.quaternion.setFromUnitVectors(_down, _dir);
       const rad = len * 0.16;
       h.cone.scale.set(rad, len, rad);
-      h.cone.material.opacity = 0.05 + night * 0.06;
+      h.cone.material.opacity = 0.025 + night * 0.035;
     }
   }
 
@@ -1083,6 +1083,7 @@ class PoliceAudio {
   siren(vol, dop, yelp) {
     const ctx = this.ctx;
     if (!ctx) return;
+    if (this.s && this.s.ctx !== ctx) this.s = null;
     if (!this.s) {
       if (vol < 0.01) return;
       const o1 = ctx.createOscillator(), o2 = ctx.createOscillator();
@@ -1091,7 +1092,7 @@ class PoliceAudio {
       const g = ctx.createGain(); g.gain.value = 0;
       o1.connect(f); o2.connect(f); f.connect(g); g.connect(this.game.audio.sfx);
       o1.start(); o2.start();
-      this.s = { o1, o2, g, t0: ctx.currentTime };
+      this.s = { o1, o2, g, t0: ctx.currentTime, ctx };
     }
     const s = this.s, t = ctx.currentTime;
     const tt = t - s.t0;
@@ -1106,6 +1107,7 @@ class PoliceAudio {
   rotor(vol) {
     const ctx = this.ctx;
     if (!ctx) return;
+    if (this.r && this.r.ctx !== ctx) this.r = null;
     if (!this.r) {
       if (vol < 0.01) return;
       const src = ctx.createBufferSource();
@@ -1118,7 +1120,7 @@ class PoliceAudio {
       const g = ctx.createGain(); g.gain.value = 0;
       src.connect(f); f.connect(chop); chop.connect(g); g.connect(this.game.audio.sfx);
       src.start(); lfo.start();
-      this.r = { g };
+      this.r = { g, ctx };
     }
     this.r.g.gain.setTargetAtTime(vol * 0.5, ctx.currentTime, 0.2);
   }
@@ -1181,7 +1183,7 @@ function heliAssets() {
   const disc = new THREE.CircleGeometry(5, 28).rotateX(-Math.PI / 2);
   // apex at the origin, base (radius 1) at y=-1: oriented with setFromUnitVectors(down, dir)
   const coneGeo = new THREE.ConeGeometry(1, 1, 22, 1, true).translate(0, -0.5, 0);
-  const coneMat = new THREE.MeshBasicMaterial({ color: 0xfff0c8, transparent: true, opacity: 0.08, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide });
+  const coneMat = new THREE.MeshBasicMaterial({ color: 0xfff0c8, transparent: true, opacity: 0.04, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.FrontSide, fog: false });
   const lamp = new THREE.SphereGeometry(0.1, 6, 4);
   HELI = { paint, white, dark, glass, beaconOn, beaconOff, green, red, blur, body, stripe, skids, glassGeo, blades, tailBlades, disc, coneGeo, coneMat, lamp };
   return HELI;

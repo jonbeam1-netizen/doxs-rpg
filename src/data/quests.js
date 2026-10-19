@@ -492,17 +492,45 @@ export const QUESTS = {
             ],
           },
           ['Listen, Plunger. Rotwell is a toilet. A big, clogged, backed-up toilet. And every so often the universe sends a plunger.', '@ ...I\'m the plunger?', 'You\'re the plunger.', '@ That\'s the worst prophecy I\'ve ever heard.'],
-          ['Prophecies aren\'t supposed to be GOOD, they\'re supposed to be ACCURATE. Now go get your pathetic little body in shape. Lift something. Read something. Charm something. Come back when you\'re slightly less soft.'],
+          ['Prophecies aren\'t supposed to be GOOD, they\'re supposed to be ACCURATE. Now: a plunger needs a handle. Get a job. Eat something that wasn\'t in a dumpster. Lift something. Hit somebody. Sell something. Then come back.', '> (Follow the gold beacon and the objective in the top right. Press J for the quest log.)'],
         ],
       },
       {
-        text: 'Get less pathetic: raise STR, INT or CHA to 10 (the gym, the library, a nightclub... anything).',
+        text: 'Get a job. Big Marge at the Greasy Spoon (next to the motel) hires anybody with a pulse. Apply and work one shift.',
+        obj: { type: 'event', evt: 'job:worked', count: 1 },
+        marker: { loc: 'greasy_spoon', label: 'Greasy Spoon (jobs)' },
+        reward: { money: 20 },
+        done: '> First paycheck, plus a $20 "didn\'t cry on the grill" bonus. Keep working shifts at the same place to get promoted to better pay.',
+      },
+      {
+        text: 'Everything costs energy. Eat something: a meal at the Greasy Spoon, a slice at Pizza Butt, or snacks from the Gas-N-Gulp.',
+        obj: { type: 'event', evts: ['money:change', 'item:bought'], count: 1, quiet: true,
+          filter: (d, evt, g) => (evt === 'money:change' ? d?.reason === 'food' && d.amount < 0 : ['food', 'drink'].includes(g.items?.def?.(d?.id)?.cat)) },
+        marker: { loc: ['greasy_spoon', 'pizza_butt', 'gas_n_gulp'], label: 'Food' },
+        done: '> Calories acquired. Watch your energy bar: work, training and fights all drain it. Food and sleep refill it.',
+      },
+      {
+        text: 'Get less pathetic: raise STR, INT or CHA to 10. Pump iron at the Iron Lung Gym ($12 day pass) or read at the Public Library (free), both Downtown.',
         obj: { type: 'check', check: (g) => Math.max(g.state.p.str, g.state.p.int, g.state.p.cha) >= 10 },
+        marker: { loc: ['iron_lung', 'library'], label: 'Gym / Library' },
         done: '> You feel slightly less pathetic. The bar was low. You cleared it. Barely. Like a drunk doing a limbo.',
       },
       {
-        text: 'Reg says Rotwell only respects cash. Get $300 in your pocket.',
-        obj: { type: 'money', min: 300 },
+        text: 'Two drunks are hassling the hobos under the overpass. Go knock them out (Left-click to punch, keep moving).',
+        obj: { type: 'brawl', loc: 'hobo_camp', count: 2, kind: 'drunk', tier: 0, label: 'Drunk Doug & Drunker Doug', radius: 12 },
+        arrive: [{ who: 'nar', t: ['> Two men in matching stained tank tops are trying to steal Reg\'s burning barrel. One of them is hugging it. He is on fire a little.', '> "This is OUR barrel now," slurs Drunk Doug. "Fight us. Or don\'t. Please don\'t."'] }],
+        win: ['> The Dougs go down like two sacks of wet laundry. In their pockets: $40 and a coupon for a free colonoscopy. Reg applauds with his feet.'],
+        reward: { money: 40, karma: 1 },
+      },
+      {
+        text: 'Make your first deal: buy any product from a street dealer (marked on your map, one in every district), then sell it somewhere it\'s worth more. Cheap in Gutterside, pricey in Hilltop.',
+        obj: { type: 'event', evt: 'drug:sold', count: 1 },
+        marker: { near: 'dealer', label: 'Street dealer' },
+        done: '> Buy low, sell high, try not to get arrested. Selling raises heat; if the cops come, run, or pay it off at the PD.',
+      },
+      {
+        text: 'Reg says Rotwell only respects cash. Get $250 in your pocket (shifts, deals, Pizza Butt deliveries...).',
+        obj: { type: 'money', min: 250 },
       },
       {
         text: 'Go to City Hall downtown and see who runs this dump.',
@@ -525,6 +553,7 @@ export const QUESTS = {
           ['Door three: the BADGE. That honest cop, Thorne. Do enough good and you could clean this city up... or run it. You\'d need karma, kid. Real karma. Not the kind you buy at the Holy Rebate.'],
           ['Door four: the BUNKER. Whatever you saw out in the Dustbowl last night scared you bad enough to write yourself a note. Get smart. Book smart. Then go find out.'],
           ['And door five... *He adjusts his beer-can crown.* Well. Door five is me. Every king needs an heir. But you\'re not ready. You still smell like soap.', 'Go. Choose. Or don\'t. The toilet doesn\'t care. It just keeps flushing.'],
+          { who: 'nar', t: ['> Each door ends the story a different way. Open the quest log (J) and check the GOALS tab to see what every door needs and what to do next. You can chase more than one, and Rotwell keeps going after an ending.'] },
         ],
       },
     ],
@@ -562,13 +591,14 @@ export const QUESTS = {
         obj: { type: 'event', evt: 'drug:sold', count: 10, sum: 'qty' },
       },
       {
-        text: 'Sal needs wheels for a job. Drive any car to Chop Chop Customs in the Rustyards.',
+        text: 'Sal needs wheels for a job. Drive any car to Chop Chop Customs in the Rustyards. (Buy a beater at Lemon Lot, or press F next to someone else\'s.)',
         obj: { type: 'goto', loc: 'chop_chop', needCar: true, radius: 12 },
         arrive: [{ who: 'nar', t: ['> Sal\'s mechanic, a man with three fingers and strong opinions about all of them, circles your car.', '> "Nice. We\'ll put a spoiler on it shaped like a rat tail. And a horn that plays the Rat anthem." He honks it. The anthem is just screaming.'] }],
       },
       {
-        text: 'Sal says you hit like a wet napkin. Get your STR to 30.',
+        text: (g) => `Sal says you hit like a wet napkin. Get your STR to 30 (now ${Math.floor(g.state.p.str)}). Iron Lung Gym, the meat plant, or Rat jobs at the clubhouse.`,
         obj: { type: 'stat', stat: 'str', min: 30 },
+        marker: { loc: 'iron_lung', label: 'Iron Lung Gym' },
       },
       {
         text: 'Report back to Big Sal at the clubhouse.',
@@ -597,35 +627,35 @@ export const QUESTS = {
       },
       {
         text: 'Rob the Golden Tooth vault after dark (8 PM - 6 AM). Expect security.',
-        obj: { type: 'brawl', loc: 'golden_tooth', count: 5, kind: 'gang', tier: 3, label: 'Casino Security', night: true },
+        obj: { type: 'brawl', loc: 'golden_tooth', count: 4, kind: 'gang', tier: 2, label: 'Casino Security', night: true },
         arrive: [{ who: 'nar', t: ['> 0-4-2-0. The vault door swings open with a sad little "ding". Then every alarm in Hilltop goes off, and five very large men in velvet tuxedos come running, cracking their knuckles in unison. They\'ve rehearsed that.'] }],
         win: ['> The vault is full of cash, gold chips, and a framed photo of Vivienne kissing a stack of money. You take the money. You leave the photo. You\'re not a monster.'],
         reward: { money: 4000 },
       },
       {
-        text: 'Vivienne is sending Two-Ton Tito after the Rats. Hit the Velvet Syndicate lounge in Hilltop first.',
-        obj: { type: 'brawl', loc: 'syndicate_lounge', count: 6, kind: 'gang', tier: 4, label: 'Two-Ton Tito & the Velvet Goons' },
+        text: 'Vivienne is sending Two-Ton Tito after the Rats. Hit the Velvet Syndicate lounge in Hilltop first. (Bring a real weapon and some bandages.)',
+        obj: { type: 'brawl', loc: 'syndicate_lounge', count: 5, kind: 'gang', tier: 3, label: 'Two-Ton Tito & the Velvet Goons' },
         arrive: [{ who: 'nar', t: ['> Two-Ton Tito fills the doorway. Not metaphorically. They had to widen it. Twice.', '> "The Contessa says hello," he rumbles. "And goodbye. Mostly goodbye."'] }],
         win: ['> Two-Ton Tito goes down like a sack of wet laundry. The building shakes. Somewhere upstairs, Vivienne screams into a pillow embroidered with her own face.'],
       },
       {
-        text: 'Grease the cops before the takeover: have $10,000 on you.',
-        obj: { type: 'money', min: 10000 },
+        text: (g) => `Grease the cops before the takeover: have $7,500 on you (now ${$(g.state.p.money)}). Rat jobs, heists and the market pay best.`,
+        obj: { type: 'money', min: 7500 },
       },
       {
-        text: 'Meet Big Sal at the clubhouse. It\'s time.',
+        text: 'FINALE: Meet Big Sal at the clubhouse. It\'s time to take the city.', finale: true,
         obj: { type: 'talk', who: 'sal' },
         talk: [
           ['*Sal is sitting on the hood of the ice cream truck, staring at the smog like it owes him money.*', 'Kid. We did it. Gutterside AND Hilltop. The Velvet\'s on the run. Chief Lardner\'s on OUR payroll now. We\'re gonna need a bigger ice cream truck.'],
           {
             t: ['But there can only be one Big Cheese... and I ain\'t sure it\'s me anymore. My back\'s shot. My liver\'s a raisin. My fungus is thinking about running for office.'],
             choices: [
-              { label: 'Share the throne with Sal. Rats stick together.', do: (g, q) => { q.data.variant = 'shared'; g.state.addStat('karma', 5); g.state.addMoney(-10000, 'payoffs'); return 'complete'; } },
+              { label: 'Share the throne with Sal. Rats stick together.', do: (g, q) => { q.data.variant = 'shared'; g.state.addStat('karma', 5); g.state.addMoney(-Math.min(7500, g.state.p.money), 'payoffs'); return 'complete'; } },
               fight({ count: 1, kind: 'fighter', tier: 4, label: 'Big Sal Monella' }, 'Take the crown. Sal can retire... to the harbor.', ['> Sal goes down swinging and biting. Mostly biting. The Rats watch in silence, then slowly, one by one, they kneel. One of them kneels in something. It\'s fine.'], 'complete'),
             ],
           },
         ],
-        onDone: (g, q) => { if (!q.data.variant) { q.data.variant = 'ruthless'; g.state.addStat('karma', -20); g.state.addMoney(-10000, 'payoffs'); } },
+        onDone: (g, q) => { if (!q.data.variant) { q.data.variant = 'ruthless'; g.state.addStat('karma', -20); g.state.addMoney(-Math.min(7500, g.state.p.money), 'payoffs'); } },
       },
     ],
   },
@@ -668,8 +698,8 @@ export const QUESTS = {
         win: ['> You kick over the stash: three crates of bootleg cough syrup, a bucket of mysterious mayonnaise, and Big Sal\'s diary. First entry: "Dear Diary, today I bit a man." You leave it. Some things are sacred.'],
       },
       {
-        text: 'The Contessa wants eyes inside the legit world. Get a job and earn a promotion.',
-        obj: { type: 'event', evt: 'job:promoted', count: 1, orCheck: (g) => (g.state.p.job?.rank ?? 0) >= 2 },
+        text: 'The Contessa wants eyes inside the legit world. Get a job and earn a promotion (or already hold a promoted rank).',
+        obj: { type: 'event', evt: 'job:promoted', count: 1, orCheck: (g) => (g.state.p.job?.rank ?? 0) >= 1 },
       },
       {
         text: 'Meet Grimco\'s CEO, Chadwick Grimsworth III, outside Grimco Tower.',
@@ -688,7 +718,7 @@ export const QUESTS = {
         ],
       },
       {
-        text: 'Executives don\'t sleep in motels. Buy a real home.',
+        text: 'Executives don\'t sleep in motels. Buy a real home (Double-Wide Dreams in the Dustbowl is the cheapest at $3,500).',
         obj: { type: 'home' },
       },
       {
@@ -699,11 +729,11 @@ export const QUESTS = {
           {
             t: ['So? Are you going to threaten me? In MY velvet?'],
             choices: [
-              gate('cha', 50, 'Talk her into an early retirement', 'advance', [
+              gate('cha', 40, 'Talk her into an early retirement', 'advance', [
                 { who: 'nar', t: ['> You talk like you\'ve never talked before: offshore accounts, a villa with a moat, a tasteful exit, a lifetime supply of caviar for Lord Snifferton.'] },
                 ['...A moat? With swans? Mean swans? ...FINE. Take the stupid Syndicate. Snifferton, we\'re leaving. Bite him on the way out.', '> Lord Snifferton bites you on the ankle. It\'s a love bite. It\'s still a bite.'],
               ]),
-              fight({ count: 5, kind: 'gang', tier: 4, label: 'Velvet Loyalists' }, 'Take it by force', [
+              fight({ count: 4, kind: 'gang', tier: 3, label: 'Velvet Loyalists' }, 'Take it by force', [
                 '> Vivienne escapes through a secret door with her dog, a wig, and three suitcases of money, screaming "THIS ISN\'T OVER!" Which, in Rotwell, it never is.',
               ]),
               leave('Not yet.'),
@@ -713,25 +743,25 @@ export const QUESTS = {
         onDone: (g) => g.state.setFlag('vivienne_gone'),
       },
       {
-        text: 'A seat on Grimco\'s board costs money. Have $25,000 on you.',
-        obj: { type: 'money', min: 25000 },
+        text: (g) => `A seat on Grimco\'s board costs money. Have $15,000 on you (now ${$(g.state.p.money)}). Syndicate jobs, heists and the market pay best.`,
+        obj: { type: 'money', min: 15000 },
       },
       {
-        text: 'Attend the Grimco board meeting. Meet Grimsworth outside Grimco Tower.',
+        text: 'FINALE: Attend the Grimco board meeting. Meet Grimsworth outside Grimco Tower.', finale: true,
         obj: { type: 'talk', who: 'grimsworth' },
         talk: [
           ['Welcome to the board. The board is: me, my lawyer, a ficus, and my other lawyer. The ficus votes yes. The ficus always votes yes. That\'s why it\'s on the board.'],
           {
             t: ['You\'re in, partner. Welcome to the top floor. The air\'s thinner up here. That\'s because we bottle it and sell it downstairs. Shall we shake on it?'],
             choices: [
-              { label: 'Shake his hand. Partners.', do: (g, q) => { q.data.variant = 'partner'; g.state.addMoney(-25000, 'board seat'); return 'complete'; } },
+              { label: 'Shake his hand. Partners.', do: (g, q) => { q.data.variant = 'partner'; g.state.addMoney(-Math.min(15000, g.state.p.money), 'board seat'); return 'complete'; } },
               gate('int', 35, 'Call a shareholder vote and kick HIM out', 'complete', [
                 '> You produce proxy votes from every shell company you set up while laundering for Vivienne. The ficus switches sides. Grimsworth is escorted out by security, still smiling, because his face is legally unable to stop.',
               ]),
             ],
           },
         ],
-        onDone: (g, q) => { if (!q.data.variant) { q.data.variant = 'coup'; g.state.addMoney(-25000, 'board seat'); g.state.addStat('karma', -10); } },
+        onDone: (g, q) => { if (!q.data.variant) { q.data.variant = 'coup'; g.state.addMoney(-Math.min(15000, g.state.p.money), 'board seat'); g.state.addStat('karma', -10); } },
       },
     ],
   },
@@ -743,7 +773,7 @@ export const QUESTS = {
     available: (g) => g.quests.isDone('main_prologue') && !g.quests.faction() && g.state.p.karma >= 10,
     lockedText: (g) => (g.quests.faction()
       ? 'You run with a gang. I can smell it. Quit, or get out of my face. Preferably both.'
-      : g.quests.isDone('main_prologue') ? 'Come back when you\'ve done something decent. Help a grandma. Don\'t mug the grandma. (Needs 10 karma.)'
+      : g.quests.isDone('main_prologue') ? 'Come back when you\'ve done something decent. Help a grandma. Don\'t mug the grandma. (Needs 10 karma: volunteer at the Holy Rebate soup kitchen, call the PD tip line, donate at the overpass camp, help people on the street.)'
         : 'Not now, kid. Remember what you saw first.'),
     offer: [
       { who: 'nar', t: ['> Detective Thorne is eating a sad salad out of a hubcap on the hood of her car.'] },
@@ -771,12 +801,14 @@ export const QUESTS = {
         win: ['> One goon drops his badge as he runs. It\'s a chocolate coin wrapped in gold foil. Rotwell PD budget cuts are real.'],
       },
       {
-        text: 'Become someone people would vote for: reach 25 karma.',
+        text: (g) => `Become someone people would vote for: reach 25 karma (now ${g.state.p.karma}). Soup kitchen and confession at the Holy Rebate, the PD tip line, good deeds on the street.`,
         obj: { type: 'stat', stat: 'karma', min: 25 },
+        marker: { loc: 'holy_rebate', label: 'Church of the Holy Rebate' },
       },
       {
-        text: 'Learn to talk like a politician: reach 30 CHA.',
+        text: (g) => `Learn to talk like a politician: reach 30 CHA (now ${Math.floor(g.state.p.cha)}). Public speaking club at the Library, dancing at Club Velvet, BS 101 at the University.`,
         obj: { type: 'stat', stat: 'cha', min: 30 },
+        marker: { loc: 'library', label: 'Library (speaking club)' },
       },
       {
         text: 'Register as a mayoral candidate with Gladys at City Hall ($2,500 filing fee).',
@@ -803,7 +835,7 @@ export const QUESTS = {
       },
       {
         text: 'Thorne needs hard evidence: raid Grimco Tower\'s records after dark.',
-        obj: { type: 'brawl', loc: 'grimco', count: 4, kind: 'thug', tier: 3, label: 'Grimco Security', night: true },
+        obj: { type: 'brawl', loc: 'grimco', count: 4, kind: 'thug', tier: 2, label: 'Grimco Security', night: true },
         win: ['> In a filing cabinet labeled DEFINITELY NOT BRIBES, you find a ledger. Every payment to Swindell, itemized and notarized. Grimco kept receipts. They are VERY organized evil.'],
         winGive: 'q_ledger',
       },
@@ -816,7 +848,7 @@ export const QUESTS = {
         ],
       },
       {
-        text: 'Win the mayoral debate at City Hall.',
+        text: (g) => `FINALE: Win the mayoral debate at City Hall. Win 2 of 3 rounds: CHA 30 ${g.state.p.cha >= 30 ? '✓' : '✗'} · INT 25 ${g.state.p.int >= 25 ? '✓' : '✗'} · Karma 40 ${g.state.p.karma >= 40 ? '✓' : '✗'}`, finale: true,
         obj: { type: 'goto', loc: 'city_hall', radius: 9 },
         run: async (g, q) => {
           await g.quests.say([{ who: 'nar', t: ['> The debate stage is two podiums and a folding table. Swindell\'s podium is taller. He\'s standing on a stack of Grimco phone books.', '> The moderator is a local news anchor whose hair has not moved since 1987.'] }]);
@@ -865,8 +897,9 @@ export const QUESTS = {
         onDone: (g) => g.state.setFlag('met_pickles'),
       },
       {
-        text: 'Get smart enough to understand the symbol scrawled on your note: reach INT 20.',
+        text: (g) => `Get smart enough to understand the symbol scrawled on your note: reach INT 20 (now ${Math.floor(g.state.p.int)}). The Public Library is free.`,
         obj: { type: 'stat', stat: 'int', min: 20 },
+        marker: { loc: 'library', label: 'Public Library' },
       },
       {
         text: 'Show your note to Professor Fumble at Rotwell University in Hilltop.',
@@ -905,8 +938,9 @@ export const QUESTS = {
         ],
       },
       {
-        text: (g) => (g.state.getFlag('pickles_code') ? 'You already have Pickles\' secret door code! Head back to Pete.' : 'Get smart enough to crack Grimco\'s encryption: reach INT 40. (Or find someone who knows the code...)'),
-        obj: { type: 'check', check: (g) => g.state.p.int >= 40 || !!g.state.getFlag('pickles_code') },
+        text: (g) => (g.state.getFlag('pickles_code') ? 'You already have Pickles\' secret door code! Head back to Pete.' : `Get smart enough to crack Grimco\'s encryption: reach INT 35 (now ${Math.floor(g.state.p.int)}). Library, University courses, books. (Or find someone who knows the code...)`),
+        obj: { type: 'check', check: (g) => g.state.p.int >= 35 || !!g.state.getFlag('pickles_code') },
+        marker: { loc: ['library', 'rotwell_u'], label: 'Study' },
       },
       {
         text: 'Go back to Scrapper Pete to zap the keycard.',
@@ -930,13 +964,13 @@ export const QUESTS = {
         onDone: (g) => g.state.setFlag('knows_lid'),
       },
       {
-        text: 'Survive the Grimco Cleanup Crew at Bunker 9.',
-        obj: { type: 'brawl', loc: 'bunker', count: 5, kind: 'thug', tier: 4, label: 'Grimco Cleanup Crew', radius: 14 },
+        text: 'Survive the Grimco Cleanup Crew at Bunker 9. (A gun from Bang Bang Bros. helps if you skipped leg day.)',
+        obj: { type: 'brawl', loc: 'bunker', count: 4, kind: 'thug', tier: 3, label: 'Grimco Cleanup Crew', radius: 14 },
         win: ['> The BIG zapper breaks over somebody\'s skull. Not yours. You keep your memories. Even the bad ones. Especially the bad ones.'],
       },
       {
-        text: 'The Lid\'s exit controls need a genius. Reach INT 60, then return to Bunker 9.',
-        obj: { type: 'goto', loc: 'bunker', radius: 12, req: (g) => g.state.p.int >= 60, reqText: 'The Lid Control Terminal runs Grimco OS 3.1. You need INT 60 to even find the power button.' },
+        text: (g) => `FINALE: The Lid\'s exit controls need a genius. Reach INT 50 (now ${Math.floor(g.state.p.int)}), then return to Bunker 9.`, finale: true,
+        obj: { type: 'goto', loc: 'bunker', radius: 12, req: (g) => g.state.p.int >= 50, reqText: 'The Lid Control Terminal runs Grimco OS 3.1. You need INT 50 to even find the power button.' },
         run: async (g, q) => {
           await g.quests.say([{ who: 'nar', t: ['> The Lid Control Terminal. It runs Grimco OS 3.1, which crashes if you look at it with emotion. A sticky note on the screen says "password is password". It isn\'t.'] }]);
           const qs = [
@@ -966,9 +1000,11 @@ export const QUESTS = {
   // ======================= PATH: REG -> HOBO KING =======================
   main_hobo: {
     kind: 'main', title: 'Long Live the Crust', giver: 'reg', ending: 'hobo',
-    summary: 'Reg wants an heir. Pass the Five Trials of the Crust and inherit the Overpass: the burning barrel, the shopping cart, the cardboard throne, and the respect of every pigeon in Gutterside.',
-    available: (g) => g.quests.isDone('main_prologue') && !!g.state.getFlag('reg_paid'),
-    lockedText: (g) => (g.quests.isDone('main_prologue') ? 'You still owe me twenty bucks, Plunger. A king doesn\'t name an heir who stiffs him.' : null),
+    summary: 'Reg wants an heir. Pass the Trials of the Crust and inherit the Overpass: the burning barrel, the shopping cart, the cardboard throne, and the respect of every pigeon in Gutterside.',
+    available: (g) => g.quests.isDone('main_prologue') && !!g.state.getFlag('reg_paid') && g.state.p.level >= 4,
+    lockedText: (g) => (!g.quests.isDone('main_prologue') ? null
+      : !g.state.getFlag('reg_paid') ? 'You still owe me twenty bucks, Plunger. A king doesn\'t name an heir who stiffs him.'
+        : 'You\'re not ready for the crown, Plunger. Live a little. Bleed a little. (Reach level 4.)'),
     offer: [
       ['Plunger. I\'m old. My knees are crunchy. My liver\'s been repossessed. A king needs an heir.', '*He taps his beer-can crown.* This crown has been passed down for generations. Well. Since Tuesday. I made it Tuesday.'],
       { t: ['Pass the Five Trials of the Crust and the Overpass is yours. All of it. The burning barrel. The shopping cart. The cardboard throne. The respect of every pigeon in Gutterside.'],
@@ -982,7 +1018,8 @@ export const QUESTS = {
         onStart: (g) => g.state.setFlag('slept_box', false),
       },
       {
-        text: 'Trial of Poverty: give away or blow ALL your money. Have $5 or less on you.',
+        text: 'Trial of Poverty: have $5 or less in your pockets. (Reg says the bank doesn\'t count. Reg doesn\'t understand banks.)',
+        marker: { loc: 'first_bank', label: 'First Bank (stash your cash)' },
         obj: { type: 'money', max: 5 },
         done: '> You are broke. Truly, cleanly broke. Somewhere under the overpass, Reg feels a disturbance in the filth and smiles.',
       },
@@ -1019,11 +1056,16 @@ export const QUESTS = {
         },
       },
       {
-        text: 'Trial of Charity: a king serves his people. Get your karma to 15.',
-        obj: { type: 'stat', stat: 'karma', min: 15 },
+        text: (g, q) => `Trial of the Fist: a king defends his overpass. Win 5 street brawls: bar fights, The Pit, gang jobs, anything. (${q.sd.n || 0}/5)`,
+        obj: { type: 'event', evt: 'brawl:won', count: 5 },
       },
       {
-        text: 'Return to Reg for your coronation.',
+        text: (g) => `Trial of Charity: a king serves his people. Get your karma to 25 (now ${g.state.p.karma}). Soup kitchen at the Holy Rebate, donations at the camp, good deeds.`,
+        obj: { type: 'stat', stat: 'karma', min: 25 },
+        marker: { loc: 'holy_rebate', label: 'Church of the Holy Rebate' },
+      },
+      {
+        text: 'FINALE: Return to Reg under the overpass for your coronation.', finale: true,
         obj: { type: 'talk', who: 'reg' },
         talk: [
           { who: 'nar', t: ['> Every hobo in Gutterside has gathered under the overpass. Someone has strung up Christmas lights. They\'re not plugged in. It\'s the thought that counts.'] },

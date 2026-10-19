@@ -104,8 +104,9 @@ export function applyPose(npc, kind, opts = {}) {
       body.position.set(0, 0.1 * s + card, 0.95 * s);
       P.neck.rotation.x = -0.45;
       P.legL.upper.rotation.set(0, 0, 0.1); P.legR.upper.rotation.set(-0.35, 0, -0.08); P.legR.lower.rotation.set(0.7, 0, 0);
-      P.armL.upper.rotation.set(-0.5, 0, 0.25); P.armL.lower.rotation.set(-1.1, 0, 0);
-      P.armR.upper.rotation.set(-0.3, 0, -0.2); P.armR.lower.rotation.set(-0.9, 0, 0);
+      // one arm at the side, the other hand resting on the belly
+      P.armL.upper.rotation.set(-0.08, 0, 0.22); P.armL.lower.rotation.set(-0.15, 0, 0);
+      P.armR.upper.rotation.set(-0.22, 0, 0.05); P.armR.lower.rotation.set(-1.25, 0, 0.35);
       if (opts.card !== false) { const c = mesh(A.cardGeo, A.card); c.position.z = -0.05; npc.group.add(c); pose.props.push(c); }
       if (opts.blanket) {
         const bl = mesh(A.blanketGeo, A.blankets[(Math.random() * A.blankets.length) | 0]);
@@ -193,7 +194,6 @@ export function gesture(npc, dt) {
     P.armR.upper.rotation.set(-0.35 - k * 0.55, 0, 0.1 + k * 0.38);
     P.armR.lower.rotation.x = -1.2 - k * 1.25;
     P.neck.rotation.x = -k * 0.08;
-    if (pose.ember) pose.ember.material = k > 0.9 ? assets().ember : assets().ember; // shared, glow below
     if (pose.ember) pose.ember.scale.setScalar(k > 0.9 ? 1.6 : 1);
   } else if (pose.hands === 'phone') {
     P.head.rotation.y = Math.sin(t * 0.7) * 0.25;

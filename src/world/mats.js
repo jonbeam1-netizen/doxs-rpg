@@ -44,12 +44,19 @@ export function createMaterials() {
     if (glass) A.env.push(m);
     reg('f_' + f, m, { cast: true });
   }
-  for (const v of [0, 1]) {
-    const t = T.storefrontTexture(v);
-    const m = new THREE.MeshStandardMaterial({ map: t.map, emissiveMap: t.emissiveMap, emissive: 0xffffff, emissiveIntensity: 0, vertexColors: true, roughness: 0.8 });
-    m.userData.nightGain = 1.5; m.userData.dayMin = 0.15;
+  // plain walls (same paint, no windows): storefront fascias, blank side walls
+  for (const f of FACADES) {
+    if (f.startsWith('glass') || f === 'hospital' || f === 'trailer') continue;
+    const t = T.facadeTexture(f, { plain: true });
+    const m = new THREE.MeshStandardMaterial({ map: t.map, normalMap: t.normalMap, normalScale: new THREE.Vector2(0.8, 0.8), vertexColors: true, roughness: 0.9, metalness: 0.02 });
+    reg('w_' + f, m, { cast: true });
+  }
+  {
+    const t = T.storefrontAtlas();
+    const m = new THREE.MeshStandardMaterial({ map: t.map, emissiveMap: t.emissiveMap, emissive: 0xffffff, emissiveIntensity: 0, vertexColors: true, roughness: 0.75, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -2 });
+    m.userData.nightGain = 1.5; m.userData.dayMin = 0.18;
     A.night.push(m);
-    reg('store' + v, m, { cast: true });
+    reg('shop', m, { cast: true });
   }
   reg('roof', new THREE.MeshStandardMaterial({ map: T.toTex(T.roofCanvas()), vertexColors: true, roughness: 0.95 }), { cast: true });
   reg('shingle', new THREE.MeshStandardMaterial({ map: T.toTex(T.shingleCanvas()), vertexColors: true, roughness: 0.9 }), { cast: true });
@@ -59,7 +66,7 @@ export function createMaterials() {
   reg('container', new THREE.MeshStandardMaterial({ map: T.toTex(T.containerCanvas()), vertexColors: true, roughness: 0.7, metalness: 0.3 }), { cast: true });
 
   // ---- props (vertex colored)
-  const pg = grimeTexture('#a8a49c', { grime: 0.7, size: 256 });
+  const pg = T.toTex(T.propCanvas('#a8a49c'));
   reg('props', new THREE.MeshStandardMaterial({ map: pg, vertexColors: true, roughness: 0.85, metalness: 0.05 }), { cast: true });
   alias('props_d', 'props', { detail: true, cast: false });
   reg('metal', new THREE.MeshStandardMaterial({ map: pg, vertexColors: true, roughness: 0.5, metalness: 0.6 }), { cast: true });
@@ -158,7 +165,7 @@ export function createMaterials() {
   for (const [k, def] of Object.entries(M)) {
     const m = def.mat;
     if (!m?.isMeshStandardMaterial || !m.map || def !== M[k] || m.userData.boosted) continue;
-    const b = BOOST[k] ?? (k.startsWith('f_') ? (k.startsWith('f_glass') ? 1.3 : 2.0) : k.startsWith('store') ? 1.6 : 1);
+    const b = BOOST[k] ?? (k.startsWith('f_') || k.startsWith('w_') ? (k.startsWith('f_glass') ? 1.3 : 2.0) : k === 'shop' ? 1.3 : 1);
     m.color.multiplyScalar(b); m.userData.base = b; m.userData.boosted = true;
   }
 

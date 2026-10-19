@@ -322,6 +322,8 @@ export class Combat {
 
   // Player (local) damages an NPC; handles crimes. Returns damage() result.
   hitNpc(n, dmg, opts) {
+    // a fight breaks out: loungers & bystanders nearby get up and scram
+    if (!opts?.gun && (this._fightAlarm || 0) < this.game.elapsed) { this._fightAlarm = this.game.elapsed + 1; this.ctx.ambient?.panic(n.pos.x, n.pos.z, 12); }
     const wasAggro = !!n.aggressor || n.hostile && n.target?.type === 'player';
     const res = this.ctx.npcs.damage(n.id, dmg, 'local', opts);
     if ((n.kind === 'cop' || !wasAggro) && !n.brawlId && !n.assaulted && n.kind !== 'static') {

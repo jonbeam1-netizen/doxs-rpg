@@ -15,8 +15,9 @@ const MIX = {
   gutterside: [['rustbucket', 5], ['puddlejumper', 2], ['wanda', 2], ['dirtwagon', 1], ['moped', 0.7], ['commuter', 0.6]],
   rustyards: [['dirtwagon', 3], ['wanda', 3], ['rustbucket', 2], ['commuter', 1], ['puddlejumper', 0.8]],
   dustbowl: [['dirtwagon', 4], ['rustbucket', 3], ['widowmaker', 1], ['thunderhog', 1], ['hearse', 0.3], ['moped', 0.4]],
+  blackwater: [['rustbucket', 4], ['dirtwagon', 3], ['wanda', 2], ['moped', 0.8], ['puddlejumper', 0.6]],
 };
-const DENSITY = { downtown: 13, hilltop: 8, rustyards: 8, gutterside: 7, dustbowl: 5 };
+const DENSITY = { downtown: 13, hilltop: 8, rustyards: 8, gutterside: 7, dustbowl: 5, blackwater: 3 };
 const DRIVER_COLORS = [0x1a1a1a, 0x2a1a12, 0x101820, 0x2b2b20, 0x301818, 0x141414];
 const HATS = [null, null, null, 'cap', 'beanie', 'fedora', 'hardhat'];
 

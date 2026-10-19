@@ -7,7 +7,12 @@ import { esc, fmtMoney, clamp, pick } from '../core/util.js';
 // Definitions (with functions) live in src/data/quests.js and are never saved.
 
 const EVENT_TYPES = ['drug:sold', 'drug:bought', 'race:won', 'job:promoted', 'job:worked', 'job:hired', 'home:bought', 'car:entered', 'car:bought',
-  'casino:result', 'brawl:won', 'npc:killed', 'course:completed', 'date:result', 'item:bought', 'item:used'];
+  'casino:result', 'brawl:won', 'npc:killed', 'course:completed', 'date:result', 'item:bought', 'item:used',
+  'stat:gain', 'money:change', 'home:slept', 'location:enter', 'heist:completed', 'skate:trick'];
+
+// XP paid for finishing a quest step (on top of any explicit reward), so every
+// story beat feels like progress. Steps can override with `xp: n`.
+const STEP_XP = { main: (i) => 35 + 12 * i, side: () => 30, faction: () => 20 };
 
 export const KIND_COLORS = { main: '#e0b23a', side: '#4fc3d9', job: '#e0702a', faction: '#d0443a' };
 
@@ -151,6 +156,9 @@ export class QuestEngine {
     try {
       if (st.take) this.takeItem(st.take);
       if (st.reward) this.reward(st.reward);
+      const d = this.defs[id];
+      const xp = st.xp ?? STEP_XP[d?.kind]?.(q.step) ?? 0;
+      if (xp > 0 && !d?.repeatable) { this.g.state.addXP(xp); this.g.ui.toast(`+${Math.round(xp)} XP`, 'stat', 1400); }
       st.onDone?.(this.g, q);
     } catch (e) { console.error('[quests] step finish failed', id, e); }
   }
@@ -313,8 +321,30 @@ export class QuestEngine {
         return p ? [{ x: p.x, z: p.z, label: o.label || p.label || d.title }] : [];
       }
       case 'visit': return (q.sd.points || []).filter((p) => !p.done).map((p) => ({ x: p.x, z: p.z, label: p.label || d.title }));
-      default: return [];
+      default: return this._markerTargets(st, d);
     }
+  }
+
+  // Optional `marker` on any step (event/stat/check/money/...): where the player should go to do it.
+  // { loc } | { loc: [ids] } (nearest) | { who } | { near: 'dealer' } (nearest dealer NPC) | (g) => {x,z,label}
+  _markerTargets(st, d) {
+    const m = st.marker;
+    if (!m) return [];
+    try {
+      const pos = this.playerPos() || { x: 0, z: 0 };
+      const near = (pts) => pts.filter(Boolean).sort((a, b) => Math.hypot(a.x - pos.x, a.z - pos.z) - Math.hypot(b.x - pos.x, b.z - pos.z))[0];
+      let t = null;
+      if (typeof m === 'function') t = m(this.g);
+      else if (m.who) { const p = this.charPos(m.who); t = p && { ...p, label: CHARACTERS[m.who]?.name }; }
+      else if (m.near === 'dealer') {
+        const ds = (this.g.npcs?.list?.() || []).filter((n) => n.kind === 'dealer' && !n.dead).map((n) => ({ x: n.pos.x, z: n.pos.z, label: n.name ? `${n.name} (dealer)` : 'Dealer' }));
+        t = near(ds);
+      } else if (m.loc) {
+        const ids = Array.isArray(m.loc) ? m.loc : [m.loc];
+        t = near(ids.map((i) => this.locPos(i)));
+      }
+      return t ? [{ x: t.x, z: t.z, label: m.label || t.label || d.title }] : [];
+    } catch { return []; }
   }
 
   // '?' = has something for you right now, '!' = offers a new quest.
@@ -478,7 +508,7 @@ export class QuestEngine {
       const inc = o.sum ? Math.max(1, Number(data?.[o.sum]) || 1) : 1;
       q.sd.n = (q.sd.n || 0) + inc;
       if (q.sd.n >= o.count) this.step(id);
-      else { this.g.ui.toast(`${this.defs[id].title}: ${Math.min(q.sd.n, o.count)}/${o.count}`, 'stat', 2000); this.changed(); }
+      else { if (!o.quiet) this.g.ui.toast(`${this.defs[id].title}: ${Math.min(q.sd.n, o.count)}/${o.count}`, 'stat', 2000); this.changed(); }
     }
   }
 

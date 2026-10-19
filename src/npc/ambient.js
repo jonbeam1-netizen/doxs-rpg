@@ -1,4 +1,5 @@
 import { rand, chance, weightedPick, mulberry32, pick } from '../core/util.js';
+import { applyPose, findWallSpot, findSeat } from './crowd.js';
 
 // Ambient population streaming + the five persistent district dealers.
 //  - Peaceful pedestrians are local-only on every machine.
@@ -15,6 +16,8 @@ const LOCAL = {
                 night: [['hobo', 20], ['drunk', 24], ['ped', 14], ['shady', 12], ['cop', 2]] },
   dustbowl:   { day: [['ped', 30], ['hobo', 10], ['drunk', 10], ['worker', 10], ['shady', 5]],
                 night: [['drunk', 22], ['ped', 14], ['hobo', 10], ['shady', 6]] },
+  blackwater: { day: [['worker', 22], ['ped', 18], ['hobo', 14], ['shady', 12], ['drunk', 8]],
+                night: [['drunk', 20], ['shady', 16], ['hobo', 14], ['ped', 8], ['worker', 6]] },
 };
 // hostile-capable per player: [day, night], plus which kinds
 const HOSTILE = {
@@ -23,10 +26,11 @@ const HOSTILE = {
   rustyards:  { n: [0, 4], kinds: [['thug', 3], ['bikers', 1]] },
   gutterside: { n: [2, 5], kinds: [['rats', 3], ['thug', 2]] },
   dustbowl:   { n: [3, 4], kinds: [['bikers', 4], ['thug', 1]] },
+  blackwater: { n: [2, 4], kinds: [['thug', 3], ['rats', 1]] },
 };
 const DEALER_NAMES = {
   downtown: 'Slick Nicky Two-Phones', hilltop: 'Preston "Powder" Pemberton', rustyards: 'Dockside Dmitri',
-  gutterside: 'Lil Sneezy', dustbowl: 'Cactus Carl',
+  gutterside: 'Lil Sneezy', dustbowl: 'Cactus Carl', blackwater: 'Barnacle Bev',
 };
 const DEALER_PREF = ['liquor', 'pawn', 'bar', 'tattoo', 'gas', 'diner', 'junkyard', 'factory', 'nightclub', 'casino', 'store', 'fortune'];
 const SPAWN_MIN = 55, SPAWN_MAX = 85, DESPAWN = 130;
@@ -81,6 +85,8 @@ export class Ambient {
       const busy = n.brawlId || (n.hostile && n.target && dmin < 70);
       if (dmin > DESPAWN && !busy) { npcs.remove(n); continue; }
       if (n.leaving && dmin > 60) { npcs.remove(n); continue; }
+      // walkers who wandered off the edge make room for a fresh mix of loungers
+      if (!n.networked && n.data.purpose && n.state === 'wander' && dmin > 80) { npcs.remove(n); continue; }
       if (n.dead) continue;
       if (n.networked) { if (dmin < 95) hostileNear[ci]++; } else if (dmin < 100) localCount++;
     }
@@ -102,8 +108,10 @@ export class Ambient {
       if (!p) break;
       const d = this._district(p.x, p.z);
       const table = (LOCAL[d] || LOCAL.downtown)[night ? 'night' : 'day'];
+      const before = npcs.map.size;
       this._spawnLocal(weightedPick(table), p, d);
-      localCount++; spawned++;
+      const made = Math.max(1, npcs.map.size - before);
+      localCount += made; spawned += made;
     }
     this.filled = true;
 
@@ -122,7 +130,7 @@ export class Ambient {
   }
 
   _danger(d) {
-    return ({ downtown: 2, hilltop: 1, rustyards: 3, gutterside: 4, dustbowl: 3 })[d] ?? 2;
+    return ({ downtown: 2, hilltop: 1, rustyards: 3, gutterside: 4, dustbowl: 3, blackwater: 4 })[d] ?? 2;
   }
 
   _spawnPoint(c, fill) {
@@ -158,13 +166,149 @@ export class Ambient {
     return null;
   }
 
-  _spawnLocal(role, p, district) {
-    const spec = { x: p.x, z: p.z, role, data: { ambient: true, district } };
+  _mk(role, x, z, district, facing) {
+    const spec = { x, z, role, data: { ambient: true, district } };
+    if (facing != null) spec.facing = facing;
     if (role === 'hobo') spec.kind = 'hobo';
     else if (role === 'drunk') spec.kind = 'drunk';
     else if (role === 'cop') { spec.kind = 'cop'; spec.weapon = chance(0.25) ? 'pistol' : 'baton'; spec.data.patrol = true; }
     else spec.kind = 'ped';
     return this.ctx.npcs.spawn(spec);
+  }
+
+  _pose(npc, kind, opts, dur) {
+    if (!npc) return npc;
+    applyPose(npc, kind, opts);
+    if (kind === 'cart') { npc.data.purpose = true; npc.state = 'wander'; return npc; }
+    npc.state = 'pose'; npc.stateT = 0; npc.goal = null; npc.vx = npc.vz = 0;
+    npc.data.poseT = dur;
+    return npc;
+  }
+
+  _place(npc, x, z, facing) {
+    npc.pos.x = x; npc.pos.z = z;
+    npc.facing = facing; npc.group.rotation.y = facing;
+  }
+
+  // Everyone who's parked somewhere (so two hobos don't share a doorway).
+  _posedSpots() {
+    const out = [];
+    for (const n of this.ctx.npcs.map.values()) if (n.pose && !n.pose.walking) out.push(n.pos);
+    return out;
+  }
+
+  // A mixed street: purposeful walkers, bench sitters, chatting groups, wall
+  // leaners (smoking / on the phone), hobos sleeping rough or pushing carts.
+  _spawnLocal(role, p, district) {
+    const g = this.game;
+    const r = Math.random();
+    const wallSpot = () => findWallSpot(g, p.x, p.z, 14, this._posedSpots());
+    const hands = () => pick(['smoke', 'phone', 'phone', 'cross', 'smoke']);
+    const toWall = (s) => ({ x: -Math.sin(s.facing), z: -Math.cos(s.facing) });
+    if (role === 'hobo') {
+      if (r < 0.8) {
+        const s = wallSpot();
+        if (s) {
+          const b = toWall(s);
+          if (r < 0.45) {
+            const x = s.x - b.x * 0.05, z = s.z - b.z * 0.05;
+            const n = this._mk(role, x, z, district);
+            if (!n) return null;
+            this._place(n, x, z, s.facing + (chance(0.5) ? Math.PI / 2 : -Math.PI / 2));
+            return this._pose(n, 'lie', { card: true, blanket: chance(0.6) }, null);
+          }
+          const x = s.x + b.x * 0.15, z = s.z + b.z * 0.15;
+          const n = this._mk(role, x, z, district);
+          if (!n) return null;
+          this._place(n, x, z, s.facing);
+          return this._pose(n, 'ground', { card: chance(0.7) }, null);
+        }
+      }
+      return this._pose(this._mk(role, p.x, p.z, district), 'cart', {}, null);
+    }
+    if (role === 'drunk') {
+      if (r < 0.35) {
+        const s = wallSpot();
+        if (s) {
+          const b = toWall(s);
+          const x = s.x + b.x * 0.15, z = s.z + b.z * 0.15;
+          const n = this._mk(role, x, z, district);
+          if (!n) return null;
+          this._place(n, x, z, s.facing);
+          return this._pose(n, 'ground', {}, rand(60, 200));
+        }
+      }
+      return this._mk(role, p.x, p.z, district);
+    }
+    if (role === 'cop') {
+      if (r < 0.3) return this._group('cop', p, district, 2);
+      const n = this._mk(role, p.x, p.z, district);
+      if (n) n.data.purpose = true;
+      return n;
+    }
+    // regular folks
+    if (r < 0.38) {
+      const n = this._mk(role, p.x, p.z, district);
+      if (n) n.data.purpose = true;
+      return n;
+    }
+    if (r < 0.63) {
+      this.seatTaken = this.seatTaken || new Map();
+      for (const [seat, n] of this.seatTaken) if (n.removed || n.dead || n.state !== 'pose') this.seatTaken.delete(seat);
+      const lp = g.player.group.position;
+      const seat = findSeat(g, lp.x, lp.z, this.filled ? 45 : 8, 85, this.seatTaken);
+      if (seat) {
+        const n = this._mk(role, seat.x, seat.z, district, seat.facing);
+        if (!n) return null;
+        this._place(n, seat.x, seat.z, seat.facing ?? 0);
+        this.seatTaken.set(seat, n);
+        const h = seat.h ?? seat.height ?? (seat.kind === 'stoop' || seat.kind === 'step' ? 0.36 : 0.48);
+        return this._pose(n, 'sit', { h, hands: chance(0.3) ? 'phone' : null }, rand(60, 220));
+      }
+    }
+    if (r >= 0.63 && r < 0.7) return this._group(role, p, district, chance(0.3) ? 3 : 2);
+    if (r < 0.9 || chance(0.5)) {
+      const s = wallSpot();
+      if (s) {
+        const b = toWall(s);
+        const x = s.x + b.x * 0.08, z = s.z + b.z * 0.08;
+        const n = this._mk(role, x, z, district);
+        if (!n) return null;
+        this._place(n, x, z, s.facing);
+        return this._pose(n, 'lean', { hands: hands() }, rand(50, 180));
+      }
+    }
+    const n = this._mk(role, p.x, p.z, district);
+    if (!n) return null;
+    return this._pose(n, 'stand', { hands: chance(0.5) ? 'phone' : 'smoke' }, rand(30, 90));
+  }
+
+  // A walker reached their sidewalk goal: sometimes stop for a smoke / to doomscroll.
+  onArrive(npc) {
+    if (npc.kind !== 'ped' || npc.pose || !chance(0.3)) return false;
+    this._pose(npc, 'stand', { hands: chance(0.55) ? 'phone' : 'smoke' }, rand(15, 60));
+    return true;
+  }
+
+  // 2-3 people shooting the breeze, facing each other.
+  _group(role, p, district, count) {
+    const base = Math.random() * Math.PI * 2;
+    const R = count === 2 ? 0.7 : 0.85;
+    let first = null;
+    const dur = rand(40, 140);
+    for (let i = 0; i < count; i++) {
+      const a = base + (i / count) * Math.PI * 2;
+      const x = p.x + Math.sin(a) * R, z = p.z + Math.cos(a) * R;
+      if (this.game.physics.pointBlocked(x, z)) continue;
+      const rl = i === 0 || role === 'cop' ? role : pick(['ped', 'ped', 'worker', 'shady', role]);
+      const n = this._mk(rl, x, z, this._district(x, z));
+      if (!n) continue;
+      this._place(n, x, z, Math.atan2(p.x - x, p.z - z));
+      n.chatPhase = i * 2.4;
+      this._pose(n, 'chat', { hands: chance(0.25) ? 'smoke' : null }, dur + i * 3);
+      first = first || n;
+    }
+    return first;
   }
 
   _spawnHostile(kind, p, district, night) {
@@ -197,9 +341,11 @@ export class Ambient {
   // ------------------------------------------------------------ dealers
   placeDealers() {
     const g = this.game;
-    const districts = ['downtown', 'hilltop', 'rustyards', 'gutterside', 'dustbowl'];
+    const districts = ['downtown', 'hilltop', 'rustyards', 'gutterside', 'dustbowl', 'blackwater'];
     for (const d of districts) {
       if (this.dealers[d] && !this.dealers[d].removed) continue;
+      const existing = this.ctx.npcs.get('dealer_' + d);
+      if (existing && !existing.removed) { this.dealers[d] = existing; continue; } // someone else placed them
       if (this.dealerDead[d]) continue;
       const spot = this._dealerSpot(d);
       if (!spot) continue;

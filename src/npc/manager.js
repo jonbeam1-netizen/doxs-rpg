@@ -3,6 +3,14 @@ import { createStickman } from '../entities/stickman.js';
 import { clamp, rand, pick, chance, angleLerp } from '../core/util.js';
 import { weaponDef, weaponMesh, MUZZLE } from './weapons-mesh.js';
 import { genName, line, HURT, FLEE, TAUNTS, COP_YELL, WARNINGS } from './names.js';
+import { clearPose, gesture, cartArms } from './crowd.js';
+
+const POSE_BARKS = {
+  lie: ['zzz...', 'Five more minutes, ma.', 'This is my GOOD cardboard.', 'Spare change? Spare kidney?', 'Mmmf. Go away.'],
+  ground: ['Spare a buck for a guy with a dream?', 'Nice shoes. I used to have feet.', "Don't step on the cardboard. It's load-bearing.", 'I was a CEO once. Of this curb.'],
+  sit: ['This bench is my therapist.', 'Bus is late. Bus is always late.', "I'm saving this seat for my emotional baggage.", 'Pigeons respect me here.'],
+  lean: ['*cough*', 'Yeah. Yeah. No. Yeah.', 'Can I help you?', 'Wall holds me up. I hold the wall up. Teamwork.'],
+};
 
 // Per-role defaults. `role` refines `kind` (e.g. kind 'ped' + role 'snob').
 export const ROLES = {
@@ -406,23 +414,29 @@ export class NPCManager {
         if (npc.replica) { this._updateReplica(npc, dt); }
         else if (npc.dead) { this._updateDead(npc, dt); }
         else {
-          const interval = simD < 40 ? 0 : simD < 80 ? 0.1 : 0.3;
+          const posed = npc.state === 'pose';
+          const interval = posed ? 0.4 : simD < 40 ? 0 : simD < 80 ? 0.1 : 0.3;
           npc.acc += dt;
           if (npc.acc >= interval) {
-            const step = Math.min(npc.acc, 0.35);
+            const step = Math.min(npc.acc, posed ? 0.6 : 0.35);
             npc.acc = 0;
             this._think(npc, step, players);
-            this._move(npc, step);
+            if (npc.state !== 'pose') this._move(npc, step);
           }
-          if (simD < 50) active.push(npc);
+          if (simD < 50 && npc.state !== 'pose') active.push(npc);
         }
 
         // render LOD
         const vis = d < 140;
         if (npc.group.visible !== vis) npc.group.visible = vis;
-        if (vis && d < 75 && !npc.dead) {
+        // ambient body language: drop the pose the moment they do anything else
+        if (npc.pose && (npc.dead || (npc.pose.walking ? !(npc.state === 'wander' || npc.state === 'idle') : npc.state !== 'pose'))) clearPose(npc);
+        if (npc.pose && !npc.pose.walking) {
+          if (vis && d < 45) gesture(npc, dt);
+        } else if (vis && d < 75 && !npc.dead) {
           npc.model.animate(dt, npc.speed, { aim: npc.aiming, swingStyle: npc.wdef?.swing, airborne: false });
           if (npc.drunkWobble) npc.model.parts.hips.rotation.z = Math.sin(this.t * 2.3 + npc.drunkWobble) * 0.12;
+          if (npc.pose?.walking) cartArms(npc);
         } else if (npc.dead) npc.model.animate(dt, 0, {});
         const wantShadow = d < 35;
         if (wantShadow !== npc.shadowOn) {
@@ -532,6 +546,7 @@ export class NPCManager {
       case 'hunt': this._sHunt(npc, dt, players); break;
       case 'chase': this._sChase(npc, dt); break;
       case 'flee': this._sFlee(npc, dt); break;
+      case 'pose': this._sPose(npc, dt, players); break;
       default: npc.state = 'idle';
     }
   }
@@ -568,6 +583,7 @@ export class NPCManager {
     }
     const w = g.world;
     const civilian = !npc.hostile && npc.state !== 'flee';
+    if (civilian && npc.data?.purpose) { const p = this._purposeGoal(npc); if (p) return p; }
     // civilians stick to sidewalks; crossing the road straight across is fine now and then
     if (civilian && typeof w?.sidewalkPointNear === 'function') {
       for (let i = 0; i < 4; i++) {
@@ -576,6 +592,7 @@ export class NPCManager {
         if (!p || !this.los(npc.pos.x, npc.pos.z, p.x, p.z)) continue;
         const mx = (p.x + npc.pos.x) / 2, mz = (p.z + npc.pos.z) / 2;
         if (!this.walkable(mx, mz) && !chance(0.05)) continue; // jaywalk rarely
+        if (this._crowded(p.x, p.z, npc)) continue;
         return p;
       }
     }
@@ -598,6 +615,46 @@ export class NPCManager {
     return null;
   }
 
+  // Somewhere 40-120m away along the sidewalks, or a door to disappear into.
+  _purposeGoal(npc) {
+    const g = this.game, w = g.world;
+    const ok = (p) => p && this.los(npc.pos.x, npc.pos.z, p.x, p.z) && !this._crowded(p.x, p.z, npc)
+      && this.walkable((p.x + npc.pos.x) / 2, (p.z + npc.pos.z) / 2);
+    if (chance(0.3)) {
+      const doors = [];
+      for (const l of g.locations?.list || []) {
+        const dx = (l.doorX ?? l.x) - npc.pos.x, dz = (l.doorZ ?? l.z) - npc.pos.z;
+        const dd = dx * dx + dz * dz;
+        if (dd > 400 && dd < 120 * 120) doors.push(l);
+      }
+      for (let i = 0; i < 4 && doors.length; i++) {
+        const l = doors[(Math.random() * doors.length) | 0];
+        const p = { x: l.doorX ?? l.x, z: l.doorZ ?? l.z, door: l.id };
+        if (ok(p)) return p;
+      }
+    }
+    if (typeof w?.sidewalkPointNear !== 'function') return null;
+    for (let i = 0; i < 8; i++) {
+      let p = null;
+      try { p = w.sidewalkPointNear(npc.pos.x, npc.pos.z, i < 5 ? 40 : 15, i < 5 ? 120 : 45); } catch { p = null; }
+      if (ok(p)) return p;
+    }
+    return null;
+  }
+
+  // Anti-horde: too many people already standing around there (or it's on top of the player)?
+  _crowded(x, z, self) {
+    const lp = this.game.player?.group?.position;
+    if (lp && !self.hostile && Math.hypot(lp.x - x, lp.z - z) < 8) return true;
+    let n = 0;
+    for (const o of this.map.values()) {
+      if (o === self || o.dead) continue;
+      const gx = o.goal ? o.goal.x : o.pos.x, gz = o.goal ? o.goal.z : o.pos.z;
+      if (Math.abs(gx - x) < 5 && Math.abs(gz - z) < 5 && ++n >= 2) return true;
+    }
+    return false;
+  }
+
   _sWander(npc, dt, players) {
     if (npc.hostile) { npc.state = 'hunt'; return; }
     if (!npc.goal) {
@@ -606,15 +663,18 @@ export class NPCManager {
     }
     const dx = npc.goal.x - npc.pos.x, dz = npc.goal.z - npc.pos.z;
     const d = Math.hypot(dx, dz);
-    if (d < 0.8 || npc.stateT > 25 || npc.stuckT > 1.2) {
+    if (d < 0.8 || npc.stateT > (npc.data.purpose ? 90 : 25) || npc.stuckT > 1.2) {
+      // walkers with somewhere to be: duck into the door, or head off somewhere else
+      if (npc.data.purpose && npc.goal?.door && d < 1.5 && npc.dist > 12) { this.remove(npc); return; }
       npc.goal = null; npc.stuckT = 0;
+      if (npc.data.purpose) { npc.stateT = 0; if (d < 1.5) this.ctx.ambient?.onArrive?.(npc); return; }
       if (chance(0.45) || npc.leash) { npc.state = 'idle'; npc.stateT = 0; npc.idleFor = rand(1, 5); }
       return;
     }
     // jaywalkers hustle across the road instead of strolling down the middle of it
     npc.roadT = (npc.roadT ?? 0) - dt;
     if (npc.roadT <= 0) { npc.roadT = 0.5; npc.onRoad = !npc.hostile && !this.walkable(npc.pos.x, npc.pos.z); }
-    const sp = npc.walk * (npc.leaving ? 1.6 : 1) * (npc.onRoad ? 2.4 : 1);
+    const sp = npc.walk * (npc.leaving ? 1.6 : 1) * (npc.onRoad ? 2.4 : 1) * (npc.pose?.kind === 'cart' ? 0.6 : npc.data.purpose ? 1.1 : 1);
     npc.vx = (dx / d) * sp; npc.vz = (dz / d) * sp;
     if (npc.barkCd <= 0 && npc.dist < 10 && chance(0.004)) {
       this.ctx.fx.say(npc.group, line(npc.role, npc.kind), { ttl: 2.6 });
@@ -638,6 +698,28 @@ export class NPCManager {
         if (pl.t.type === 'player') this.ctx.fx.sfx.play('whoosh', { vol: 0.3 });
         return;
       }
+    }
+  }
+
+  // Sitting, lying, leaning, chatting. Ambient only; stands up when the timer runs out.
+  _sPose(npc, dt) {
+    npc.vx = npc.vz = 0;
+    if (npc.hostile) { npc.state = 'hunt'; return; }
+    const d = npc.data;
+    if (d.poseT != null) {
+      d.poseT -= dt;
+      if (d.poseT <= 0) {
+        d.poseT = null;
+        d.purpose = true;
+        npc.state = 'wander'; npc.stateT = 0; npc.goal = null;
+        return;
+      }
+    }
+    if (npc.dist < 6 && npc.barkCd <= 0 && chance(0.06)) {
+      const k = npc.pose?.kind;
+      const lines = POSE_BARKS[k];
+      this.ctx.fx.say(npc.group, lines ? pick(lines) : line(npc.role, npc.kind), { ttl: 2.4, height: k === 'lie' ? 0.9 : k === 'sit' || k === 'ground' ? 1.7 : 2.35 });
+      npc.barkCd = 14;
     }
   }
 

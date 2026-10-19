@@ -192,3 +192,6 @@ Also owns `src/data/barks.js` (`bark(kind)` one-liners).
   (level 3+). Save: `p.skate`. Net message `{t:'skate', on, board, trick}`.
 - Keys in use: WASD Shift Space E F G Q R H N O P V X I Tab J M T Esc F1 1-9 , . arrows, LMB, MMB/RMB drag (camera). Heists: V mask, X drop bag.
 - `?dev` / `?mute` sessions are silent and never save.
+- `game.police` (src/npc/police.js + src/vehicles/police.js): wanted level, cruisers (2+ stars), roadblocks (4),
+  helicopter (5), line-of-sight evasion. Net: police:snap, police:hit, police:steal, police:tire, police:heat.
+- Ambient crowd (src/npc/crowd.js): sidewalk-only peds, seated/idle/leaning/hobo behaviors via world.seats/wallSpots.

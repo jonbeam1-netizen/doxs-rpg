@@ -142,6 +142,16 @@ export function groundCanvas() {
   return c;
 }
 
+// Neutral, softly weathered surface for vertex-colored props (no scratches).
+export function propCanvas(base = '#a8a49c') {
+  const S = 256, c = cnv(S), x = g2(c);
+  x.fillStyle = base; x.fillRect(0, 0, S, S);
+  blots(x, S, S, 22, 12, 60, '20,16,12', 0.05, 0.16);
+  blots(x, S, S, 10, 10, 40, '200,195,180', 0.04, 0.1);
+  noise(x, S, S, 14);
+  return c;
+}
+
 export function roofCanvas() {
   const S = 256, c = cnv(S), x = g2(c);
   x.fillStyle = '#34322e'; x.fillRect(0, 0, S, S);
@@ -296,8 +306,7 @@ function paintPanels(x, w, h, base) {
 }
 function paintStucco(x, w, h, base) {
   x.fillStyle = base; x.fillRect(0, 0, w, h);
-  blots(x, w, h, 50, 10, 60, '255,250,235', 0.05, 0.15);
-  for (let i = 0; i < 8; i++) crack(x, R() * w, R() * h, ri(6, 20), 'rgba(40,30,20,0.4)', 1);
+  blots(x, w, h, 50, 10, 60, '255,250,235', 0.04, 0.1);
 }
 function paintSiding(x, w, h, base) {
   x.fillStyle = base; x.fillRect(0, 0, w, h);
@@ -313,23 +322,26 @@ function paintStone(x, w, h, base) {
 }
 
 // ------------------------------------------------------------------ facades
+// One clean window system per facade: a regular 4x4 grid of identical windows
+// (3m bays x 3.5m floors), framed, with a sill/lintel. Weathering is a light
+// wash of grime; no cracks, no broken panes, no painted-on clutter.
 const FACADE_SPECS = {
-  brick_red: { wall: (x) => paintBrick(x, 0, 0, 512, 512, '#6b3423', '#3b332c'), win: [30, 24, 68, 80], frame: '#26201b', sill: '#7d7364', boarded: 0.08, broken: 0.04, lit: 0.42, ac: 0.18, ledge: '#4a3a30' },
-  brick_dirty: { wall: (x) => paintBrick(x, 0, 0, 512, 512, '#7a6448', '#3e362c'), win: [32, 24, 64, 80], frame: '#2a241e', sill: '#857a68', boarded: 0.12, broken: 0.06, lit: 0.38, ac: 0.2 },
-  tenement: { wall: (x) => paintBrick(x, 0, 0, 512, 512, '#5a3a2c', '#2e2822'), win: [34, 26, 60, 76], frame: '#1e1915', sill: '#6d6556', boarded: 0.32, broken: 0.14, lit: 0.3, ac: 0.22, soot: 1 },
-  concrete: { wall: (x) => paintPanels(x, 512, 512, '#6c6964'), win: [12, 30, 104, 62], frame: '#2b2b2b', sill: '#55524d', boarded: 0.02, broken: 0.03, lit: 0.45, mull: 3, cool: 0.4 },
-  brownstone: { wall: (x) => paintStone(x, 512, 512, '#5e4636'), win: [34, 20, 60, 84], frame: '#211b16', sill: '#8a7a66', boarded: 0.03, broken: 0.02, lit: 0.45, lintel: '#8a7a66' },
+  brick_red: { wall: (x) => paintBrick(x, 0, 0, 512, 512, '#6b3423', '#3b332c'), win: [32, 26, 64, 76], frame: '#26201b', sill: '#8a8070', boarded: 0, lit: 0.42, lintel: '#7a6e60' },
+  brick_dirty: { wall: (x) => paintBrick(x, 0, 0, 512, 512, '#7a6448', '#3e362c'), win: [32, 26, 64, 76], frame: '#2a241e', sill: '#857a68', boarded: 0.03, lit: 0.38 },
+  tenement: { wall: (x) => paintBrick(x, 0, 0, 512, 512, '#5a3a2c', '#2e2822'), win: [36, 26, 56, 74], frame: '#1e1915', sill: '#6d6556', boarded: 0.07, lit: 0.3, soot: 1, lintel: '#4a3c32' },
+  concrete: { wall: (x) => paintPanels(x, 512, 512, '#6c6964'), win: [12, 30, 104, 62], frame: '#2b2b2b', sill: '#55524d', boarded: 0, lit: 0.45, mull: 3, cool: 0.4 },
+  brownstone: { wall: (x) => paintStone(x, 512, 512, '#5e4636'), win: [34, 22, 60, 80], frame: '#211b16', sill: '#8a7a66', boarded: 0, lit: 0.45, lintel: '#8a7a66' },
   glass: { glass: true, lit: 0.38 },
   glass_green: { glass: true, tint: ['#16231f', '#22332c'], lit: 0.34 },
-  stucco: { wall: (x) => paintStucco(x, 512, 512, '#9a8f78'), win: [36, 22, 56, 80], frame: '#3a3128', sill: '#b0a48c', boarded: 0.02, broken: 0.01, lit: 0.5, shutters: '#2e3a2c' },
-  stucco_pink: { wall: (x) => paintStucco(x, 512, 512, '#9c7c76'), win: [36, 22, 56, 80], frame: '#3a3128', sill: '#b0a48c', boarded: 0.03, broken: 0.02, lit: 0.45, shutters: '#4a2a2a' },
-  corrugated: { wall: (x) => { const c = corrugatedCanvas('#5f6563', 0.6); for (let i = 0; i < 2; i++) for (let j = 0; j < 2; j++) x.drawImage(c, i * 256, j * 256); }, win: [20, 10, 88, 26], winRows: [0], frame: '#222', sill: null, boarded: 0.1, broken: 0.2, lit: 0.25, rowsOnly: true },
-  corrugated_rust: { wall: (x) => { const c = corrugatedCanvas('#6a4a36', 1.2); for (let i = 0; i < 2; i++) for (let j = 0; j < 2; j++) x.drawImage(c, i * 256, j * 256); }, win: [20, 10, 88, 26], winRows: [0], frame: '#222', sill: null, boarded: 0.15, broken: 0.3, lit: 0.15, rowsOnly: true },
-  wood: { wall: (x) => paintSiding(x, 512, 512, '#7a6a52'), win: [38, 30, 52, 60], frame: '#3b3125', sill: '#5c4f3c', boarded: 0.25, broken: 0.1, lit: 0.35 },
-  trailer: { wall: (x) => paintSiding(x, 512, 512, '#a59d88'), win: [30, 34, 68, 44], frame: '#555048', sill: null, boarded: 0.2, broken: 0.1, lit: 0.4 },
-  hospital: { wall: (x) => paintTiles(x, 512, 512, '#a8a59a'), win: [14, 28, 100, 64], frame: '#3b4a52', sill: '#6a6a66', boarded: 0, broken: 0.02, lit: 0.65, cool: 0.8, mull: 2 },
-  stone: { wall: (x) => paintStone(x, 512, 512, '#7a7464'), win: [40, 14, 48, 96], frame: '#2a2622', sill: '#9a927e', boarded: 0, broken: 0.02, lit: 0.35, lintel: '#9a927e' },
-  industrial: { wall: (x) => paintBrick(x, 0, 0, 512, 512, '#4f3a2e', '#2c2620', 24, 9), win: [16, 20, 96, 70], frame: '#1a1a1a', sill: '#4a4640', boarded: 0.2, broken: 0.3, lit: 0.2, mull: 4 },
+  stucco: { wall: (x) => paintStucco(x, 512, 512, '#9a8f78'), win: [38, 24, 52, 76], frame: '#3a3128', sill: '#b0a48c', boarded: 0, lit: 0.5, shutters: '#2e3a2c' },
+  stucco_pink: { wall: (x) => paintStucco(x, 512, 512, '#9c7c76'), win: [38, 24, 52, 76], frame: '#3a3128', sill: '#b0a48c', boarded: 0, lit: 0.45, shutters: '#4a2a2a' },
+  corrugated: { wall: (x) => { const c = corrugatedCanvas('#5f6563', 0.4); for (let i = 0; i < 2; i++) for (let j = 0; j < 2; j++) x.drawImage(c, i * 256, j * 256); }, win: [20, 14, 88, 24], winRows: [1], frame: '#222', sill: null, boarded: 0, lit: 0.25, rowsOnly: true, soot: 0.3 },
+  corrugated_rust: { wall: (x) => { const c = corrugatedCanvas('#6a4a36', 0.8); for (let i = 0; i < 2; i++) for (let j = 0; j < 2; j++) x.drawImage(c, i * 256, j * 256); }, win: [20, 14, 88, 24], winRows: [1], frame: '#222', sill: null, boarded: 0, lit: 0.15, rowsOnly: true, soot: 0.3 },
+  wood: { wall: (x) => paintSiding(x, 512, 512, '#7a6a52'), win: [40, 30, 48, 58], frame: '#3b3125', sill: '#5c4f3c', boarded: 0.04, lit: 0.35 },
+  trailer: { wall: (x) => paintSiding(x, 512, 512, '#a59d88'), win: [30, 34, 68, 44], frame: '#555048', sill: null, boarded: 0, lit: 0.4 },
+  hospital: { wall: (x) => paintTiles(x, 512, 512, '#a8a59a'), win: [14, 28, 100, 64], frame: '#3b4a52', sill: '#6a6a66', boarded: 0, lit: 0.65, cool: 0.8, mull: 2 },
+  stone: { wall: (x) => paintStone(x, 512, 512, '#7a7464'), win: [40, 18, 48, 88], frame: '#2a2622', sill: '#9a927e', boarded: 0, lit: 0.35, lintel: '#9a927e' },
+  industrial: { wall: (x) => paintBrick(x, 0, 0, 512, 512, '#4f3a2e', '#2c2620', 24, 9), win: [16, 22, 96, 66], frame: '#1a1a1a', sill: '#4a4640', boarded: 0.04, lit: 0.2, mull: 4 },
 };
 
 function glassGrad(x, gx, gy, gw, gh, tint) {
@@ -355,28 +367,33 @@ function litWindow(e, gx, gy, gw, gh, cool) {
 }
 function shadeHex(hex, f) { const [r, g, b] = hexToRgb(hex); return `rgb(${(r * f) | 0},${(g * f) | 0},${(b * f) | 0})`; }
 
+// A boarded-up window: plywood sheet, clean edges.
 function boarded(x, gx, gy, gw, gh) {
-  x.fillStyle = '#2a2018'; x.fillRect(gx, gy, gw, gh);
-  const n = ri(2, 4);
-  for (let i = 0; i < n; i++) {
-    x.save(); x.translate(gx + gw / 2, gy + (i + 0.5) * gh / n); x.rotate((R() - 0.5) * 0.35);
-    x.fillStyle = jitter('#7d6446', 0.3); x.fillRect(-gw * 0.6, -gh / n * 0.42, gw * 1.2, gh / n * 0.84);
-    x.fillStyle = '#1a1612'; x.fillRect(-gw * 0.5, -2, 2, 2); x.fillRect(gw * 0.45, -2, 2, 2);
-    x.restore();
-  }
-}
-function broken(x, gx, gy, gw, gh) {
-  x.fillStyle = '#0b0c0d'; x.fillRect(gx, gy, gw, gh);
-  x.strokeStyle = 'rgba(200,210,210,0.5)'; x.lineWidth = 1;
-  const cx = gx + gw * rr(0.3, 0.7), cy = gy + gh * rr(0.3, 0.7);
-  for (let i = 0; i < 7; i++) { x.beginPath(); x.moveTo(cx, cy); const a = R() * 7; x.lineTo(cx + Math.cos(a) * gw, cy + Math.sin(a) * gh); x.stroke(); }
+  x.fillStyle = '#6e5a42'; x.fillRect(gx, gy, gw, gh);
+  x.fillStyle = 'rgba(0,0,0,0.25)'; x.fillRect(gx + gw / 2 - 1, gy, 2, gh);
+  x.fillStyle = 'rgba(0,0,0,0.18)'; x.fillRect(gx, gy + gh - 4, gw, 4);
 }
 
-export function facadeTexture(kind) {
+// Light, even weathering for walls: soft soot at the top of each tile, a few
+// faint streaks. Kept subtle so windows and signs stay the readable layer.
+function weather(x, S, soot = 0.5) {
+  drips(x, S, S, 18 + 14 * soot, '12,10,8', 0.14);
+  blots(x, S, S, 14, 20, 80, '15,12,10', 0.04, 0.1 + soot * 0.06);
+  noise(x, S, S, 12);
+}
+
+export function facadeTexture(kind, { plain = false } = {}) {
   R = mulberry32(hashStr(kind) ^ 0x51);
   const spec = FACADE_SPECS[kind];
   const S = 512, c = cnv(S), x = g2(c), ec = cnv(S), e = g2(ec);
   e.fillStyle = '#000'; e.fillRect(0, 0, S, S);
+  if (plain && !spec.glass) {
+    // wall only (ground floors behind storefronts, fascias, blank side walls)
+    spec.wall(x);
+    if (spec.ledge) { x.fillStyle = spec.ledge; for (let j = 0; j < 4; j++) x.fillRect(0, j * 128 + 124, S, 4); }
+    weather(x, S, spec.soot ?? 0.5);
+    return { map: toTex(c), emissiveMap: null, normalMap: toTex(normalFromCanvas(c, 2), { srgb: false }) };
+  }
   if (spec.glass) {
     // Curtain wall: each bay a panel, thin mullions, whole floors lit sometimes.
     x.fillStyle = '#111518'; x.fillRect(0, 0, S, S);
@@ -394,8 +411,8 @@ export function facadeTexture(kind) {
       }
       x.fillStyle = '#2a2e30'; x.fillRect(0, j * 128 + 115, S, 13); // spandrel
     }
-    drips(x, S, S, 30, '20,16,10', 0.2);
-    noise(x, S, S, 10);
+    drips(x, S, S, 14, '20,16,10', 0.12);
+    noise(x, S, S, 8);
   } else {
     spec.wall(x);
     for (let j = 0; j < 4; j++) for (let i = 0; i < 4; i++) {
@@ -404,9 +421,7 @@ export function facadeTexture(kind) {
       const gx = i * 128 + wx, gy = j * 128 + wy;
       if (spec.lintel) { x.fillStyle = spec.lintel; x.fillRect(gx - 6, gy - 10, ww + 12, 8); }
       x.fillStyle = spec.frame; x.fillRect(gx - 4, gy - 4, ww + 8, wh + 8);
-      const r = R();
-      if (r < spec.boarded) boarded(x, gx, gy, ww, wh);
-      else if (r < spec.boarded + spec.broken) broken(x, gx, gy, ww, wh);
+      if (R() < spec.boarded) boarded(x, gx, gy, ww, wh);
       else {
         glassGrad(x, gx, gy, ww, wh);
         const lit = R() < spec.lit;
@@ -416,72 +431,100 @@ export function facadeTexture(kind) {
         const m = spec.mull ?? 2;
         for (let k = 1; k < m; k++) { x.fillRect(gx + (ww * k) / m - 1.5, gy, 3, wh); e.fillRect(gx + (ww * k) / m - 1.5, gy, 3, wh); }
         if (!spec.rowsOnly) { x.fillRect(gx, gy + wh * 0.38, ww, 3); e.fillRect(gx, gy + wh * 0.38, ww, 3); }
-        if (!lit && R() < 0.3) { x.fillStyle = `rgba(${ri(60, 120)},${ri(50, 90)},${ri(40, 70)},0.5)`; x.fillRect(gx, gy, ww * rr(0.2, 0.5), wh); }
       }
-      if (spec.sill) { x.fillStyle = spec.sill; x.fillRect(gx - 6, gy + wh + 3, ww + 12, 6); x.fillStyle = 'rgba(0,0,0,0.35)'; x.fillRect(gx - 6, gy + wh + 9, ww + 12, 3); }
+      if (spec.sill) { x.fillStyle = spec.sill; x.fillRect(gx - 6, gy + wh + 3, ww + 12, 6); x.fillStyle = 'rgba(0,0,0,0.3)'; x.fillRect(gx - 6, gy + wh + 9, ww + 12, 2); }
       if (spec.shutters) { x.fillStyle = spec.shutters; x.fillRect(gx - 18, gy - 2, 13, wh + 4); x.fillRect(gx + ww + 5, gy - 2, 13, wh + 4); x.fillStyle = 'rgba(0,0,0,0.3)'; for (let y = gy; y < gy + wh; y += 6) { x.fillRect(gx - 18, y, 13, 2); x.fillRect(gx + ww + 5, y, 13, 2); } }
-      if (spec.ac && R() < spec.ac) { x.fillStyle = jitter('#8a8a82', 0.2); x.fillRect(gx + ww * 0.25, gy + wh - 22, 30, 20); x.fillStyle = 'rgba(0,0,0,0.5)'; for (let k = 0; k < 5; k++) x.fillRect(gx + ww * 0.25 + 3, gy + wh - 19 + k * 4, 24, 1.5); drips(x, 1, 1, 0); }
     }
     if (spec.ledge) { x.fillStyle = spec.ledge; for (let j = 0; j < 4; j++) x.fillRect(0, j * 128 + 124, S, 4); }
-    // grime: soot above windows, drips, stains
-    drips(x, S, S, 70 * (spec.soot ?? 0.6), '12,10,8', 0.3);
-    blots(x, S, S, 26, 15, 70, '15,12,10', 0.08, 0.22 + (spec.soot ?? 0) * 0.15);
-    blots(x, S, S, 8, 10, 40, '80,60,25', 0.08, 0.18);
-    noise(x, S, S, 18);
+    weather(x, S, spec.soot ?? 0.5);
   }
   const map = toTex(c), emissiveMap = toTex(ec);
   const normalMap = spec.glass ? null : toTex(normalFromCanvas(c, 2), { srgb: false });
   return { map, emissiveMap, normalMap };
 }
 
-// Ground-floor storefront band (12m x 4.5m tile, 4 bays).
-export function storefrontTexture(variant = 0) {
-  R = mulberry32(0x5F0 + variant * 77);
-  const W = 512, H = 192, c = cnv(W, H), x = g2(c), ec = cnv(W, H), e = g2(ec);
+// Storefront bay atlas: 8 cells (each one 3m x 4.5m bay, 128x192 px). The
+// frame/fascia/kickplate are painted light so the per-shop vertex tint colors
+// them; glass and lit interiors are not tinted (emissive).
+// 0 display warm · 1 display cool · 2 display (goods, dim) · 3 display dark
+// 4 glass door (lit) · 5 steel door · 6 roll-down shutter · 7 blank panel
+export const SHOP_CELL = { warm: 0, cool: 1, goods: 2, dark: 3, door: 4, steel: 5, shutter: 6, blank: 7 };
+export function storefrontAtlas() {
+  R = mulberry32(0x5F0);
+  const CW = 128, H = 192, W = CW * 8, c = cnv(W, H), x = g2(c), ec = cnv(W, H), e = g2(ec);
   e.fillStyle = '#000'; e.fillRect(0, 0, W, H);
-  const brick = variant ? '#4e3326' : '#55504a';
-  paintBrick(x, 0, 0, W, H, brick, '#2a2520');
-  const shutterP = variant ? 0.45 : 0.2;
-  for (let i = 0; i < 4; i++) {
-    const bx = i * 128;
-    const r = R();
-    // sign band
-    if (r < 0.85) { x.fillStyle = jitter(pk(['#3a2a20', '#2a3036', '#40261e', '#2c3326', '#3a3420']), 0.3); x.fillRect(bx + 4, 6, 120, 28); }
-    if (r < shutterP) {
-      x.fillStyle = '#5b5c58'; x.fillRect(bx + 6, 40, 116, 148);
-      for (let y = 40; y < 188; y += 6) { x.fillStyle = 'rgba(0,0,0,0.35)'; x.fillRect(bx + 6, y, 116, 2); x.fillStyle = 'rgba(255,255,255,0.08)'; x.fillRect(bx + 6, y + 2, 116, 1); }
-      // scribbles
-      for (let k = 0; k < 3; k++) { x.strokeStyle = pk(['#b8e04a', '#e04ab8', '#e8e8e8', '#e05050', '#4ab8e0']); x.lineWidth = rr(2, 5); x.beginPath(); x.moveTo(bx + rr(10, 110), rr(60, 170)); for (let s = 0; s < 6; s++) x.lineTo(bx + rr(10, 118), rr(50, 180)); x.stroke(); }
-      blots(x, W, H, 2, 10, 30, '90,40,10', 0.2, 0.4);
-    } else if (r < shutterP + 0.25) {
-      // door + side lite
-      x.fillStyle = '#1a1714'; x.fillRect(bx + 8, 40, 112, 150);
-      glassGrad(x, bx + 40, 52, 48, 134); x.fillStyle = '#2a2622'; x.fillRect(bx + 62, 52, 4, 134);
-      glassGrad(x, bx + 12, 48, 22, 80); glassGrad(x, bx + 94, 48, 22, 80);
-      if (R() < 0.75) { e.fillStyle = pk(LIT); e.fillRect(bx + 40, 52, 48, 134); e.fillRect(bx + 12, 48, 22, 80); e.fillRect(bx + 94, 48, 22, 80); e.fillStyle = '#000'; e.fillRect(bx + 62, 52, 4, 134); }
-    } else {
-      x.fillStyle = '#16130f'; x.fillRect(bx + 6, 40, 116, 146);
-      glassGrad(x, bx + 12, 46, 104, 120);
-      x.fillStyle = '#16130f'; x.fillRect(bx + 63, 46, 3, 120);
-      // display junk
-      for (let k = 0; k < 5; k++) { x.fillStyle = `rgba(${ri(60, 160)},${ri(50, 140)},${ri(40, 120)},0.45)`; x.fillRect(bx + rr(14, 100), rr(110, 150), rr(8, 22), rr(10, 30)); }
-      x.fillStyle = '#3a342c'; x.fillRect(bx + 6, 166, 116, 22); // kickplate
-      if (R() < 0.7) {
-        const g = e.createLinearGradient(0, 46, 0, 166); const col = R() < 0.25 ? pk(COOL) : pk(LIT);
-        g.addColorStop(0, col); g.addColorStop(1, shadeHex(col, 0.5));
-        e.fillStyle = g; e.fillRect(bx + 12, 46, 104, 120); e.fillStyle = '#000'; e.fillRect(bx + 63, 46, 3, 120);
-        for (let k = 0; k < 4; k++) { e.fillStyle = 'rgba(0,0,0,0.6)'; e.fillRect(bx + rr(14, 100), rr(110, 150), rr(8, 22), rr(10, 30)); }
-        if (R() < 0.4) { // neon OPEN sign
-          e.fillStyle = pk(['#ff3060', '#30ff90', '#ff60ff']); e.font = `bold 18px ${FONT2}`; e.fillText(pk(['OPEN', 'OPEN 24H', 'ATM', 'XXX', 'LOTTO', 'BEER']), bx + 22, 80);
-          x.fillStyle = 'rgba(80,20,30,0.8)'; x.font = `bold 18px ${FONT2}`;
-        }
+  const FR = '#bdb7ab', TRIM = '#24211d';
+  for (let i = 0; i < 8; i++) {
+    const bx = i * CW;
+    x.fillStyle = FR; x.fillRect(bx, 0, CW, H);
+    // fascia (sign band) with dark trim lines, pilasters on both sides
+    x.fillStyle = 'rgba(0,0,0,0.10)'; x.fillRect(bx, 4, CW, 34);
+    x.fillStyle = TRIM; x.fillRect(bx, 0, CW, 3); x.fillRect(bx, 40, CW, 4);
+    x.fillStyle = 'rgba(0,0,0,0.22)'; x.fillRect(bx, 0, 5, H); x.fillRect(bx + CW - 5, 0, 5, H);
+    x.fillStyle = TRIM; x.fillRect(bx, H - 5, CW, 5); // base
+    if (i <= 3) {
+      // display window: frame, glass, center mullion, transom, kickplate
+      x.fillStyle = TRIM; x.fillRect(bx + 10, 50, CW - 20, 114);
+      glassGrad(x, bx + 13, 53, CW - 26, 108);
+      x.fillStyle = TRIM; x.fillRect(bx + CW / 2 - 2, 53, 4, 108); x.fillRect(bx + 13, 74, CW - 26, 3);
+      x.fillStyle = 'rgba(0,0,0,0.18)'; x.fillRect(bx + 10, 166, CW - 20, 20);
+      if (i <= 2) {
+        const col = i === 1 ? '#cfe0f0' : i === 0 ? '#ffd79a' : '#e8c890';
+        const g = e.createLinearGradient(0, 53, 0, 161);
+        g.addColorStop(0, col); g.addColorStop(1, shadeHex(col.startsWith('#') ? col : '#ffd79a', i === 2 ? 0.35 : 0.6));
+        e.globalAlpha = i === 2 ? 0.55 : 1; e.fillStyle = g; e.fillRect(bx + 13, 53, CW - 26, 108); e.globalAlpha = 1;
+        e.fillStyle = '#000'; e.fillRect(bx + CW / 2 - 2, 53, 4, 108); e.fillRect(bx + 13, 74, CW - 26, 3);
+        // two shelves of goods as clean silhouettes
+        for (const sy of [118, 148]) { e.fillStyle = 'rgba(0,0,0,0.55)'; e.fillRect(bx + 16, sy, CW - 32, 3); x.fillStyle = 'rgba(0,0,0,0.25)'; x.fillRect(bx + 16, sy, CW - 32, 3); }
+        for (let k = 0; k < 6; k++) { const gx = bx + 18 + k * 16; e.fillStyle = 'rgba(0,0,0,0.35)'; e.fillRect(gx, 104 + (k % 2) * 4, 10, 14 - (k % 2) * 4); e.fillRect(gx + 2, 136 - (k % 3) * 3, 9, 12 + (k % 3) * 3); }
       }
+    } else if (i === 4 || i === 5) {
+      // door with transom, flanked by panels
+      x.fillStyle = TRIM; x.fillRect(bx + 32, 50, 64, H - 55);
+      if (i === 4) {
+        glassGrad(x, bx + 37, 56, 54, 14); glassGrad(x, bx + 38, 76, 52, 104);
+        x.fillStyle = '#9a9a92'; x.fillRect(bx + 80, 124, 6, 16);
+        e.fillStyle = '#ffd890'; e.fillRect(bx + 37, 56, 54, 14); e.globalAlpha = 0.8; e.fillRect(bx + 38, 76, 52, 104); e.globalAlpha = 1;
+      } else {
+        x.fillStyle = '#5a5e5c'; x.fillRect(bx + 36, 54, 56, H - 59);
+        x.fillStyle = 'rgba(0,0,0,0.3)'; x.fillRect(bx + 40, 60, 48, 2); x.fillRect(bx + 40, 120, 48, 2);
+        x.fillStyle = '#2a2a2a'; x.fillRect(bx + 80, 122, 6, 16);
+        e.fillStyle = 'rgba(255,200,120,0.5)'; e.fillRect(bx + 36, H - 8, 56, 3);
+      }
+      for (const px of [bx + 10, bx + 100]) { x.fillStyle = 'rgba(0,0,0,0.12)'; x.fillRect(px, 56, 18, 124); }
+    } else if (i === 6) {
+      x.fillStyle = TRIM; x.fillRect(bx + 10, 46, CW - 20, H - 51);
+      x.fillStyle = '#6a6b66'; x.fillRect(bx + 13, 49, CW - 26, H - 56);
+      for (let y = 49; y < H - 7; y += 6) { x.fillStyle = 'rgba(0,0,0,0.28)'; x.fillRect(bx + 13, y, CW - 26, 2); }
+      x.fillStyle = '#2a2a28'; x.fillRect(bx + CW / 2 - 8, H - 14, 16, 4);
+    } else {
+      x.fillStyle = 'rgba(0,0,0,0.08)'; x.fillRect(bx + 12, 52, CW - 24, H - 62);
+      x.fillStyle = 'rgba(0,0,0,0.18)'; x.fillRect(bx + 12, 52, CW - 24, 2); x.fillRect(bx + 12, H - 12, CW - 24, 2);
     }
   }
-  drips(x, W, H, 40, '12,10,8', 0.3);
-  blots(x, W, H, 14, 10, 40, '15,12,10', 0.1, 0.3);
-  noise(x, W, H, 18);
-  return { map: toTex(c), emissiveMap: toTex(ec) };
+  drips(x, W, H, 24, '12,10,8', 0.12);
+  noise(x, W, H, 10);
+  return { map: toTex(c, { repeat: false }), emissiveMap: toTex(ec, { repeat: false }) };
+}
+export function shopUV(i) { const u0 = i / 8; return [u0 + 0.002, 0, u0 + 1 / 8 - 0.002, 1]; }
+
+// Clean, readable sign face (no scratches): flat board, border, centered text.
+export function cleanSignCanvas(text, { width = 1024, height = 256, bg = '#1a1612', fg = '#e6dfcf', border = '#3b342b', font = 'Special Elite' } = {}) {
+  const c = cnv(width, height), x = g2(c);
+  x.fillStyle = bg; x.fillRect(0, 0, width, height);
+  const lw = Math.max(6, height * 0.07);
+  x.strokeStyle = border; x.lineWidth = lw; x.strokeRect(lw / 2, lw / 2, width - lw, height - lw);
+  let size = height * 0.62;
+  const fam = font === 'Barlow Condensed' ? `bold ${FONT2}` : FONT;
+  x.font = `${size}px ${fam}`;
+  while (x.measureText(text).width > width * 0.88 && size > 10) { size -= 2; x.font = `${size}px ${fam}`; }
+  x.textAlign = 'center'; x.textBaseline = 'middle';
+  x.fillStyle = fg; x.fillText(text, width / 2, height / 2 + size * 0.04);
+  // a whisper of weathering at the bottom edge only
+  const g = x.createLinearGradient(0, height * 0.7, 0, height);
+  g.addColorStop(0, 'rgba(10,8,6,0)'); g.addColorStop(1, 'rgba(10,8,6,0.22)');
+  x.fillStyle = g; x.fillRect(0, 0, width, height);
+  return c;
 }
 
 // Door atlas: 4 x 2 doors (128x256 each).
@@ -563,16 +606,11 @@ export function signAtlas() {
     x.textAlign = 'center'; x.textBaseline = 'middle';
     x.fillStyle = fg; x.fillText(t, ox + 256, oy + 66);
     e.font = x.font; e.textAlign = 'center'; e.textBaseline = 'middle';
-    e.fillStyle = R() < 0.25 ? '#000' : fg; // some are dead
+    e.fillStyle = R() < 0.1 ? '#000' : fg; // a few are dead
     e.fillText(t, ox + 256, oy + 66);
-    if (R() < 0.4) { // a dead letter
-      const k = ri(0, t.length - 1); const tw = x.measureText(t).width; const lx = ox + 256 - tw / 2 + (tw * (k + 0.5)) / t.length;
-      e.fillStyle = '#000'; e.fillRect(lx - size * 0.3, oy + 20, size * 0.6, 90);
-    }
   });
-  drips(x, W, H, 200, '10,8,6', 0.35);
-  blots(x, W, H, 80, 10, 40, '10,8,6', 0.15, 0.35);
-  noise(x, W, H, 16);
+  drips(x, W, H, 40, '10,8,6', 0.15);
+  noise(x, W, H, 10);
   return { map: toTex(c, { repeat: false }), emissiveMap: toTex(ec, { repeat: false }), count: SHOP_SIGNS.length };
 }
 export function signUV(i) { const u0 = (i % 2) / 2, v1 = 1 - Math.floor(i / 2) / 16; return [u0, v1 - 1 / 16, u0 + 0.5, v1]; }
