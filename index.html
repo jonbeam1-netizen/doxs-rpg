@@ -18,6 +18,26 @@
 }
 </script>
 <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
+<script>
+  // Test sessions (?dev or ?mute) are silent: every AudioContext stays suspended
+  // and speech synthesis is a no-op, whichever module creates them.
+  (function () {
+    var q = new URLSearchParams(location.search);
+    if (!q.has('dev') && !q.has('mute')) return;
+    var AC = window.AudioContext || window.webkitAudioContext;
+    if (AC) {
+      var Muted = class extends AC {
+        constructor(o) { super(o); super.suspend(); }
+        resume() { return Promise.resolve(); }
+      };
+      window.AudioContext = Muted;
+      window.webkitAudioContext = Muted;
+    }
+    if (window.speechSynthesis) window.speechSynthesis.speak = function () {};
+    var A = window.Audio;
+    if (A) window.Audio = function () { var a = new A(); a.muted = true; return a; };
+  })();
+</script>
 </head>
 <body>
 <div id="game"></div>
