@@ -64,6 +64,8 @@ game.player     Player: group, pos, facing, speed, vehicle, dead, moveLocked, ai
                 game.player.group / game.player.model fresh (don't cache them), and re-attach anything
                 you parented to the model (e.g. weapon meshes) on 'player:model-rebuilt' {model}.
 game.cameraRig  yaw, pitch, dist, follow(obj,{height,dist}), shake(amount,time), forward
+game.audio      { ctx (AudioContext|null until first user gesture), sfx (GainNode — connect your SFX here so
+                the volume setting applies), volume, setVolume(v) }   (src/audio/ambience.js)
 game.controlsLocked  true while title/dialogs are open — don't move/attack then.
 game.addSystem({ name, init?(game), update?(dt, game) })   per-frame hook
 game.renderFn   optional (dt)=>void to replace renderer.render (post-processing)

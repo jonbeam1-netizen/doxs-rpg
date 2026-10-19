@@ -1,6 +1,7 @@
 import { Game } from './core/game.js';
 import { Player, CameraRig } from './player/player.js';
 import { showTitle } from './ui/title.js';
+import { installAudio } from './audio/ambience.js';
 import { installWorld } from './world/index.js';
 import { installNPCs } from './npc/index.js';
 import { installVehicles } from './vehicles/index.js';
@@ -11,8 +12,10 @@ import { installNet } from './net/index.js';
 async function boot() {
   const game = new Game(document.getElementById('game'));
   window.game = game; // handy in the console
+  game.devMode = new URLSearchParams(location.search).has('dev');
   game.titleButtons = [];
 
+  installAudio(game);
   await installWorld(game);
 
   game.cameraRig = new CameraRig(game);

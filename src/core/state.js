@@ -169,7 +169,7 @@ export class GameState {
 
   save(silent = true) {
     const g = this.game;
-    if (g.net?.isClient && !silent) { /* clients still save their own character */ }
+    if (g.devMode) return false; // ?dev test sessions never touch the real save slot
     if (g.player) {
       const pos = g.player.vehicle ? g.player.vehicle.group.position : g.player.group.position;
       this.p.pos = { x: Math.round(pos.x * 10) / 10, z: Math.round(pos.z * 10) / 10, facing: g.player.facing };

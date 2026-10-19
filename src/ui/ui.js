@@ -186,8 +186,8 @@ export class UI {
     });
   }
 
-  async confirm(text, { title = 'You sure?', yes = 'Yeah', no = 'Nah' } = {}) {
-    const i = await this.dialog({ title, text, options: [{ label: yes }, { label: no }] });
+  async confirm(text, { title = 'You sure?', yes = 'Yeah', no = 'Nah', html = null } = {}) {
+    const i = await this.dialog({ title, text, html, options: [{ label: yes }, { label: no }] });
     return i === 0;
   }
 

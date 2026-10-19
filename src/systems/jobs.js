@@ -1,0 +1,219 @@
+// Jobs & careers: hiring, shifts (time skip), random shift events, promotions.
+// game.jobs = { current(), def(id), apply(id), quit(), fire(msg), work(id), options(jobId) , JOBS }
+// state.p.job = { id, rank, shifts }   (current job; shifts = shifts worked at this rank)
+// state.p.careers[jobId] = { rank, shifts, total }   (history so you keep your rank if you come back)
+import { JOBS } from '../data/jobs.js';
+import { fmtMoney, pick, chance, rand } from '../core/util.js';
+import { reqCheck, reqHtml, reqMissing, train, isOpen, hoursLabel, hasCourse, ensureState } from './common.js';
+import { say, choose } from './ui-kit.js';
+
+export function installJobs(game) {
+  const st = game.state;
+
+  function career(id) {
+    const p = st.p;
+    p.careers ??= {};
+    return (p.careers[id] ??= { rank: 0, shifts: 0, total: 0 });
+  }
+
+  const jobs = {
+    JOBS,
+    def: (id) => JOBS[id],
+    current() {
+      const j = st.p.job;
+      if (!j || !JOBS[j.id]) return null;
+      const r = JOBS[j.id].ranks[j.rank] || JOBS[j.id].ranks[0];
+      return { id: j.id, rank: j.rank, shifts: j.shifts, title: r.title, pay: r.pay, def: JOBS[j.id] };
+    },
+    has: (id) => st.p.job?.id === id,
+
+    async apply(id) {
+      const d = JOBS[id];
+      const p = st.p;
+      const c = career(id);
+      const rank = Math.min(c.rank, d.ranks.length - 1);
+      const r = d.ranks[rank];
+      const req = { ...r.req, ...(id === 'cop' ? { maxHeat: 0 } : {}) };
+      const chk = reqCheck(game, req);
+      if (!chk.ok) {
+        await say(game, d.name, `${d.boss} looks you up and down. "${pick(['Come back when you\'re less pathetic.', 'We have standards. Low ones. You\'re under them.', 'Lol. No.'])}"<br><br>Needs: ${reqHtml(game, req)}`, d.boss);
+        return false;
+      }
+      if (p.job && p.job.id !== id) {
+        const cur = JOBS[p.job.id];
+        if (!(await game.ui.confirm(`Quit your job at ${cur?.name ?? p.job.id} to work here?`, { title: 'Career change' }))) return false;
+      }
+      p.job = { id, rank, shifts: c.shifts };
+      st.changed('job');
+      game.bus.emit('job:hired', { jobId: id, rank, pay: r.pay });
+      game.ui.bigText('HIRED', `${r.title} at ${d.name}`, 2200);
+      await say(game, d.name, `${hireLine(id)}<br><br>You're a <b>${r.title}</b>. Pay: <b>${fmtMoney(r.pay)}${d.kind === 'delivery' ? ' per delivery + tips' : '/hour'}</b>.<br><span class="sys-hint">${d.hours ? `Shifts can start ${hoursLabel(d.hours).replace('Open ', '')}.` : 'Shifts any time, day or night.'} Work ${r.shifts < 999 ? r.shifts : '—'} shifts for a shot at promotion.</span>`, d.boss);
+      return true;
+    },
+
+    quit() {
+      const p = st.p;
+      if (!p.job) return;
+      const d = JOBS[p.job.id];
+      game.ui.toast(`You quit ${d?.name}. You flip off the building on your way out.`, 'info', 3000);
+      p.job = null;
+      st.changed('job');
+    },
+
+    fire(msg) {
+      const p = st.p;
+      if (!p.job) return;
+      const c = career(p.job.id);
+      c.rank = Math.max(0, c.rank - 1);
+      c.shifts = 0;
+      p.job = null;
+      st.changed('job');
+      game.ui.bigText('FIRED', msg || 'Clean out your desk.', 3000);
+    },
+
+    // The shift picker + result for 'shift' jobs.
+    async work(id) {
+      const d = JOBS[id];
+      const p = st.p;
+      if (p.job?.id !== id) return;
+      if (d.kind === 'delivery') return game.sysDelivery?.start();
+      if (!isOpen(game, d.hours)) { await say(game, d.name, `No shifts starting now. ${hoursLabel(d.hours)}.`); return; }
+      if (id === 'cop' && p.heat > 0) { await say(game, d.name, `Chief Hamhock squints. "Funny thing. There's a warrant out for a guy who looks EXACTLY like you. Clear that up first." (Pay off your heat.)`, 'Chief Hamhock'); return; }
+      if (p.sys.drunk >= 3) { await say(game, d.name, `${d.boss}: "You're hammered. Go home. And don't throw up on the—" You throw up on the thing.`, d.boss); return; }
+      const r = d.ranks[p.job.rank];
+      const hours = await choose(game, {
+        title: `Work a shift — ${r.title}`,
+        html: `${fmtMoney(r.pay)}/hour · costs ${d.energy} energy/hour. You have ${Math.floor(p.energy)} energy.`,
+        choices: [2, 4, 8].map((h) => ({ label: `${h}-hour shift`, hint: `${fmtMoney(r.pay * h)} · -${d.energy * h} energy`, disabled: p.energy < d.energy * h, value: h })),
+      });
+      if (!hours) return;
+      await doShift(id, hours);
+    },
+  };
+  game.jobs = jobs;
+
+  async function doShift(id, hours) {
+    const d = JOBS[id];
+    const p = st.p;
+    const r = d.ranks[p.job.rank];
+    st.addStat('energy', -d.energy * hours);
+    game.time.advance(hours * 60);
+    let pay = r.pay * hours;
+    let extra = '';
+    if (hasCourse(p, 'bs101')) pay *= 1.1;
+    if (d.tips) {
+      const tips = Math.round(rand(0.2, 1) * (2 + p.cha * 0.12) * hours);
+      pay += tips;
+      extra += `<br>Tips: <b>${fmtMoney(tips)}</b> (and a phone number written on a napkin in what you hope is ketchup).`;
+    }
+    pay = Math.round(pay);
+    // random event
+    if (d.events?.length && chance(0.35)) {
+      const ev = pick(d.events);
+      extra += `<br><br><em>${ev.text}</em>`;
+      if (ev.money) pay += ev.money;
+      if (ev.hp) st.damage(-ev.hp, 'work');
+      if (ev.energy) st.addStat('energy', ev.energy);
+      if (ev.karma) st.addStat('karma', ev.karma);
+      if (ev.cha) st.addStat('cha', ev.cha);
+      if (ev.item) { st.addItem(ev.item, 1); extra += ` <span class="ui-good">(+${game.items?.name(ev.item)})</span>`; }
+    }
+    st.addMoney(pay, 'job');
+    for (const [k, v] of Object.entries(d.gain || {})) train(game, k, v * hours, 'job:' + id);
+    if (id === 'cop') st.addStat('karma', 1);
+    st.addXP(hours * 4 + p.job.rank * 2);
+    p.job.shifts++;
+    const c = career(id);
+    c.shifts = p.job.shifts;
+    c.rank = p.job.rank;
+    c.total++;
+    st.changed('job');
+    game.bus.emit('job:worked', { jobId: id, rank: p.job.rank, pay, hours });
+    const promo = checkPromotion(id);
+    await say(game, `${d.name} — shift over`, `${pick(d.lines)}${extra}<br><br>You worked <b>${hours} hours</b> as ${r.title} and earned <b class="ui-good">${fmtMoney(pay)}</b>.${promo ? `<br><br>${promo}` : ''}`, d.boss);
+  }
+
+  function checkPromotion(id) {
+    const d = JOBS[id];
+    const p = st.p;
+    const r = d.ranks[p.job.rank];
+    const next = d.ranks[p.job.rank + 1];
+    if (!next || p.job.shifts < r.shifts) return '';
+    const chk = reqCheck(game, next.req);
+    if (!chk.ok) {
+      return `<span class="sys-hint">${d.boss}: "You've put in the time for <b>${next.title}</b>, but you're missing: ${reqMissing(game, next.req)}."</span>`;
+    }
+    p.job.rank++;
+    p.job.shifts = 0;
+    const c = career(id);
+    c.rank = p.job.rank; c.shifts = 0;
+    st.changed('job');
+    game.bus.emit('job:promoted', { jobId: id, rank: p.job.rank, pay: next.pay });
+    st.addXP(50 * p.job.rank);
+    setTimeout(() => game.ui.bigText('PROMOTED!', `${next.title} — ${fmtMoney(next.pay)}${d.kind === 'delivery' ? '/drop' : '/hr'}`, 3000), 50);
+    return `<b class="ui-good">PROMOTION!</b> ${promoLine(id, next.title)} New pay: <b>${fmtMoney(next.pay)}${d.kind === 'delivery' ? ' per delivery' : '/hr'}</b>.`;
+  }
+  jobs.checkPromotion = checkPromotion;
+  jobs.career = career;
+
+  // Menu options to drop into a workplace's placeMenu.
+  jobs.options = (id) => {
+    const d = JOBS[id];
+    const p = st.p;
+    const mine = p.job?.id === id;
+    const c = career(id);
+    const r = d.ranks[Math.min(c.rank, d.ranks.length - 1)];
+    const out = [];
+    if (!mine) {
+      const req = { ...r.req, ...(id === 'cop' ? { maxHeat: 0 } : {}) };
+      const ok = reqCheck(game, req).ok;
+      out.push({ label: `Apply for a job: ${r.title}`, hint: `${fmtMoney(r.pay)}${d.kind === 'delivery' ? '/drop' : '/hr'}${ok ? '' : ' · needs ' + reqMissing(game, req)}`, run: () => jobs.apply(id) });
+    } else {
+      const cr = d.ranks[p.job.rank];
+      const next = d.ranks[p.job.rank + 1];
+      out.push({
+        label: d.kind === 'delivery' ? 'Grab pizzas for a delivery run' : `Work a shift (${cr.title})`,
+        hint: `${fmtMoney(cr.pay)}${d.kind === 'delivery' ? '/drop' : '/hr'}${isOpen(game, d.hours) ? '' : ' · not now'}`,
+        disabled: !isOpen(game, d.hours) || !!game.sysDelivery?.active,
+        run: () => jobs.work(id),
+      });
+      out.push({
+        label: 'Ask about a promotion',
+        hint: next ? `${Math.max(0, cr.shifts - p.job.shifts)} shifts to go` : 'top of the ladder',
+        run: () => say(game, d.name, next
+          ? `${d.boss}: "Next rung is <b>${next.title}</b> at ${fmtMoney(next.pay)}${d.kind === 'delivery' ? '/drop' : '/hr'}. Put in ${Math.max(0, cr.shifts - p.job.shifts)} more shifts and have: ${reqHtml(game, next.req) || 'a pulse'}."`
+          : `${d.boss}: "You're ${cr.title}. There's nowhere left to climb, unless you want MY job." He grips his stapler protectively.`, d.boss),
+      });
+      out.push({ label: 'Quit', hint: 'storm out dramatically', run: async () => { if (await game.ui.confirm(`Quit ${d.name}?`)) jobs.quit(); } });
+    }
+    return out;
+  };
+
+  function hireLine(id) {
+    return {
+      diner: 'Big Marge throws an apron at your face. "Hairnet stays on. If I find one of your hairs in the food, I\'m puttin\' one of mine in yours."',
+      pizza: 'Tony Butt hands you a hat shaped like a butt. "Wear it with pride. Or shame. Either way, wear it."',
+      factory: 'Foreman Gristle hands you a rubber apron that is already wet. "Don\'t ask what it\'s wet with. Lockers are in the back. Don\'t open locker 13."',
+      office: 'Mr. Grimsby shakes your hand without looking up. "Welcome to the Grimco family. Families don\'t unionize."',
+      bartender: 'One-Eyed Sal tosses you a rag. "Wipe the bar. Wipe the glasses. Never wipe the stool by the bathroom. Ever."',
+      cop: 'Chief Hamhock pins a badge on you. It goes through your shirt and into your nipple. "Welcome to the force, rookie."',
+      bouncer: 'Velvet Vince looks at your arms and nods. "Rule one: nobody in sneakers. Rule two: unless they tip. Rule three: always tip Vince."',
+      scrapper: 'Scrapper Pete spits. "You\'re hired. Mr. Chompers hasn\'t bitten you yet so you\'re already doin\' better than the last guy."',
+    }[id] || 'You\'re hired.';
+  }
+  function promoLine(id, title) {
+    return {
+      diner: `Marge gives you a hug that smells like bacon grease. You're now ${title}.`,
+      factory: `Gristle hands you a slightly bigger knife. You're ${title} now.`,
+      office: `You get a business card that says "${title}". Your mom finally puts your photo back on the fridge.`,
+      cop: `The Chief hands you a fresh badge and a box of donuts. You are ${title}. The donuts are evidence, so eat fast.`,
+      pizza: `Tony Butt crowns you with a bigger butt hat. All hail the ${title}.`,
+      bartender: `Sal gives you the good rag. You're ${title}.`,
+      bouncer: `Vince gives you a bigger flashlight to hit people with. You're ${title}.`,
+      scrapper: `Pete lets you drive the crusher. Mr. Chompers salutes. You're ${title}.`,
+    }[id] || `You're now ${title}.`;
+  }
+
+  game.bus.on('state:reset', () => ensureState(st.p));
+  return jobs;
+}
