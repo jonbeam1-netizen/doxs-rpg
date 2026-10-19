@@ -19,18 +19,32 @@ export class Input {
       if (['Tab', 'Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.code)) e.preventDefault();
     });
     addEventListener('keyup', (e) => this.down.delete(e.code));
-    addEventListener('blur', () => { this.down.clear(); this.mouse.buttons.clear(); });
+    addEventListener('blur', () => {
+      this.down.clear(); this.mouse.buttons.clear();
+      this._dragButton = null; this.canvas.style.cursor = '';
+    });
 
     canvas.addEventListener('mousedown', (e) => {
       this.mouse.buttons.add(e.button);
       if (e.button === 1) e.preventDefault(); // no browser autoscroll; middle-drag turns the camera
       if (game.controlsLocked) return;
       this.mouse.clicked.add(e.button);
-      if (!this.locked && this.pointerLockEnabled && e.button === 0) {
-        try { canvas.requestPointerLock?.()?.catch?.(() => {}); } catch { /* not allowed in some frames */ }
+      if (!this.locked && this.pointerLockEnabled && e.button === 0) this._lock();
+      // Middle/right drag: lock + hide the cursor only while the button is held.
+      if (!this.locked && (e.button === 1 || e.button === 2)) {
+        this._dragButton = e.button;
+        canvas.style.cursor = 'none'; // fallback where pointer lock isn't allowed
+        this._lock();
       }
     });
-    addEventListener('mouseup', (e) => this.mouse.buttons.delete(e.button));
+    addEventListener('mouseup', (e) => {
+      this.mouse.buttons.delete(e.button);
+      if (e.button === this._dragButton) {
+        this._dragButton = null;
+        canvas.style.cursor = '';
+        if (document.pointerLockElement === canvas) document.exitPointerLock();
+      }
+    });
     addEventListener('mousemove', (e) => {
       this.mouse.x = e.clientX; this.mouse.y = e.clientY;
       if (this.locked || this.mouse.buttons.has(2) || this.mouse.buttons.has(1)) {
@@ -41,6 +55,10 @@ export class Input {
     canvas.addEventListener('contextmenu', (e) => e.preventDefault());
     addEventListener('wheel', (e) => { if (!game.controlsLocked) this.mouse.wheel += Math.sign(e.deltaY); }, { passive: true });
     document.addEventListener('pointerlockchange', () => { this.locked = document.pointerLockElement === canvas; });
+  }
+
+  _lock() {
+    try { this.canvas.requestPointerLock?.()?.catch?.(() => {}); } catch { /* not allowed in some frames */ }
   }
 
   isTyping() {
