@@ -23,7 +23,7 @@ export function installTraining(game) {
     if (!activity(game, { minutes: W.min, energy: W.energy })) return;
     if (W.hp) st.damage(W.hp, 'spar');
     const gained = train(game, 'str', W.str, 'gym');
-    st.addXP(Math.round(W.min / 15));
+    st.addXP(Math.round(W.min / 10));
     let extra = '';
     if (kind === 'cardio' && p.maxEnergy < 200 && chance(0.3)) { p.maxEnergy += 1; st.changed('energy'); extra = '<br><span class="ui-good">Your stamina improves: +1 max energy.</span>'; }
     if (game.sysFx.has('roids') && chance(0.25)) extra += '<br><em>Roid rage! You scream at a water fountain. It had it coming.</em>';
@@ -98,12 +98,13 @@ export function installTraining(game) {
         { label: 'Read for an hour', hint: '1h · -5 energy · +INT', run: async () => {
           if (!activity(g, { minutes: 60, energy: 5 })) return;
           const gain = train(g, 'int', 0.9, 'library', 40);
+          st.addXP(4);
           return say(g, 'Reading', `${pick(['You read about the history of spoons. It\'s riveting. It\'s not.', 'You read a book on quantum physics. You understand one word: "the".', 'You read the entire "Garfield" collection. Educational? Debatable.', 'You read a romance novel called "Lust in the Rendering Plant". You learn several new words for "throbbing".'])}<br><br>+${Math.round(gain * 100) / 100} INT`);
         } },
         { label: 'Hit the books hard', hint: '3h · -18 energy · ++INT', run: async () => {
           if (!activity(g, { minutes: 180, energy: 18 })) return;
           const gain = train(g, 'int', 2.8, 'library', 40);
-          st.addXP(8);
+          st.addXP(14);
           return say(g, 'Study Session', `Three hours of hardcore studying. You highlight everything. Every word is yellow. You have learned that highlighting is not learning. +${Math.round(gain * 100) / 100} INT`);
         } },
         { label: 'Used book sale', run: () => shopPanel(g, { title: 'Friends of the Library Book Sale', speaker: 'Mrs. Shush', intro: '"All proceeds go to fixing the book drop. You know why."', sections: [{ products: ['book_dummies', 'book_cheese', 'book_barfight', 'book_anatomy', 'book_seduction', 'newspaper'].map((id) => {
@@ -128,6 +129,17 @@ export function installTraining(game) {
           if (chance(0.35)) return say(g, 'Reading Room', 'You doze off. Mrs. Shush slams a dictionary next to your head. You wake up screaming. Everyone shushes YOU. No energy for you.');
           st.addStat('energy', 12);
           return say(g, 'Reading Room', 'You nap face-down in an atlas. You wake up with Madagascar printed on your cheek. +12 energy.');
+        } },
+        { label: 'Public speaking club', hint: '$5 · 2h · -12 energy · +CHA', run: async () => {
+          if (!activity(g, { minutes: 120, energy: 12, cost: 5, reason: 'club dues' })) return;
+          const gain = train(g, 'cha', 1.5, 'speaking club');
+          st.addXP(8);
+          return say(g, 'Speakers of Rotwell (Club 4)', `${pick([
+            'You give a speech titled "Why I Deserve Things". A retiree heckles you. You heckle back. The club votes it your best work.',
+            'Tonight\'s topic: eye contact. You hold eye contact with a man for nine minutes. Neither of you blinks. You both grow.',
+            'You practice your handshake on 14 strangers. Two are firm. One is moist. You learn from all of them.',
+            'Mrs. Shush times your speech with a stopwatch and a glare. You finish under time. She almost nods.',
+          ])}<br><br>+${Math.round(gain * 100) / 100} CHA`, 'Mrs. Shush');
         } },
         { label: 'Study group for night school', hint: 'needs INT 25 · +CHA/INT · 2h', disabled: p.int < 25, run: async () => {
           if (!activity(g, { minutes: 120, energy: 12 })) return;

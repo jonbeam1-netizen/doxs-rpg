@@ -1,6 +1,7 @@
 import { CHARACTERS, ENDINGS, FACTIONS, QUEST_ITEMS, INTRO, TUTORIAL } from '../data/quests.js';
 import { esc, fmtMoney } from '../core/util.js';
 import { KIND_COLORS } from './engine.js';
+import { goalsHtml, goalsSheetHtml, PATHS } from './goals.js';
 
 const CSS = `
 .ui-text p, .ui-body p.q-say, .ui-body p.q-nar, .ui-body p.q-you { margin: 0 0 8px; }
@@ -51,6 +52,14 @@ const CSS = `
 .q-end .q-end-btns { opacity:0; animation: qFade 1s forwards; display:flex; gap:10px; justify-content:center; }
 @keyframes qFade { from { opacity:0; transform: translateY(8px); } to { opacity:1; transform:none; } }
 @keyframes qSlam { 0% { opacity:0; transform: scale(2.2); } 60% { opacity:1; transform: scale(.95); } 100% { opacity:1; transform: scale(1); } }
+.q-goal-main { background:#1b1814; border:1px solid #2e2821; border-left:4px solid #f2c53d; padding:10px 12px; margin-bottom:6px; }
+.q-goal-main h3 { margin:0 0 2px; font-size:21px; font-family: var(--font-title, 'Special Elite'), monospace; font-weight:400; color:#f2c53d; }
+.q-goal-main .q-kind { font-size:12px; text-transform:uppercase; letter-spacing:1px; color: var(--bone-dim); }
+.q-goal-main .q-sum { color: var(--bone-dim); font-size:16px; margin:4px 0 6px; }
+.q-card .q-reqs { margin:6px 0 2px; display:flex; flex-wrap:wrap; gap:4px; }
+#q-tracker .qt-fin { display:inline-block; font-size:12px; letter-spacing:2px; background:#f2c53d; color:#1a140c; padding:0 6px; margin-right:6px; vertical-align:middle; }
+.q-end .q-end-reward { font-size:18px; color:#f2c53d; margin:6px 0 4px; opacity:0; animation: qFade 1s forwards; }
+.q-end .q-end-left { text-align:left; font-size:16px; color: var(--bone-dim); margin:4px auto 14px; max-width:620px; opacity:0; animation: qFade 1s forwards; }
 .toast .q-toast-k { color:#f2c53d; text-transform:uppercase; font-size:14px; letter-spacing:1px; margin-right:6px; }
 `;
 
@@ -71,7 +80,7 @@ export class QuestPanels {
     injectStyles();
     this._buildTracker();
     this.logEntry = null;
-    this.logTab = 'active';
+    this.logTab = 'goals';
 
     game.bus.on('quests:ending-request', ({ id, variant }) => this.showEnding(id, variant));
     game.bus.on('quests:changed', () => { this._trackerDirty = true; if (this.logEntry && !this.logEntry.closed) this._renderLog(); });
@@ -110,7 +119,8 @@ export class QuestPanels {
       const d = this.q.def(id);
       const color = KIND_COLORS[d.kind] || '#ccc';
       const more = this.q.activeIds().length - 1;
-      html = `<div class="qt-title" style="color:${color}">${esc(d.title)}</div><div class="qt-obj">${esc(this.q.objectiveText(id))}</div>`;
+      const fin = !!this.q.current(id)?.finale;
+      html = `<div class="qt-title" style="color:${color}">${fin ? '<span class="qt-fin">FINALE</span>' : ''}${esc(d.title)}</div><div class="qt-obj">${esc(this.q.objectiveText(id).replace(/^FINALE: /, ''))}</div>`;
       if (timeLeft != null) {
         const s = Math.max(0, Math.ceil(timeLeft));
         html += `<div class="qt-timer">${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}</div>`;
@@ -133,9 +143,11 @@ export class QuestPanels {
   _renderLog() {
     const g = this.g, q = this.q, body = this.logEntry?.body;
     if (!body) return;
-    const tabs = [['active', 'Active'], ['leads', 'Leads'], ['done', 'Completed'], ['factions', 'Factions & Endings']];
+    const tabs = [['goals', 'Goals'], ['active', 'Active'], ['leads', 'Leads'], ['done', 'Completed'], ['factions', 'Factions & Endings']];
     let html = `<div class="q-log-tabs">${tabs.map(([k, l]) => `<button class="ui-btn ${this.logTab === k ? 'on' : ''}" data-tab="${k}">${l}</button>`).join('')}</div>`;
-    if (this.logTab === 'active') {
+    if (this.logTab === 'goals') {
+      try { html += goalsHtml(g); } catch (e) { console.error('[quests] goals failed', e); html += '<div class="ui-muted">Goals unavailable.</div>'; }
+    } else if (this.logTab === 'active') {
       const ids = q.activeIds().sort((a, b) => rank(q.def(a)) - rank(q.def(b)));
       if (!ids.length) html += '<div class="ui-muted">Nothing on your plate. Go bother somebody with a "!" over their head.</div>';
       const tracked = q.trackedId();
@@ -212,7 +224,9 @@ export class QuestPanels {
     const items = Object.entries(g.state.p.inventory || {}).filter(([id]) => QUEST_ITEMS[id]);
     const f = q.faction();
     const ends = g.state.getFlag('endings', []) || [];
-    let html = '<div class="ui-section">Street cred</div><table class="ui-table">';
+    let html = '';
+    try { html += goalsSheetHtml(g); } catch (e) { console.error('[quests] goals sheet failed', e); }
+    html += '<div class="ui-section">Street cred</div><table class="ui-table">';
     html += `<tr><td>Gang</td><td>${f ? `${esc(FACTIONS[f].name)} — ${esc(q.rankName(f))} (${q.rep(f)} rep)` : 'Unaffiliated'}</td></tr>`;
     if (ends.length) html += `<tr><td>Titles</td><td>${ends.map((e) => esc(ENDINGS[e]?.title || e)).join(', ')}</td></tr>`;
     html += '</table>';
@@ -230,6 +244,17 @@ export class QuestPanels {
     if (first) ends.push(id);
     g.state.setFlag('endings', ends);
     g.state.setFlag('ending_' + id, variant || true);
+    // Beating the game: keep everything, plus a New-Game+-style bonus for each new ending.
+    if (first) {
+      try {
+        p.progress ??= {};
+        p.progress.bonusPoints = (p.progress.bonusPoints || 0) + 2;
+        g.state.setFlag('postgame', true);
+        g.state.addXP(500);
+        g.state.changed('progress');
+      } catch (e) { console.error('[quests] ending reward failed', e); }
+    }
+    const left = PATHS.filter((x) => !ends.includes(x.ending));
     g.bus.emit('ending:reached', { id, variant });
     try { g.net?.broadcast?.({ t: 'q_ending', name: p.name, title: E.title }); } catch { /* ignore */ }
     g.ui.closeAll();
@@ -247,13 +272,15 @@ export class QuestPanels {
       <div class="q-end-title" style="color:${E.color}">${esc(E.title)}</div>
       ${paras.map((t, i) => `<p style="animation-delay:${delay(i)}s">${esc(t)}</p>`).join('')}
       <div class="q-end-stats" style="animation-delay:${delay(n)}s">${stats.map(([k, v]) => `<div><b>${esc(String(v))}</b>${esc(k)}</div>`).join('')}</div>
-      <div class="ui-muted" style="opacity:0;animation:qFade 1s ${delay(n + 0.5)}s forwards;margin-bottom:12px">${ends.length}/${Object.keys(ENDINGS).length} endings found. Rotwell keeps going whether you like it or not.</div>
+      ${first ? `<div class="q-end-reward" style="animation-delay:${delay(n + 0.3)}s">Title earned: <b>${esc(E.title)}</b> · +2 perk points · +500 XP</div>` : ''}
+      <div class="ui-muted" style="opacity:0;animation:qFade 1s ${delay(n + 0.5)}s forwards;margin-bottom:8px">${ends.length}/${Object.keys(ENDINGS).length} endings found. You keep your money, stats and stuff. Rotwell keeps going whether you like it or not.</div>
+      ${left.length ? `<div class="q-end-left" style="animation-delay:${delay(n + 0.6)}s">Still out there: ${left.map((x) => `<b>${esc(ENDINGS[x.ending].sub)}</b> (${esc(x.door)}: ${esc(x.style.toLowerCase())})`).join(' · ')}. Check the Goals tab (J).</div>` : '<div class="q-end-left">Every ending found. You are the undisputed plunger of Rotwell.</div>'}
       <div class="q-end-btns" style="animation-delay:${delay(n + 0.8)}s"><button class="ui-btn primary" data-keep>Keep playing</button></div>
     </div>`;
     const entry = g.ui.openPanel({ title: '', body: html, closable: false, className: 'q-ending' });
     entry.body.querySelector('[data-keep]').addEventListener('click', () => {
       entry.close();
-      g.ui.toast('The story\'s over. The rent isn\'t. Keep playing.', 'info', 4000);
+      g.ui.toast('The story\'s over. The rent isn\'t. Keep playing: other endings, heists, the island and achievements are waiting (J, Goals tab).', 'info', 6000);
       g.state.save(true);
     });
   }

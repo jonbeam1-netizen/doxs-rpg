@@ -16,6 +16,9 @@ export const EFFECT_DEFS = {
   caffeine: { label: 'Wired', kind: 'good' },
 };
 
+// Max total temporary bonus per stat from stacked effects.
+export const TEMP_CAP = 10;
+
 export function installEffects(game) {
   const fx = {
     get p() { return game.state.p; },
@@ -37,8 +40,14 @@ export function installEffects(game) {
         speed: e.speed ?? 1, trip: e.trip || null, applied: {},
       };
       // Temporary stat mods are applied for real (so combat etc. see them) and removed on expiry.
-      for (const [k, v] of Object.entries(e.temp || {})) {
+      for (const [k, v0] of Object.entries(e.temp || {})) {
         if (k === 'min' || !(k in p)) continue;
+        let v = v0;
+        if (v > 0) {
+          // Stacked temporary boosts (booze + cologne + pills + ...) cap at +TEMP_CAP per stat.
+          const stacked = p.effects.reduce((a, x) => a + Math.max(0, x.applied?.[k] || 0), 0);
+          v = Math.max(0, Math.min(v, TEMP_CAP - stacked));
+        }
         const before = p[k];
         p[k] = Math.max(0, Math.round((p[k] + v) * 10) / 10);
         rec.applied[k] = p[k] - before;

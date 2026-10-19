@@ -8,8 +8,10 @@ import * as THREE from 'three';
 //   build: one of BUILDS keys ('average', 'scrawny', 'lanky', 'chonky', 'shrimp')
 // lookToStickman(look) turns a saved state.p.look into createStickman options.
 // s.animate(dt, speed, { aim, airborne })  // call every frame
-// s.punch()                                // play a swing
-// s.setDead(true)                          // ragdoll-ish flop
+// s.punch(dur?, style?)                    // play a swing ('jab','cross','hook','uppercut','slash','overhead','kick','heavy','slam')
+// s.windup(dur, style?, glowColor?)        // telegraph pose before an attack (s.cancelWindup())
+// s.setBlock(on) / s.roll(dur) / s.hitReact(side)   // guard pose, dodge roll, flinch
+// s.setDead(true, { fall: true }?)         // ragdoll-ish flop (animated with fall:true)
 // s.flash()                                // red hit flash
 // s.rightHand / s.leftHand                 // attach weapon meshes here (they point down -Y)
 
@@ -106,15 +108,44 @@ export function createStickman({ color = 0x141414, scale = 1, hat = null, hatCol
 
   root.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = false; } });
 
-  const st = { phase: Math.random() * 10, punch: 0, punchDur: 0.28, dead: false, flash: 0 };
+  // 'YXZ' so a horizontal arm can sweep around the vertical axis (hooks/slashes).
+  // Identical to the default order whenever rotation.y is 0.
+  armL.upper.rotation.order = 'YXZ';
+  armR.upper.rotation.order = 'YXZ';
+  const baseScale = body.scale.x;
+
+  const st = {
+    phase: Math.random() * 10, punch: 0, punchDur: 0.28, dead: false, flash: 0,
+    style: null, wind: 0, windDur: 0, windStyle: null, block: false, blockK: 0,
+    roll: 0, rollDur: 0.4, hit: 0, hitSide: 0, tele: 0, teleCol: new THREE.Color(1, 0.45, 0),
+    fall: null, // { k, dir:+1 down / -1 up, dur }
+  };
   const baseEmissive = new THREE.Color(0x000000);
+  const _c = new THREE.Color();
+
+  function setEmissive(c) { mat.emissive.copy(c); if (headMat !== mat) headMat.emissive.copy(c); }
 
   function animate(dt, speed = 0, opts = {}) {
     if (st.flash > 0) {
       st.flash -= dt;
       mat.emissive.setRGB(Math.max(0, st.flash) * 3, 0, 0);
       if (headMat !== mat) headMat.emissive.copy(mat.emissive);
-      if (st.flash <= 0) { mat.emissive.copy(baseEmissive); if (headMat !== mat) headMat.emissive.copy(baseEmissive); }
+      if (st.flash <= 0) setEmissive(baseEmissive);
+    } else if (st.tele > 0) {
+      // attack telegraph: pulsing glow that speeds up as the hit gets close
+      st.tele -= dt;
+      const pulse = 0.55 + 0.45 * Math.sin(st.tele * 38);
+      setEmissive(_c.copy(st.teleCol).multiplyScalar(st.tele > 0 ? 0.9 * pulse : 0));
+    }
+    // animated knockdown / get-up (only when asked for with setDead(on, { fall: true }))
+    if (st.fall) {
+      const f = st.fall;
+      f.k = Math.min(1, f.k + dt / f.dur);
+      const e = f.dir > 0 ? f.k * f.k : 1 - (1 - f.k) * (1 - f.k);
+      const amt = f.dir > 0 ? e : 1 - e;
+      body.rotation.x = -Math.PI / 2 * amt;
+      body.position.y = 0.12 * amt;
+      if (f.k >= 1) st.fall = null;
     }
     if (st.dead) return;
     const s = Math.min(speed / 6, 1.5);
@@ -145,32 +176,172 @@ export function createStickman({ color = 0x141414, scale = 1, hat = null, hatCol
       armL.upper.rotation.set(-Math.PI / 2 + 0.25, 0, -0.45);
       armL.lower.rotation.x = -0.3;
     }
+    // guard: forearms up in front of the face
+    const bk = st.blockK = st.blockK + ((st.block ? 1 : 0) - st.blockK) * Math.min(1, dt * 18);
+    if (bk > 0.01) {
+      const mix = (a, b) => a + (b - a) * bk;
+      armL.upper.rotation.set(mix(armL.upper.rotation.x, -1.25), 0, mix(armL.upper.rotation.z, -0.55));
+      armL.lower.rotation.x = mix(armL.lower.rotation.x, -1.9);
+      armR.upper.rotation.set(mix(armR.upper.rotation.x, -1.25), 0, mix(armR.upper.rotation.z, 0.55));
+      armR.lower.rotation.x = mix(armR.lower.rotation.x, -1.9);
+      torso.rotation.x += 0.12 * bk;
+      hips.position.y -= 0.05 * bk;
+    }
+
+    let twist = 0;
+    if (st.wind > 0) {
+      // wind-up / telegraph: cock the arm (or leg) back and tremble right before release
+      st.wind -= dt;
+      const k = 1 - Math.max(0, st.wind) / st.windDur;
+      const e = Math.min(1, k * 3);
+      const tr = k > 0.6 ? Math.sin(st.wind * 70) * 0.05 : 0;
+      const ws = st.windStyle || opts.swingStyle;
+      if (ws === 'overhead' || ws === 'slam') {
+        armR.upper.rotation.set(-2.85 * e + tr, 0, -0.15);
+        armR.lower.rotation.x = -0.5 * e;
+        if (ws === 'slam') { armL.upper.rotation.set(-2.85 * e + tr, 0, 0.15); armL.lower.rotation.x = -0.5 * e; }
+        torso.rotation.x -= 0.2 * e;
+      } else if (ws === 'kick') {
+        legR.upper.rotation.x = 0.55 * e; legR.lower.rotation.x = 0.9 * e;
+        torso.rotation.x += 0.15 * e;
+      } else if (ws === 'charge') {
+        torso.rotation.x += 0.55 * e;
+        armL.upper.rotation.set(0.7 * e, 0, 0.4); armR.upper.rotation.set(0.7 * e, 0, -0.4);
+        hips.position.y -= 0.12 * e;
+        legL.upper.rotation.x = -0.5 * e; legL.lower.rotation.x = 0.7 * e;
+      } else if (ws === 'taser') {
+        armR.upper.rotation.set(-Math.PI / 2 + tr, 0, -0.05);
+        armR.lower.rotation.x = 0;
+      } else {
+        armR.upper.rotation.set(0.55 * e + tr, 0, -0.55 * e);
+        armR.lower.rotation.x = -1.9 * e;
+        armL.upper.rotation.set(-0.9 * e, 0, -0.2);
+        armL.lower.rotation.x = -1.6 * e;
+        twist = 0.45 * e;
+        hips.position.y -= 0.06 * e;
+      }
+      if (st.wind <= 0) st.windStyle = null;
+    }
+
     if (st.punch > 0) {
       st.punch -= dt;
       const t = 1 - Math.max(0, st.punch) / st.punchDur;
       const ext = Math.sin(t * Math.PI);
-      if (opts.swingStyle === 'overhead') {
-        armR.upper.rotation.set(-2.6 + t * 2.4, 0, -0.1);
-        armR.lower.rotation.x = -0.3;
-      } else {
-        armR.upper.rotation.set(-1.55 * ext - (1 - ext) * 0.2, 0.25 * ext, -0.12);
-        armR.lower.rotation.x = -0.6 * (1 - ext);
+      const style = st.style || opts.swingStyle;
+      switch (style) {
+        case 'overhead':
+        case 'slam':
+          armR.upper.rotation.set(-2.6 + t * 2.4, 0, -0.1);
+          armR.lower.rotation.x = -0.3;
+          if (style === 'slam') { armL.upper.rotation.set(-2.6 + t * 2.4, 0, 0.1); armL.lower.rotation.x = -0.3; }
+          torso.rotation.x += 0.3 * ext;
+          break;
+        case 'cross':
+          armL.upper.rotation.set(-1.55 * ext - (1 - ext) * 0.2, 0, -0.1 * ext + 0.18 * (1 - ext));
+          armL.lower.rotation.x = -0.6 * (1 - ext);
+          twist = 0.4 * ext;
+          break;
+        case 'hook':
+        case 'slash': {
+          const sweep = style === 'slash' ? 2.2 : 1.7;
+          armR.upper.rotation.set(-1.45 * Math.min(1, ext * 2), -1.25 + sweep * t, -0.1);
+          armR.lower.rotation.x = style === 'slash' ? -0.15 : -0.9;
+          twist = -0.55 + 1.0 * t;
+          break;
+        }
+        case 'uppercut':
+          armR.upper.rotation.set(0.3 - 2.6 * t, 0, -0.15);
+          armR.lower.rotation.x = -1.4 + 0.6 * ext;
+          torso.rotation.x -= 0.25 * ext;
+          hips.position.y += 0.08 * ext;
+          twist = -0.3 * ext;
+          break;
+        case 'kick':
+          legR.upper.rotation.x = -1.55 * ext;
+          legR.lower.rotation.x = 0.9 * (1 - ext);
+          legL.upper.rotation.x = 0.1 * ext; legL.lower.rotation.x = 0.15 * ext;
+          torso.rotation.x -= 0.3 * ext;
+          armL.upper.rotation.set(-0.5 * ext, 0, 0.6); armR.upper.rotation.set(0.3 * ext, 0, -0.7);
+          break;
+        case 'heavy':
+          armR.upper.rotation.set(-1.6 * ext - (1 - ext) * 0.2, 0.15 * ext, -0.12);
+          armR.lower.rotation.x = -0.4 * (1 - ext);
+          torso.rotation.x += 0.25 * ext;
+          twist = -0.6 * ext;
+          break;
+        default:
+          armR.upper.rotation.set(-1.55 * ext - (1 - ext) * 0.2, 0.25 * ext, -0.12);
+          armR.lower.rotation.x = -0.6 * (1 - ext);
+          twist = -0.35 * ext;
       }
-      torso.rotation.y = -0.35 * ext;
-    } else {
-      torso.rotation.y = 0;
+      if (st.punch <= 0) st.style = null;
+    }
+    torso.rotation.y = twist;
+
+    // flinch: head snaps back, torso rocks
+    if (st.hit > 0) {
+      st.hit -= dt;
+      const k = Math.max(0, st.hit) / 0.24;
+      const e = Math.sin(k * Math.PI * 0.5);
+      torso.rotation.x -= 0.4 * e;
+      torso.rotation.z = 0.25 * e * st.hitSide;
+      neck.rotation.x = -0.45 * e;
+      if (st.hit <= 0) { torso.rotation.z = 0; neck.rotation.x = 0; }
+    }
+
+    // dodge roll: tuck, shrink a touch and tumble forward around the hips (never through the floor)
+    if (st.roll > 0) {
+      st.roll -= dt;
+      const k = Math.min(1, 1 - Math.max(0, st.roll) / st.rollDur);
+      const th = k * Math.PI * 2;
+      const sq = 1 - 0.4 * Math.sin(k * Math.PI);
+      const S = baseScale * sq;
+      body.scale.setScalar(S);
+      legL.upper.rotation.x = legR.upper.rotation.x = -1.7 * Math.sin(k * Math.PI);
+      legL.lower.rotation.x = legR.lower.rotation.x = 2.3 * Math.sin(k * Math.PI);
+      armL.upper.rotation.set(-1.2, 0, 0.3); armR.upper.rotation.set(-1.2, 0, -0.3);
+      armL.lower.rotation.x = armR.lower.rotation.x = -1.6;
+      neck.rotation.x = 0.9 * Math.sin(k * Math.PI);
+      hips.position.y = 0.95;
+      body.rotation.x = th;
+      body.position.set(0, 0.95 * S * (1 - Math.cos(th)) + 0.04, -0.95 * S * Math.sin(th));
+      if (st.roll <= 0) {
+        body.scale.setScalar(baseScale); body.rotation.x = 0; body.position.set(0, 0, 0); neck.rotation.x = 0;
+      }
     }
   }
 
-  function punch(duration = 0.28) { st.punch = duration; st.punchDur = duration; }
+  // style: optional swing style ('jab','cross','hook','uppercut','slash','overhead','kick','heavy','slam');
+  // falls back to animate()'s opts.swingStyle.
+  function punch(duration = 0.28, style = null) { st.punch = duration; st.punchDur = duration; st.style = style; st.wind = 0; }
   function flash() { st.flash = 0.18; }
-  function setDead(on) {
+  // Wind-up pose held for `duration` seconds (telegraphs an attack). color: optional glow (THREE color / hex).
+  function windup(duration = 0.4, style = null, color = null) {
+    st.wind = duration; st.windDur = Math.max(0.05, duration); st.windStyle = style;
+    if (color != null) { st.teleCol.set(color); st.tele = duration; }
+  }
+  function cancelWindup() { st.wind = 0; st.tele = 0; st.windStyle = null; if (st.flash <= 0) setEmissive(baseEmissive); }
+  function setBlock(on) { st.block = !!on; }
+  function roll(duration = 0.4) { st.roll = duration; st.rollDur = duration; }
+  function hitReact(side = 0) { st.hit = 0.24; st.hitSide = side; }
+  // opts.fall: animate the flop / getting back up instead of snapping.
+  function setDead(on, opts = null) {
     st.dead = on;
-    body.rotation.x = on ? -Math.PI / 2 : 0;
-    body.position.y = on ? 0.12 : 0;
+    if (st.roll > 0) { st.roll = 0; body.scale.setScalar(baseScale); }
+    st.wind = 0; st.block = false; st.blockK = 0;
+    if (opts?.fall) {
+      st.fall = { k: 0, dir: on ? 1 : -1, dur: on ? 0.32 : 0.42 };
+    } else {
+      st.fall = null;
+      body.rotation.x = on ? -Math.PI / 2 : 0;
+      body.position.y = on ? 0.12 : 0;
+    }
     if (on) {
       armL.upper.rotation.set(-0.3, 0, 1.2); armR.upper.rotation.set(0.2, 0, -1.3);
+      armL.lower.rotation.x = -0.2; armR.lower.rotation.x = -0.2;
       legL.upper.rotation.set(0.1, 0, 0.25); legR.upper.rotation.set(-0.1, 0, -0.2);
+      legL.lower.rotation.x = 0.1; legR.lower.rotation.x = 0.15;
+      torso.rotation.set(0, 0, 0); neck.rotation.x = 0;
     }
   }
   function setColor(c) { mat.color.set(c); }
@@ -186,7 +357,9 @@ export function createStickman({ color = 0x141414, scale = 1, hat = null, hatCol
     parts: { hips, torso, neck, head, armL, armR, legL, legR },
     rightHand: armR.end, leftHand: armL.end,
     animate, punch, flash, setDead, setColor, dispose,
+    windup, cancelWindup, setBlock, roll, hitReact,
     get dead() { return st.dead; },
+    get rolling() { return st.roll > 0; },
   };
 }
 

@@ -6,7 +6,7 @@ import { DRUGS, DRUG_ORDER } from '../data/drugs.js';
 import { COURSES } from '../data/courses.js';
 import { JOBS } from '../data/jobs.js';
 import { fmtMoney, pick, chance, randInt, esc } from '../core/util.js';
-import { ensureState, capacity, hasCourse } from './common.js';
+import { ensureState, capacity, hasCourse, today } from './common.js';
 import { meter } from './ui-kit.js';
 
 export function installItems(game) {
@@ -108,6 +108,10 @@ export function installItems(game) {
     },
     holy() {
       game.sysFx.remove('withdrawal');
+      // +1 karma, but only for the first two bottles a day (no buying sainthood by the crate).
+      const t = today(game);
+      t.holy = (t.holy || 0) + 1;
+      if (t.holy <= 2) st.addStat('karma', 1, 'item:holy_water');
       game.ui.toast('The holy water soothes your soul and also your withdrawal. Praise be. Burp.', 'good');
     },
     scratch(d, id) {

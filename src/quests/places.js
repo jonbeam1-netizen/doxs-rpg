@@ -254,7 +254,7 @@ export function installPlaces(game, q) {
       { label: 'Raid the dumpster buffet', hint: usedToday('dumpster') ? 'picked clean today' : 'free food, probably', disabled: usedToday('dumpster'), onSelect: () => dumpster() },
       { label: 'Listen to Reg\'s wisdom', hint: usedToday('wisdom') ? 'come back tomorrow' : '+1 INT, once a day', disabled: usedToday('wisdom'), onSelect: () => wisdom() },
       { label: 'Warm your hands by the barrel', onSelect: () => barrel() },
-      { label: 'Donate $20 to the camp', hint: '+2 karma', disabled: !g.state.canAfford(20), onSelect: () => { if (g.state.spend(20, 'charity')) { g.state.addStat('karma', 2); g.ui.toast(pick(['A hobo blesses you. It\'s a wet blessing.', 'Tuesday buys a hot dog and names it after you.', 'Chad tries to invest it. Reg slaps his hand.']), 'good', 3600); } } },
+      { label: 'Donate $20 to the camp', hint: usedToday('donate') ? 'once a day' : '+2 karma', disabled: usedToday('donate') || !g.state.canAfford(20), onSelect: () => { if (g.state.spend(20, 'charity')) { once('donate'); g.state.addStat('karma', 2); g.ui.toast(pick(['A hobo blesses you. It\'s a wet blessing.', 'Tuesday buys a hot dog and names it after you.', 'Chad tries to invest it. Reg slaps his hand.']), 'good', 3600); } } },
       { label: 'Leave' },
     );
     await g.ui.dialog({ title: loc.name, html: nar(lines), options: opts });

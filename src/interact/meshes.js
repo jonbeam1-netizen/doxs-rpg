@@ -47,6 +47,18 @@ class Kit {
   }
 }
 
+// Soft round dot for particle sprites (water spray, fire, smoke).
+let dotTex = null;
+export function softDot() {
+  if (dotTex) return dotTex;
+  const c = document.createElement('canvas'); c.width = c.height = 32;
+  const x = c.getContext('2d'); const g = x.createRadialGradient(16, 16, 0, 16, 16, 16);
+  g.addColorStop(0, 'rgba(255,255,255,1)'); g.addColorStop(0.45, 'rgba(255,255,255,0.55)'); g.addColorStop(1, 'rgba(255,255,255,0)');
+  x.fillStyle = g; x.fillRect(0, 0, 32, 32);
+  dotTex = new THREE.CanvasTexture(c);
+  return dotTex;
+}
+
 // Text label as a small self-lit plane (shared per text).
 const labelCache = new Map();
 export function labelMesh(text, { w = 0.8, h = 0.22, bg = '#1a1612', fg = '#f2e8c8', font = 'bold 64px "Barlow Condensed", sans-serif' } = {}) {
@@ -151,10 +163,10 @@ const PREFABS = {
     for (const s of [-0.2, 0.2]) k.box(0.04, 0.14, 0.4, '#2a2622', s, 0.07, 0);
   },
   dumpster(k) {
-    k.box(2.0, 1.15, 1.2, '#2e4a34', 0, 0.72, 0);
-    k.box(2.06, 0.08, 1.26, '#1e3424', 0, 1.33, 0);
-    k.box(1.0, 0.05, 1.2, '#24382a', -0.5, 1.4, -0.02, { rz: 0.05 });
-    k.box(1.0, 0.05, 1.2, '#24382a', 0.5, 1.4, -0.02, { rz: -0.05 });
+    k.box(2.0, 1.15, 1.2, '#3f6a4a', 0, 0.72, 0);
+    k.box(2.06, 0.08, 1.26, '#2a4a34', 0, 1.33, 0);
+    k.box(1.0, 0.05, 1.2, '#33523c', -0.5, 1.4, -0.02, { rz: 0.05 });
+    k.box(1.0, 0.05, 1.2, '#33523c', 0.5, 1.4, -0.02, { rz: -0.05 });
     k.box(2.04, 0.08, 0.06, '#1a2a1e', 0, 1.05, 0.62);
     for (const s of [-0.85, 0.85]) for (const t of [-0.45, 0.45]) k.cyl(0.08, 0.08, 0.14, '#111111', s, 0.07, t, { rx: Math.PI / 2, seg: 8 });
   },

@@ -93,9 +93,9 @@ export const HEISTS = {
   truck: {
     id: 'truck', name: 'Armored Truck Hit', tier: 2, loc: 'first_bank', dropoff: 'chop_chop',
     blurb: 'A Grimco Armored Transport makes cash pickups downtown. Ram it, spike it, or boot it while the guards grab coffee at the bank.',
-    cooldown: 24 * 60, time: 420, xp: 400, bags: { count: 4, value: [2200, 3000] }, extra: [0, 0], quietBonus: 1.25,
-    reqText: 'Level 2 · pulled the Gas-N-Gulp job',
-    unlock: (g) => (lvl(g) < 2 ? { ok: false, why: 'Level 2 needed. Terry doesn\'t work with infants.' }
+    cooldown: 24 * 60, time: 420, xp: 400, bags: { count: 4, value: [1500, 2100] }, extra: [0, 0], quietBonus: 1.25,
+    reqText: 'Level 3 · pulled the Gas-N-Gulp job',
+    unlock: (g) => (lvl(g) < 3 ? { ok: false, why: 'Level 3 needed. Terry doesn\'t work with infants.' }
       : !done(g, 'gas') ? { ok: false, why: 'Prove yourself on the Gas-N-Gulp first.' } : { ok: true }),
     guards: { quiet: ['pistol', 'baton'], loud: ['pistol', 'shotgun', 'pistol'] },
     waves: { every: 45, count: 2, max: 7, weapons: ['pistol', 'shotgun'] },
@@ -128,9 +128,9 @@ export const HEISTS = {
   bank: {
     id: 'bank', name: 'First Bank of Rotwell', tier: 3, loc: 'first_bank', dropoff: 'warehouse_13',
     blurb: 'The vault under First Bank. Drill it loud with the lobby on the floor, or pick, hack and crack it while the guards scroll their phones.',
-    cooldown: 48 * 60, time: 480, xp: 900, bags: { count: 6, value: [4500, 6500] }, extra: [400, 900], quietBonus: 1.25,
-    reqText: 'Level 4 · hit the armored truck',
-    unlock: (g) => (lvl(g) < 4 ? { ok: false, why: 'Level 4 needed. Banks have, like, rules.' }
+    cooldown: 48 * 60, time: 480, xp: 900, bags: { count: 6, value: [3600, 5000] }, extra: [400, 900], quietBonus: 1.25,
+    reqText: 'Level 5 · hit the armored truck',
+    unlock: (g) => (lvl(g) < 5 ? { ok: false, why: 'Level 5 needed. Banks have, like, rules.' }
       : !done(g, 'truck') ? { ok: false, why: 'Hit the armored truck first. Terry needs to see you can handle a moving target.' } : { ok: true }),
     guards: { quiet: ['pistol', 'baton', 'pistol'], loud: ['pistol', 'pistol', 'shotgun', 'baton'] },
     waves: { every: 40, count: 2, max: 8, weapons: ['pistol', 'shotgun', 'smg'] },

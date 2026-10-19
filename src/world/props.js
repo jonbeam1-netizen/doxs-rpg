@@ -143,33 +143,26 @@ export function busStop(C, x, z, rot) {
   C.seats?.push({ x: x - Math.sin(rot) * 0.45, z: z - Math.cos(rot) * 0.45, facing: rot, kind: 'busstop', width: 2.6 });
 }
 
-export function trafficLight(C, x, z, rot) {
-  const g = C.geo; g.frame(x, z, rot);
-  g.cyl('metal', 0, 3, 0, 0.1, 0.12, 6, 6, { color: '#2a2a28' });
-  g.box('metal', 0, 5.8, 2.2, 0.1, 0.1, 4.4, { color: '#2a2a28' });
-  g.box('metal', 0, 5.2, 4.2, 0.4, 1.2, 0.35, { color: '#1a1a18' });
-  g.box('amber', 0, 5.2, 4.39, 0.22, 0.22, 0.02, { color: '#fff' });
-  g.box('metal', 0, 2.8, 0.15, 0.3, 0.8, 0.25, { color: '#1a1a18' });
-  g.box('amber', 0, 2.8, 0.28, 0.14, 0.14, 0.02, { color: '#fff' });
-  C.solid(x - 0.2, z - 0.2, x + 0.2, z + 0.2, 6);
-}
+// Ground layer heights (m): ground 0 < lot paving 0.035 < sidewalk 0.03/curb <
+// road 0.05 < intersection 0.056 < decals 0.066 < markings 0.07 < puddles 0.075.
+export const Y = { walk: 0.03, road: 0.05, patch: 0.056, decal: 0.066, mark: 0.07, puddle: 0.075 };
 
-export function manhole(C, x, z, steam = false) {
+export function manhole(C, x, z, steam = false, y = Y.decal) {
   const g = C.geo; g.frame(x, z, 0);
-  g.disc('decal_dark', 0, 0.075, 0, 0.6, 10, { color: '#2a2622' });
+  g.disc('decal_dark', 0, y, 0, 0.6, 10, { color: '#2a2622' });
   if (steam) C.emit(x, 0.1, z, 'steam');
 }
 
-export function puddle(C, x, z, r = 1.5, rot = 0) {
+export function puddle(C, x, z, r = 1.5, rot = 0, y = Y.puddle) {
   const g = C.geo; g.frame(x, z, rot);
-  g.disc('puddle', 0, 0.1, 0, r, 10);
-  g.disc('puddle', r * 0.7, 0.1, r * 0.3, r * 0.6, 8);
+  g.disc('puddle', 0, y, 0, r, 10);
+  g.disc('puddle', r * 0.7, y + 0.002, r * 0.3, r * 0.6, 8);
 }
 
-export function deadTree(C, x, z, s = 1, { solid = true } = {}) {
+export function deadTree(C, x, z, s = 1, { solid = true, y = 0 } = {}) {
   const g = C.geo;
   const rot = C.rng() * 6;
-  g.frame(x, z, rot);
+  g.frame(x, z, rot, y);
   const col = '#2e2620';
   const h = (4 + C.rng() * 3) * s;
   g.cyl('props', 0, h / 2, 0, 0.12 * s, 0.28 * s, h, 6, { color: col });
@@ -251,16 +244,19 @@ export function container(C, x, y, z, rot, color, { solid = true } = {}) {
   if (solid) C.obb(x, z, rot, 2.5, 12.3, y + 2.6);
 }
 
+// A tidy cluster of drums (fixed slots, so they never intersect each other).
+const DRUM_SLOTS = [[0, 0], [0.64, 0], [0.32, 0.56], [-0.32, 0.56], [-0.64, 0], [0, -0.64]];
 export function oilDrums(C, x, z, n = 3) {
   const g = C.geo;
+  const col = ['#3a5a3a', '#7a3a1a', '#2a3a5a', '#6a6a6a', '#8a7a2a'][(C.rng() * 5) | 0];
+  const rot = C.rng() * 6, cs = Math.cos(rot), sn = Math.sin(rot);
+  n = Math.min(n, DRUM_SLOTS.length);
   for (let i = 0; i < n; i++) {
-    const dx = (C.rng() - 0.5) * 2, dz = (C.rng() - 0.5) * 2;
-    g.frame(x + dx, z + dz, 0);
-    const col = ['#3a5a3a', '#7a3a1a', '#2a3a5a', '#6a6a6a', '#8a7a2a'][(C.rng() * 5) | 0];
-    if (C.rng() < 0.25) { g.translate(0, 0.3, 0); g.rotX(PI / 2); g.cyl('rust', 0, 0, 0, 0.3, 0.3, 0.9, 8, { color: col, capBottom: true }); }
-    else g.cyl('rust', 0, 0.45, 0, 0.3, 0.3, 0.9, 8, { color: col });
+    const [a, b] = DRUM_SLOTS[i];
+    g.frame(x + a * cs + b * sn, z - a * sn + b * cs, 0);
+    g.cyl('rust', 0, 0.45, 0, 0.3, 0.3, 0.9, 8, { color: i % 3 === 2 ? '#6a6a6a' : col });
   }
-  C.solid(x - 1.4, z - 1.4, x + 1.4, z + 1.4, 1);
+  C.solid(x - 1, z - 1, x + 1, z + 1, 1);
 }
 
 export function pallets(C, x, z, rot, n = 3) {
@@ -492,9 +488,18 @@ export function doorway(C, cx, w = 1.6, h = 2.6, door = 0, { lamp = true, lampCo
   if (steps) for (let i = 0; i < 2; i++) g.box('props', cx, 0.06 + i * 0.0, 0.4 + i * 0.4, w + 1, 0.12, 0.4, { color: '#6a665e' });
 }
 
-export function shopSign(C, x, y, z, w = 5, idx = null) {
+// Flat shop sign mounted on a wall (local frame: wall plane at z, facing +Z).
+export function shopSign(C, x, y, z, w = 3.6, idx = null) {
   const g = C.geo;
   const i = idx ?? ((C.rng() * 32) | 0);
-  g.box('metal', x, y, z + 0.08, w + 0.2, w * 0.25 + 0.2, 0.16, { color: '#1a1814' });
-  g.wall('signs', x - w / 2, y - w * 0.125, x + w / 2, y + w * 0.125, z + 0.17, { uvRect: signUV(i) });
+  const h = Math.min(0.85, w / 4);
+  g.box('metal', x, y, z + 0.09, w + 0.16, h + 0.16, 0.14, { color: '#1a1814', faces: 'fblrtu' });
+  g.wall('signs', x - w / 2, y - h / 2, x + w / 2, y + h / 2, z + 0.175, { uvRect: signUV(i) });
+}
+
+export function trashCan(C, x, z) {
+  const g = C.geo; g.frame(x, z, 0);
+  g.cyl('metal', 0, 0.46, 0, 0.3, 0.27, 0.92, 8, { color: '#2e3a30' });
+  g.cyl('metal', 0, 0.95, 0, 0.33, 0.33, 0.06, 8, { color: '#1e2620' });
+  C.solid(x - 0.32, z - 0.32, x + 0.32, z + 0.32, 1);
 }

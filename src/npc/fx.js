@@ -186,6 +186,60 @@ export class Sfx {
           });
           break;
         }
+        case 'block': // forearm thud + scuff
+          this._osc(ctx, out, 'triangle', 220 * r, 90, t, 0.1, 0.55 * v);
+          this._noiseBurst(ctx, out, t, 0.07, 0.45 * v, 'bandpass', 900, 400, 1.4);
+          break;
+        case 'parry': // bright clang
+          this._osc(ctx, out, 'triangle', 1250 * r, 900, t, 0.35, 0.35 * v);
+          this._osc(ctx, out, 'sine', 1870 * r, 1500, t, 0.25, 0.2 * v);
+          this._noiseBurst(ctx, out, t, 0.05, 0.5 * v, 'highpass', 3000, 6000);
+          break;
+        case 'heavy': // big meaty impact
+          this._osc(ctx, out, 'sine', 95 * r, 28, t, 0.32, 1.2 * v);
+          this._noiseBurst(ctx, out, t, 0.14, 0.9 * v, 'lowpass', 2400, 180);
+          this._osc(ctx, out, 'square', 60, 30, t, 0.12, 0.25 * v);
+          break;
+        case 'kick':
+          this._osc(ctx, out, 'sine', 130 * r, 40, t, 0.18, 1.0 * v);
+          this._noiseBurst(ctx, out, t, 0.08, 0.7 * v, 'lowpass', 1500, 250);
+          break;
+        case 'charge': // wind-up whine
+          this._osc(ctx, out, 'sawtooth', 120, 340, t, 0.5, 0.06 * v);
+          break;
+        case 'charged':
+          this._osc(ctx, out, 'triangle', 660, 990, t, 0.12, 0.22 * v);
+          break;
+        case 'hitmark':
+          this._osc(ctx, out, 'square', 2400, 2200, t, 0.03, 0.12 * v);
+          break;
+        case 'killmark':
+          this._osc(ctx, out, 'square', 2000, 1900, t, 0.04, 0.14 * v);
+          this._osc(ctx, out, 'square', 2700, 2600, t + 0.05, 0.05, 0.14 * v);
+          break;
+        case 'taser': {
+          const o = this._osc(ctx, out, 'sawtooth', 70, 60, t, 0.45, 0.0001);
+          const g = ctx.createGain(); g.gain.setValueAtTime(0.25 * v, t); g.gain.exponentialRampToValueAtTime(0.001, t + 0.45);
+          o.disconnect(); o.connect(g); g.connect(out);
+          this._noiseBurst(ctx, out, t, 0.4, 0.25 * v, 'highpass', 4000, 7000);
+          break;
+        }
+        case 'slam':
+          this._osc(ctx, out, 'sine', 70, 22, t, 0.6, 1.3 * v);
+          this._noiseBurst(ctx, out, t, 0.4, 0.9 * v, 'lowpass', 900, 60);
+          break;
+        case 'tell': // enemy wind-up cue
+          this._osc(ctx, out, 'triangle', 520 * r, 760, t, 0.08, 0.12 * v);
+          break;
+        case 'heal':
+          this._osc(ctx, out, 'sine', 520, 780, t, 0.18, 0.2 * v);
+          this._osc(ctx, out, 'sine', 780, 1040, t + 0.12, 0.2, 0.18 * v);
+          break;
+        case 'bell': // boss intro
+          this._osc(ctx, out, 'triangle', 392, 390, t, 1.2, 0.3 * v);
+          this._osc(ctx, out, 'sine', 784, 780, t, 0.9, 0.15 * v);
+          this._osc(ctx, out, 'triangle', 392, 390, t + 0.35, 1.2, 0.3 * v);
+          break;
         case 'bust':
           this._osc(ctx, out, 'square', 520, 500, t, 0.18, 0.18 * v);
           this._osc(ctx, out, 'square', 390, 380, t + 0.2, 0.3, 0.18 * v);
@@ -241,17 +295,58 @@ function flashTexture() {
   return t;
 }
 
+function glyphTexture(ch, color) {
+  const c = document.createElement('canvas');
+  c.width = c.height = 64;
+  const x = c.getContext('2d');
+  x.font = '900 52px sans-serif';
+  x.textAlign = 'center'; x.textBaseline = 'middle';
+  x.lineWidth = 8; x.strokeStyle = '#140c08';
+  x.strokeText(ch, 32, 35);
+  x.fillStyle = color;
+  x.fillText(ch, 32, 35);
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  return t;
+}
+
 const CSS = `
 .npc-bubble{position:absolute;left:0;top:0;transform:translate(-50%,-100%);max-width:240px;padding:4px 9px;
   background:rgba(232,224,205,.94);color:#16120e;font:600 15px/1.15 var(--font-body,sans-serif);border-radius:10px;
   border:2px solid #16120e;white-space:normal;text-align:center;box-shadow:2px 3px 0 rgba(0,0,0,.45);pointer-events:none;will-change:transform}
 .npc-bubble.angry{background:#e2402f;color:#fff3e6;border-color:#2a0805}
 .npc-bubble.cop{background:#2a4a8a;color:#e8eefc;border-color:#0a1220}
-.npc-dmg{position:absolute;left:0;top:0;transform:translate(-50%,-50%);font:800 22px var(--font-body,sans-serif);
-  color:#ffd35a;text-shadow:2px 2px 0 #000,-1px -1px 0 #000;pointer-events:none;will-change:transform,opacity}
-.npc-dmg.big{color:#ff5a3a;font-size:30px}
-.npc-dmg.hurt{color:#e2402f}
-.npc-dmg.cash{color:#7fbf4d}
+.npc-dmg{position:absolute;left:0;top:0;transform:translate(-50%,-50%);font:900 22px/1 var(--font-body,sans-serif);letter-spacing:.5px;
+  color:#fff2c4;-webkit-text-stroke:1px #000;text-shadow:0 2px 0 #000,2px 2px 0 #000,-1px -1px 0 #000,0 0 6px rgba(0,0,0,.6);pointer-events:none;will-change:transform,opacity;white-space:nowrap}
+.npc-dmg.med{color:#ffd35a;font-size:26px}
+.npc-dmg.big{color:#ff6a3a;font-size:32px}
+.npc-dmg.crit{color:#ffb21a;font-size:30px}
+.npc-dmg.hurt{color:#ff4a3a;font-size:24px}
+.npc-dmg.cash{color:#8fd45a}
+.npc-dmg.heal{color:#7dff8a}
+.npc-dmg.block{color:#b9c2cc;font-size:18px}
+.npc-dmg.parry{color:#7fe0ff;font-size:30px}
+.npc-dmg.small{font-size:16px;color:#e6dfcf}
+#npc-crosshair .x{width:2px;height:9px;left:12px;top:8.5px;background:#fff;opacity:0}
+#npc-crosshair.hm .x{opacity:1}
+#npc-crosshair.kill .x{background:#ff3a2a}
+#npc-crosshair .x1{transform:rotate(45deg) translate(0,-11px)}#npc-crosshair .x2{transform:rotate(-45deg) translate(0,-11px)}
+#npc-crosshair .x3{transform:rotate(135deg) translate(0,-11px)}#npc-crosshair .x4{transform:rotate(-135deg) translate(0,-11px)}
+#npc-crosshair.assist i:not(.x){background:#ffd35a}
+#npc-boss{position:absolute;left:50%;top:64px;transform:translateX(-50%);width:min(520px,80vw);pointer-events:none;display:none;
+  font:800 15px var(--font-body,sans-serif);color:#f0e8d4;text-shadow:1px 1px 0 #000;letter-spacing:1px;text-align:center}
+#npc-boss .bar{position:relative;height:12px;margin-top:4px;background:rgba(10,8,6,.8);border:2px solid #16120e;box-shadow:0 2px 0 rgba(0,0,0,.4)}
+#npc-boss .trail,#npc-boss .fill{position:absolute;left:0;top:0;bottom:0}
+#npc-boss .trail{background:#e8d8b0}
+#npc-boss .fill{background:linear-gradient(#d23a26,#8a1a10)}
+#npc-boss.enraged .fill{background:linear-gradient(#ff6a1a,#b02a08)}
+#npc-boss .tag{font-size:11px;opacity:.7;letter-spacing:2px}
+#npc-cmb{position:absolute;left:50%;bottom:118px;transform:translateX(-50%);pointer-events:none;display:none;
+  font:800 12px var(--font-body,sans-serif);color:#e6dfcf;text-shadow:1px 1px 0 #000;letter-spacing:1px;text-align:center;opacity:.9}
+#npc-cmb .pip{display:inline-block;width:9px;height:9px;margin:0 3px;border:2px solid #16120e;background:#e6dfcf;transform:rotate(45deg)}
+#npc-cmb .pip.off{background:rgba(40,36,30,.7)}
+#npc-cmb .chg{display:block;width:90px;height:5px;margin:5px auto 0;background:rgba(10,8,6,.7);border:1px solid #000}
+#npc-cmb .chg b{display:block;height:100%;background:#ffb21a}
 #npc-crosshair{position:absolute;left:50%;top:50%;width:26px;height:26px;margin:-13px 0 0 -13px;pointer-events:none;display:none}
 #npc-crosshair i{position:absolute;background:#f0e8d4;box-shadow:0 0 2px #000}
 #npc-crosshair .h{height:2px;width:8px;top:12px}#npc-crosshair .h.l{left:0}#npc-crosshair .h.r{right:0}
@@ -361,6 +456,144 @@ export class FX {
     this.bubbles = [];
     this.nums = [];
     this._v = new THREE.Vector3();
+
+    // attack telegraphs: "!" markers above heads + ground danger rings
+    this.alertTex = { warn: glyphTexture('!', '#ffcc33'), danger: glyphTexture('!', '#ff3a22'), lock: glyphTexture('\u25BC', '#ff4a3a'), stun: glyphTexture('*', '#9fe6ff') };
+    this.alerts = [];
+    for (let i = 0; i < 10; i++) {
+      const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: this.alertTex.warn, transparent: true, depthTest: false, depthWrite: false }));
+      sp.renderOrder = 10; sp.visible = false; sp.userData = { t: 0, ttl: 0, host: null, y: 0 };
+      this.alerts.push(sp);
+    }
+    this.ringGeo2 = new THREE.RingGeometry(0.86, 1, 40); this.ringGeo2.rotateX(-Math.PI / 2);
+    this.discGeo = new THREE.CircleGeometry(1, 40); this.discGeo.rotateX(-Math.PI / 2);
+    this.rings = [];
+    for (let i = 0; i < 4; i++) {
+      const g = new THREE.Group();
+      const edge = new THREE.Mesh(this.ringGeo2, new THREE.MeshBasicMaterial({ color: 0xff3a22, transparent: true, opacity: 0.8, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -3 }));
+      const fill = new THREE.Mesh(this.discGeo, new THREE.MeshBasicMaterial({ color: 0xff3a22, transparent: true, opacity: 0.25, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -3 }));
+      g.add(edge, fill); g.visible = false; g.renderOrder = 2;
+      g.userData = { t: 0, ttl: 0, r: 1, edge, fill, follow: null };
+      scene.add(g);
+      this.rings.push(g);
+    }
+    // charge ring under the player's feet
+    this.chargeRing = new THREE.Mesh(this.ringGeo2, new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.6, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -3 }));
+    this.chargeRing.visible = false; this.chargeRing.renderOrder = 2;
+    scene.add(this.chargeRing);
+
+    // boss health bar + combat mini-HUD
+    this.bossEl = document.createElement('div');
+    this.bossEl.id = 'npc-boss';
+    this.bossEl.innerHTML = '<div class="tag"></div><div class="nm"></div><div class="bar"><div class="trail"></div><div class="fill"></div></div>';
+    this.layer.appendChild(this.bossEl);
+    this.bossTrail = 1; this.bossShown = null;
+    this.cmbEl = document.createElement('div');
+    this.cmbEl.id = 'npc-cmb';
+    this.layer.appendChild(this.cmbEl);
+    this._cmbKey = '';
+
+    // time scale: hit-stop + slow-mo. Scales the frame delta for everything (timers here are real-time).
+    this.timeScale = 1;
+    this._stopUntil = 0; this._slowUntil = 0; this._slowScale = 1;
+    try {
+      const clock = game.clock;
+      if (clock && !clock._combatWrapped) {
+        const orig = clock.getDelta.bind(clock);
+        clock.getDelta = () => orig() * this._scaleNow();
+        clock._combatWrapped = true;
+      }
+    } catch (e) { console.error('[npc] time scale hook failed', e); }
+  }
+
+  // ---- time feel ----
+  _scaleNow() {
+    const now = performance.now();
+    let s = 1;
+    if (now < this._stopUntil) s = 0.03;
+    else if (now < this._slowUntil) {
+      const left = (this._slowUntil - now) / 1000;
+      s = left < 0.25 ? this._slowScale + (1 - this._slowScale) * (1 - left / 0.25) : this._slowScale;
+    }
+    this.timeScale = s;
+    this.game.timeScale = s;
+    return s;
+  }
+
+  // Freeze the world for a few frames on a solid hit (seconds, real time).
+  hitStop(sec = 0.05) {
+    const until = performance.now() + Math.min(0.2, sec) * 1000;
+    if (until > this._stopUntil) this._stopUntil = until;
+  }
+
+  // Slow motion (real-time seconds). Skipped in co-op so nobody's world desyncs.
+  slowMo(scale = 0.3, sec = 0.8) {
+    if (this.game.net?.connected) return;
+    this._slowScale = scale;
+    this._slowUntil = performance.now() + sec * 1000;
+  }
+
+  // Marker over a head (obj = Object3D to follow). kind: 'warn' | 'danger' | 'lock' | 'stun'
+  alert(obj, kind = 'warn', ttl = 0.5, height = 2.55) {
+    if (!obj) return null;
+    let sp = this.alerts.find((a) => a.visible && a.userData.host === obj && a.userData.kind === kind);
+    if (!sp) sp = this.alerts.find((a) => !a.visible) || this.alerts[0];
+    if (sp.material.map !== (this.alertTex[kind] || this.alertTex.warn)) { sp.material.map = this.alertTex[kind] || this.alertTex.warn; sp.material.needsUpdate = true; }
+    sp.userData.t = 0; sp.userData.ttl = ttl; sp.userData.host = obj; sp.userData.y = height; sp.userData.kind = kind;
+    sp.scale.setScalar(kind === 'lock' ? 0.32 : 0.5);
+    if (!sp.parent) this.game.scene.add(sp);
+    sp.position.set(obj.position.x, obj.position.y + height, obj.position.z);
+    sp.visible = true;
+    return sp;
+  }
+
+  clearAlert(obj, kind = null) {
+    for (const a of this.alerts) if (a.visible && a.userData.host === obj && (!kind || a.userData.kind === kind)) { a.visible = false; a.userData.host = null; }
+  }
+
+  // Ground danger zone that fills up over `ttl` seconds (AoE telegraph). follow: object to track.
+  dangerRing(x, z, r, ttl, color = 0xff3a22, follow = null) {
+    const g = this.rings.find((q) => !q.visible) || this.rings[0];
+    g.position.set(x, 0.035, z);
+    g.userData.t = 0; g.userData.ttl = ttl; g.userData.r = r; g.userData.follow = follow;
+    g.userData.edge.material.color.set(color); g.userData.fill.material.color.set(color);
+    g.userData.edge.scale.setScalar(r);
+    g.userData.fill.scale.setScalar(0.01);
+    g.visible = true;
+    return g;
+  }
+
+  setCharge(on, k = 0, x = 0, z = 0) {
+    const m = this.chargeRing;
+    if (!on) { m.visible = false; return; }
+    m.visible = true;
+    m.position.set(x, 0.04, z);
+    m.scale.setScalar(0.5 + 0.6 * k);
+    m.material.color.set(k >= 1 ? 0xffb21a : 0xffffff);
+    m.material.opacity = 0.25 + 0.5 * k;
+  }
+
+  // Boss bar: info = { id, name, tag, hp, maxHp, enraged } or null to hide.
+  bossBar(info) {
+    const el = this.bossEl;
+    if (!info) { if (el.style.display !== 'none') el.style.display = 'none'; this.bossShown = null; return; }
+    if (this.bossShown !== info.id) {
+      this.bossShown = info.id; this.bossTrail = info.hp / Math.max(1, info.maxHp);
+      el.querySelector('.nm').textContent = info.name;
+      el.querySelector('.tag').textContent = info.tag || '';
+    }
+    el.style.display = 'block';
+    const k = clamp(info.hp / Math.max(1, info.maxHp), 0, 1);
+    this.bossTrail = Math.max(k, this.bossTrail - 0.012);
+    el.querySelector('.fill').style.width = (k * 100).toFixed(1) + '%';
+    el.querySelector('.trail').style.width = (this.bossTrail * 100).toFixed(1) + '%';
+    el.classList.toggle('enraged', !!info.enraged);
+  }
+
+  combatHud(html) {
+    if (!html) { if (this.cmbEl.style.display !== 'none') this.cmbEl.style.display = 'none'; this._cmbKey = ''; return; }
+    if (this.cmbEl.style.display !== 'block') this.cmbEl.style.display = 'block';
+    if (html !== this._cmbKey) { this._cmbKey = html; this.cmbEl.innerHTML = html; }
   }
 
   // ---- blood ----
@@ -471,12 +704,16 @@ export class FX {
   }
 
   number(x, y, z, text, cls = '') {
-    while (this.nums.length >= 16) { const n = this.nums.shift(); n.el.remove(); }
+    while (this.nums.length >= 18) { const n = this.nums.shift(); n.el.remove(); }
     const el = document.createElement('div');
     el.className = 'npc-dmg ' + cls;
     el.textContent = text;
+    el.style.display = 'none';
     this.layer.appendChild(el);
-    this.nums.push({ el, p: new THREE.Vector3(x + rand(-0.3, 0.3), y, z + rand(-0.3, 0.3)), t: 0, ttl: 0.9 });
+    // words (CRIT!, BLOCKED) float a bit higher than numbers so they don't overlap
+    const word = isNaN(Number(text));
+    const big = cls === 'big' || cls === 'crit' || cls === 'parry';
+    this.nums.push({ el, p: new THREE.Vector3(x + rand(-0.2, 0.2), y + (word ? 0.45 : 0), z + rand(-0.2, 0.2)), t: 0, ttl: big ? 1.15 : 0.9, sx: rand(-28, 28), big });
   }
 
   hurtFlash(amount = 0.6) {
@@ -575,6 +812,29 @@ export class FX {
       if (gone) { p.obj.removeFromParent(); this.pickups.splice(i, 1); }
     }
 
+    // telegraph markers
+    for (const a of this.alerts) {
+      if (!a.visible) continue;
+      const u = a.userData;
+      u.t += dt;
+      const h = u.host;
+      if (u.t > u.ttl || !h || (h.isObject3D && (!h.parent || h.visible === false))) { a.visible = false; u.host = null; continue; }
+      a.position.set(h.position.x, h.position.y + u.y + Math.sin(u.t * 12) * 0.04, h.position.z);
+      const s0 = u.kind === 'lock' ? 0.32 : 0.5;
+      a.scale.setScalar(s0 * (u.t < 0.1 ? 0.5 + u.t * 5 : 1) * (u.kind === 'danger' ? 1 + 0.15 * Math.sin(u.t * 30) : 1));
+    }
+    for (const g of this.rings) {
+      if (!g.visible) continue;
+      const u = g.userData;
+      u.t += dt;
+      if (u.follow) g.position.set(u.follow.position.x, 0.035, u.follow.position.z);
+      const k = Math.min(1, u.t / u.ttl);
+      u.fill.scale.setScalar(Math.max(0.01, u.r * k));
+      u.fill.material.opacity = 0.18 + 0.2 * k;
+      u.edge.material.opacity = 0.5 + 0.4 * Math.sin(u.t * 20) * k;
+      if (u.t > u.ttl + 0.08) { g.visible = false; u.follow = null; }
+    }
+
     // bubbles & numbers
     const v = this._v;
     const cam = this.game.camera.position;
@@ -596,12 +856,13 @@ export class FX {
       const n = this.nums[i];
       n.t += dt;
       if (n.t > n.ttl) { n.el.remove(); this.nums.splice(i, 1); continue; }
-      v.copy(n.p); v.y += n.t * 1.6;
+      v.copy(n.p); v.y += n.t * 1.1 + Math.min(n.t, 0.2) * 1.5;
       if (!this._project(v, v)) { n.el.style.display = 'none'; continue; }
       n.el.style.display = '';
-      const s = 1 + Math.max(0, 0.15 - n.t) * 4;
-      n.el.style.transform = `translate(${v.x | 0}px,${v.y | 0}px) translate(-50%,-50%) scale(${s.toFixed(2)})`;
-      n.el.style.opacity = String(Math.min(1, (n.ttl - n.t) * 3));
+      const pop = n.t < 0.08 ? 0.6 + (n.t / 0.08) * (n.big ? 1.0 : 0.65) : 1 + Math.max(0, (n.big ? 0.6 : 0.25) - (n.t - 0.08) * 3);
+      const ox = n.sx * Math.min(1, n.t * 2.5);
+      n.el.style.transform = `translate(${(v.x + ox) | 0}px,${v.y | 0}px) translate(-50%,-50%) scale(${pop.toFixed(2)})`;
+      n.el.style.opacity = String(Math.min(1, (n.ttl - n.t) * 4));
     }
   }
 }

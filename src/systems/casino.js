@@ -33,6 +33,12 @@ export function installCasino(game) {
   function result(gameName, amount, api) {
     const c = cs();
     c.net += amount;
+    // Lucky Rabbit's Foot perk: bonus on the net profit (never on the returned stake).
+    const gm = game.perks?.mult?.('gambling') ?? 1;
+    if (amount > 0 && gm > 1) {
+      const bonus = Math.round(amount * (gm - 1));
+      if (bonus > 0) { st.addMoney(bonus, 'casino bonus'); c.net += bonus; }
+    }
     game.bus.emit('casino:result', { game: gameName, amount });
     if (amount > 0) sfx(amount >= ROOMS[room].max * 10 ? 'jackpot' : 'win');
     else if (amount < 0) sfx('lose');

@@ -261,7 +261,7 @@ export function installNightlife(game) {
     if (!activity(game, { minutes: 30, energy: 5 })) return;
     const song = pick(['"Baby, Your Love Is Like Gravy"', '"Don\'t Stop Believin\' (In Me)"', '"My Heart Will Go On (And On And On)"', '"I Will Survive (Probably)"']);
     const p = st.p;
-    const good = chance(clamp(0.2 + p.cha / 120 + (p.sys.drunk > 1 ? 0.1 : 0), 0.1, 0.9));
+    const good = chance(clamp(0.35 + p.cha / 120 + (p.sys.drunk > 1 ? 0.1 : 0), 0.1, 0.9));
     if (good) { train(game, 'cha', 0.8, 'karaoke'); st.addMoney(randInt(5, 25), 'tips'); }
     else st.addStat('cha', -0.1);
     return say(game, 'Karaoke', `You belt out ${song}. ${good ? 'The bar goes wild. A woman throws her bra. A man throws his bra. Tips land in your shoe. +Charm' : 'It\'s a hate crime against music. A man in the back quietly weeps. Sal unplugs the machine mid-chorus.'}`);
@@ -337,7 +337,7 @@ export function installNightlife(game) {
         const out = [
           { label: 'Hit the dance floor', hint: '1h · -12 energy · +CHA', run: async () => {
             if (!activity(g, { minutes: 60, energy: 12 })) return;
-            const gain = train(g, 'cha', 0.9, 'dancing');
+            const gain = train(g, 'cha', 1.3, 'dancing');
             let ev = '';
             if (chance(0.2)) {
               const win = chance(clamp(p.cha / 80, 0.1, 0.85));

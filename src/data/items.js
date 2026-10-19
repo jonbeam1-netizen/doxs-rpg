@@ -47,7 +47,7 @@ export const ITEMS = {
   hangover_cure: { name: 'Hair of the Dog', cat: 'med', price: 9, desc: 'A raw egg, hot sauce and something Marge calls "the secret". Sobers you right up.', fx: { sober: true, energy: 10 } },
   detox_tea: { name: 'Detox Tea (Tastes Like Lies)', cat: 'med', price: 40, desc: 'Cleanses your body of toxins, money, and dignity. Lowers addiction.', fx: { addiction: -20, hp: 5 } },
   steroids: { name: 'Juice-B-Gone Steroids', cat: 'med', price: 250, desc: 'Double gym gains for a day. Side effects: back acne, rage, and a certain... shrinkage.', fx: { effect: 'roids', min: 1440, perm: { cha: -2, karma: -2 } } },
-  holy_water: { name: 'Holy Water (Tap)', cat: 'med', price: 20, desc: 'Blessed by Pastor Rick, who was holding a Big Gulp at the time.', fx: { hp: 15, perm: { karma: 1 }, special: 'holy' } },
+  holy_water: { name: 'Holy Water (Tap)', cat: 'med', price: 20, desc: 'Blessed by Pastor Rick, who was holding a Big Gulp at the time.', fx: { hp: 15, special: 'holy' } },
   // ---------------- gambling ----------------
   scratch: { name: 'Lucky Turd Scratch-Off', cat: 'gamble', price: 2, desc: 'Scratch the turd! Win up to $25,000! Odds printed in a font size too small to exist.', fx: { special: 'scratch' } },
   scratch_gold: { name: 'Golden Toilet Scratcher', cat: 'gamble', price: 20, desc: 'The premium scratcher. Win up to $250,000. The flush is gold-plated.', fx: { special: 'scratch_gold' } },

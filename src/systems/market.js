@@ -76,9 +76,12 @@ export function installMarket(game) {
       const s = (mk.stock[dist] = {});
       for (const id of DRUG_ORDER) {
         const base = DRUGS[id].base;
-        if (chance(0.12)) { s[id] = 0; continue; }
+        const smuggled = dist === 'blackwater' && base >= 900;
+        if (!smuggled && chance(0.12)) { s[id] = 0; continue; }
         const scale = base < 100 ? 2.2 : base < 600 ? 1.3 : base < 2000 ? 0.8 : 0.45;
         let q = Math.round(randInt(6, 34) * scale);
+        // Blackwater smugglers: the rare stuff comes in by boat (never sold out, deeper stock).
+        if (smuggled) q = Math.max(4, Math.round(q * 1.8));
         for (const e of mk.events) if (e.drug === id && (!e.district || e.district === dist)) q = Math.round(q * (e.kind === 'shipment' ? 3 : e.kind === 'bust' ? 0.3 : 1));
         s[id] = q;
       }

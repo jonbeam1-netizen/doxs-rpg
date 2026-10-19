@@ -578,7 +578,7 @@ export const QUESTS = {
         ],
       },
     ],
-    reward: { xp: 2500 }, rewardText: 'The streets. All of them.',
+    reward: { xp: 2500, money: 15000 }, rewardText: 'The streets. All of them. (+$15,000 first week of tribute)',
     steps: [
       {
         text: 'Teach the Velvet peddlers in Gutterside a lesson. They\'re hanging around the Greasy Spoon.',
@@ -679,7 +679,7 @@ export const QUESTS = {
         ],
       },
     ],
-    reward: { xp: 2500 }, rewardText: 'The top floor. The air is thin because they sell it downstairs.',
+    reward: { xp: 2500, money: 30000 }, rewardText: 'The top floor. (+$30,000 signing bonus)',
     steps: [
       {
         text: 'Deliver the Contessa\'s velvet briefcase to Grimco Tower in Hilltop. 3 minutes. Do NOT open it.',
@@ -784,7 +784,7 @@ export const QUESTS = {
         choices: [{ label: 'Let\'s clean this city up.', result: 'accept' }, { label: 'I like my kneecaps where they are.', result: 'decline' }],
       },
     ],
-    reward: { xp: 2500, karma: 10 }, rewardText: 'A city. A sash. A lot of paperwork.',
+    reward: { xp: 2500, karma: 10, money: 10000 }, rewardText: 'A city. A sash. A lot of paperwork. (+$10,000 "discretionary fund")',
     steps: [
       {
         text: 'Wear a wire into the Rusty Nail after dark (8 PM - 6 AM) and listen in on Chief Lardner.',
@@ -884,7 +884,7 @@ export const QUESTS = {
       ['Whatever you saw in there, it scared you enough to write a note before they wiped you. Grimco doesn\'t wipe people for fun. Well. Mostly not for fun.', 'Go look at the fence. Talk to the guard. Then, Plunger... get smart. You\'re gonna need every brain cell you haven\'t drowned yet.'],
       { t: ['You want to know what\'s under the Lid?'], choices: [{ label: 'I need to know.', result: 'accept' }, { label: 'Ignorance is bliss.', result: 'decline' }] },
     ],
-    reward: { xp: 2500, stats: { int: 5 } }, rewardText: 'The truth. And the sky.',
+    reward: { xp: 2500, stats: { int: 5 }, money: 12000 }, rewardText: 'The truth. And the sky. (+$12,000 book deal advance)',
     steps: [
       {
         text: 'Scout Restricted Bunker 9 in the Dustbowl.',
@@ -1007,10 +1007,10 @@ export const QUESTS = {
         : 'You\'re not ready for the crown, Plunger. Live a little. Bleed a little. (Reach level 4.)'),
     offer: [
       ['Plunger. I\'m old. My knees are crunchy. My liver\'s been repossessed. A king needs an heir.', '*He taps his beer-can crown.* This crown has been passed down for generations. Well. Since Tuesday. I made it Tuesday.'],
-      { t: ['Pass the Five Trials of the Crust and the Overpass is yours. All of it. The burning barrel. The shopping cart. The cardboard throne. The respect of every pigeon in Gutterside.'],
+      { t: ['Pass the Trials of the Crust and the Overpass is yours. All of it. The burning barrel. The shopping cart. The cardboard throne. The respect of every pigeon in Gutterside.'],
         choices: [{ label: 'I accept the Trials of the Crust.', result: 'accept' }, { label: 'I\'d rather keep my dignity.', result: 'decline' }] },
     ],
-    reward: { xp: 1500, items: { q_box_crown: 1 } }, rewardText: 'The Overpass. The barrel. The crown.',
+    reward: { xp: 2000, items: { q_box_crown: 1 }, stats: { cha: 5 } }, rewardText: 'The Overpass. The barrel. The crown. (+5 CHA, royal bearing)',
     steps: [
       {
         text: 'Trial of Stench: sleep in a cardboard box under the overpass.',

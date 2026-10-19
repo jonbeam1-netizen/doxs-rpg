@@ -24,6 +24,8 @@ export class Player {
     this.dead = false;
     this.moveLocked = false;  // cutscenes, arrests, etc.
     this.aiming = false;      // combat sets when holding a gun
+    this.combatMove = 1;      // combat slows you while blocking / charging
+    this.dash = null;         // combat dodge roll: { x, z, speed, t } overrides steering while t > 0
 
     // Soft light that follows the player so a black stick figure stays readable
     // against dark grimy walls and at night.
@@ -90,8 +92,15 @@ export class Player {
     const perkMult = g.perks ? g.perks.mult(running ? 'runSpeed' : 'walkSpeed') : 1;
     const target = (running ? this.runSpeed : this.walkSpeed) * this.speedMult * perkMult * (this.aiming ? 0.6 : 1);
     const accel = 1 - Math.exp(-12 * dt);
-    this.vel.x = lerp(this.vel.x, mx * target, accel);
-    this.vel.y = lerp(this.vel.y, mz * target, accel);
+    if (this.dash && this.dash.t > 0 && !this.dead) {
+      this.dash.t -= dt;
+      this.vel.set(this.dash.x * this.dash.speed, this.dash.z * this.dash.speed);
+      if (this.dash.t <= 0) this.dash = null;
+    } else {
+      this.dash = null;
+      this.vel.x = lerp(this.vel.x, mx * target * this.combatMove, accel);
+      this.vel.y = lerp(this.vel.y, mz * target * this.combatMove, accel);
+    }
 
     const p = this.group.position;
     const res = g.physics.resolveCircle(p.x + this.vel.x * dt, p.z + this.vel.y * dt, this.radius);

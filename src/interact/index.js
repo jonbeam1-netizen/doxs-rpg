@@ -120,7 +120,14 @@ export async function installInteract(game) {
           id: 'ix:' + o.id, x: o.ix, z: o.iz, radius: o.radius ?? 1.9,
           prompt: (g) => (typeof o.prompt === 'function' ? o.prompt(g) : o.prompt),
           enabled: (g) => !o.hidden && (!o.enabled || o.enabled(g)),
-          onInteract: (g) => { game.bus.emit('interact:use', { kind: o.kind, id: o.id }); return o.use(g); },
+          onInteract: (g) => {
+            game.bus.emit('interact:use', { kind: o.kind, id: o.id });
+            const r = o.use(g);
+            // prompts are cached by the core until the target changes; force a refresh after state changes
+            const refresh = () => { if (game.interact.current?.id === 'ix:' + o.id) game.interact.current = null; };
+            refresh(); Promise.resolve(r).finally(refresh);
+            return r;
+          },
         });
       }
       objects.push(o); byId.set(o.id, o);

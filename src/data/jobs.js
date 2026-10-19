@@ -10,8 +10,8 @@ export const JOBS = {
   diner: {
     name: 'The Greasy Spoon', loc: 'greasy_spoon', boss: 'Big Marge', hours: [5, 23], energy: 9, gain: { str: 0.04 },
     ranks: [
-      { title: 'Dishwasher', pay: 9, req: {}, shifts: 6 },
-      { title: 'Line Cook', pay: 15, req: { str: 8, int: 8 }, shifts: 10 },
+      { title: 'Dishwasher', pay: 10, req: {}, shifts: 4 },
+      { title: 'Line Cook', pay: 16, req: { str: 8, int: 8 }, shifts: 8 },
       { title: 'Shift Manager', pay: 24, req: { int: 18, cha: 15 }, shifts: 999 },
     ],
     lines: [
@@ -31,7 +31,7 @@ export const JOBS = {
   pizza: {
     name: 'Pizza Butt', loc: 'pizza_butt', boss: 'Tony Butt', hours: [10, 3], energy: 5, kind: 'delivery', gain: { str: 0.02 },
     ranks: [
-      { title: 'Delivery Monkey', pay: 12, req: {}, shifts: 5 },
+      { title: 'Delivery Monkey', pay: 12, req: {}, shifts: 4 },
       { title: 'Senior Delivery Driver', pay: 20, req: { cha: 10 }, shifts: 8 },
       { title: 'Assistant Butt Manager', pay: 32, req: { int: 20, cha: 20 }, shifts: 999 },
     ],
@@ -41,7 +41,7 @@ export const JOBS = {
   factory: {
     name: 'Rotwell Meat & Rendering', loc: 'meat_plant', boss: 'Foreman Gristle', hours: [5, 23], energy: 13, gain: { str: 0.22 },
     ranks: [
-      { title: 'Gut Shoveler', pay: 13, req: { str: 10 }, shifts: 6 },
+      { title: 'Gut Shoveler', pay: 14, req: { str: 10 }, shifts: 5 },
       { title: 'Bone Saw Operator', pay: 22, req: { str: 25 }, shifts: 10 },
       { title: 'Rendering Foreman', pay: 38, req: { str: 50, int: 15 }, shifts: 14 },
       { title: 'Plant Boss', pay: 62, req: { str: 85, int: 35 }, shifts: 999 },
@@ -63,7 +63,7 @@ export const JOBS = {
   office: {
     name: 'Grimco Tower', loc: 'grimco', boss: 'Mr. Grimsby', hours: [7, 19], energy: 8, gain: { int: 0.12, cha: 0.05 },
     ranks: [
-      { title: 'Unpaid-ish Intern', pay: 11, req: { int: 15 }, shifts: 6 },
+      { title: 'Unpaid-ish Intern', pay: 12, req: { int: 15 }, shifts: 5 },
       { title: 'Spreadsheet Goblin', pay: 26, req: { int: 30, cha: 15 }, shifts: 10 },
       { title: 'Middle Manager', pay: 52, req: { int: 60, cha: 40 }, shifts: 14 },
       { title: 'VP of Synergy', pay: 120, req: { int: 100, cha: 75, course: 'mba' }, shifts: 20 },
@@ -87,7 +87,7 @@ export const JOBS = {
   bartender: {
     name: 'The Rusty Nail', loc: 'rusty_nail', boss: 'One-Eyed Sal', hours: [11, 4], energy: 9, gain: { cha: 0.1 },
     ranks: [
-      { title: 'Barback', pay: 10, req: {}, shifts: 6 },
+      { title: 'Barback', pay: 11, req: {}, shifts: 4 },
       { title: 'Bartender', pay: 18, req: { cha: 20 }, shifts: 10 },
       { title: 'Head Mixologist', pay: 32, req: { cha: 50, int: 20 }, shifts: 999 },
     ],
@@ -148,7 +148,7 @@ export const JOBS = {
   scrapper: {
     name: "Scrapper Pete's Junkyard", loc: 'junkyard', boss: 'Scrapper Pete', hours: [6, 21], energy: 11, gain: { str: 0.16 },
     ranks: [
-      { title: 'Junk Sorter', pay: 9, req: {}, shifts: 5 },
+      { title: 'Junk Sorter', pay: 10, req: {}, shifts: 4 },
       { title: 'Car Crusher', pay: 17, req: { str: 20 }, shifts: 10 },
       { title: 'Yard Boss', pay: 30, req: { str: 45, int: 20 }, shifts: 999 },
     ],

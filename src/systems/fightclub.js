@@ -99,7 +99,12 @@ export function installFightClub(game) {
     ];
     const won = (side === 'a') === aWins;
     const pay = won ? Math.floor(bet * (side === 'a' ? oddsA : oddsB)) : 0;
-    if (pay) { st.addMoney(pay, 'pit bet'); sfx('win'); } else sfx('lose');
+    if (pay) {
+      st.addMoney(pay, 'pit bet');
+      const gm = game.perks?.mult?.('gambling') ?? 1;
+      if (gm > 1 && pay > bet) st.addMoney(Math.round((pay - bet) * (gm - 1)), 'pit bonus');
+      sfx('win');
+    } else sfx('lose');
     game.bus.emit('casino:result', { game: 'pit_bet', amount: pay - bet });
     return say(game, 'Fight!', `${pbp.join('<br>')}<br><br><b>${winner} wins!</b> ${won ? `<span class="ui-good">You collect ${fmtMoney(pay)}.</span> Dirty Dave pays you in wrinkled fives that smell like feet.` : `<span class="ui-bad">You lose ${fmtMoney(bet)}.</span> Dirty Dave tucks your money into his sock.`}`);
   }

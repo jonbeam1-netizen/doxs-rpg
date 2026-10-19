@@ -18,7 +18,7 @@ import { BACKGROUNDS } from '../ui/creator.js';
 //   drugBuy       x  price paid to dealers          (applied here: state.spend reason 'drugs')
 //   drugPrice     x  money from selling drugs       (applied here: state.addMoney reason 'drugs')
 //   jobPay        x  job & delivery pay             (applied here: state.addMoney reason 'job'/'pizza')
-//   gambling      x  casino / pit-bet winnings      (applied here: state.addMoney reason 'casino'/'pit bet' when positive)
+//   gambling      x  casino / pit-bet PROFIT        (applied by systems/casino.js + fightclub.js on net winnings only)
 //   fineCost      x  police fines & bribes          (applied here: state.spend reason 'fine'/'fines'/'bribe')
 //   deathPenalty  x  cash lost when KO'd/killed     (applied here: state.addMoney reason 'hospital bill'/'knocked out')
 //   heatGain      x  wanted-level gained            (applied here: wraps state.addHeat for n > 0)
@@ -73,7 +73,6 @@ export const PERKS = {
 const SPEND_SHOP = new Set(['shop', 'bar', 'food', 'cover', 'drink', 'black market', 'bottle service', 'date']);
 const SPEND_FINE = new Set(['fine', 'fines', 'bribe']);
 const EARN_JOB = new Set(['job', 'pizza']);
-const EARN_GAMBLE = new Set(['casino', 'pit bet', 'arm wrestling', 'pool']);
 const LOSS_DEATH = new Set(['hospital bill', 'knocked out']);
 
 export function ensureProgress(p) {
@@ -146,7 +145,6 @@ export function installPerks(game) {
     if (n > 0) {
       if (EARN_JOB.has(reason)) n *= perks.mult('jobPay');
       else if (reason === 'drugs') n *= perks.mult('drugPrice');
-      else if (EARN_GAMBLE.has(reason)) n *= perks.mult('gambling');
     } else if (n < 0 && LOSS_DEATH.has(reason)) n *= perks.mult('deathPenalty');
     return orig(n, reason);
   });

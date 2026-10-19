@@ -121,7 +121,7 @@ export function installJobs(game) {
     st.addMoney(pay, 'job');
     for (const [k, v] of Object.entries(d.gain || {})) train(game, k, v * hours, 'job:' + id);
     if (id === 'cop') st.addStat('karma', 1);
-    st.addXP(hours * 4 + p.job.rank * 2);
+    st.addXP(hours * 6 + p.job.rank * 4);
     p.job.shifts++;
     const c = career(id);
     c.shifts = p.job.shifts;

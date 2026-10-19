@@ -48,6 +48,8 @@ export class Placer {
   }
 
   blocked(x, z) { const b = this.ph.pointBlocked(x, z); return !!b; }
+  // a real building wall (not a low garden wall / fence / prop)
+  tall(x, z) { return !!this.ph.pointBlocked(x, z, 3); }
   district(x, z) { return this.w.districtAt(x, z); }
 
   clear(x, z, r = 2) {
@@ -140,6 +142,22 @@ export class Placer {
     return true;
   }
 
+  // Breathing room: no other solid prop within `pad` of the footprint's sides/front
+  // (the back is skipped when `wall` is set). Keeps our things from huddling
+  // against world benches, lamps, bins and bollards.
+  roomy(x, z, facing, w, d, pad = 1.0, wall = false) {
+    const fx = Math.sin(facing), fz = Math.cos(facing), sx = fz, sz = -fx;
+    const pts = [[-1, 0], [1, 0], [0, 1], [-1, 1], [1, 1]];
+    if (!wall) pts.push([0, -1], [-1, -1], [1, -1]);
+    for (const [a, b] of pts) {
+      const ox = a * (w / 2 + pad), oz = b * (d / 2 + pad);
+      const px = x + sx * ox + fx * oz, pz = z + sz * ox + fz * oz;
+      const hit = this.ph.pointBlocked(px, pz);
+      if (hit && !(wall && b <= 0 && hit.height >= 3)) return false;
+    }
+    return true;
+  }
+
   // Put a w x d object flush against the wall behind a stand spot. Returns {x, z, facing, wall} or null.
   againstWall(s, w, d, gap = 0.04) {
     const fx = Math.sin(s.facing), fz = Math.cos(s.facing);
@@ -149,8 +167,9 @@ export class Placer {
     const x = wx + fx * (d / 2 + gap), z = wz + fz * (d / 2 + gap);
     // the wall must continue behind the whole width (no corners/doorways)
     const sx = fz, sz = -fx;
-    for (const a of [-1, 1]) if (!this.blocked(wx - fx * 0.12 + sx * a * w / 2, wz - fz * 0.12 + sz * a * w / 2)) return null;
+    for (const a of [-1, 0, 1]) if (!this.tall(wx - fx * 0.12 + sx * a * w / 2, wz - fz * 0.12 + sz * a * w / 2)) return null;
     if (!this.footprintFree(x + fx * 0.02, z + fz * 0.02, s.facing, w * 0.98, d * 0.9, 0.9)) return null;
+    if (!this.roomy(x, z, s.facing, w, d, 0.8, true)) return null;
     return { x, z, facing: s.facing, wx, wz };
   }
 

@@ -195,3 +195,6 @@ Also owns `src/data/barks.js` (`bark(kind)` one-liners).
 - `game.police` (src/npc/police.js + src/vehicles/police.js): wanted level, cruisers (2+ stars), roadblocks (4),
   helicopter (5), line-of-sight evasion. Net: police:snap, police:hit, police:steal, police:tire, police:heat.
 - Ambient crowd (src/npc/crowd.js): sidewalk-only peds, seated/idle/leaning/hobo behaviors via world.seats/wallSpots.
+- Pacing (balance pass): guided 9-step prologue; each main path ~60-70 min from a new game. Quest steps support
+  `marker`, `finale`, `xp` options. Goals view: src/quests/goals.js. Stat-threshold unlock toasts: src/progress/milestones.js.
+  Level-up: +1 STR/INT/CHA, energy refill. Post-ending: keep everything, +2 perk points, title.
