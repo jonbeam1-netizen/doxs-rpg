@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Dox's RPG</title>
+<meta name="description" content="Dox's RPG — a grimy 3D stick-figure life-sim RPG. Work, fight, deal, drive, and drag your friends along in co-op.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Special+Elite&family=Barlow+Condensed:wght@400;600;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+<script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
+</head>
+<body>
+<div id="game"></div>
+<div id="ui-root">
+  <div id="hud" class="hidden"></div>
+  <div id="prompt" class="hidden"></div>
+  <div id="toasts"></div>
+  <div id="bigtext" class="hidden"></div>
+  <div id="dialog-layer"></div>
+</div>
+<div id="title-layer"></div>
+<div id="grain"></div>
+<div id="vignette"></div>
+<div id="loading"><div class="loading-title">DOX'S RPG</div><div class="loading-sub">scraping the city off the pavement...</div></div>
+<script type="module" src="src/main.js"></script>
+</body>
+</html>
