@@ -164,7 +164,7 @@ export class Avatars {
   punch(id, m) {
     const rp = this.map.get(id);
     if (!rp || rp.dead || rp.vehicle) return;
-    rp._swing = m.ss === 'overhead' ? 'overhead' : null;
+    rp._swing = typeof m.ss === 'string' && /^[a-z_]{1,16}$/.test(m.ss) ? m.ss : null;
     rp._model.punch(clamp(Number(m.d) || 0.28, 0.1, 1.2));
   }
 

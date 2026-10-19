@@ -722,7 +722,7 @@ export class Combat {
       const riposte = n.riposteUntil > g.elapsed;
       const crit = riposte || chance(0.08 + Math.min(0.1, str / 1000) + (s.kind === 'finisher' ? 0.07 : 0));
       let dmg = s.kind === 'kick' ? (KICK.damage + str * 0.3) : (def.damage + str * 0.35) * weak;
-      dmg *= rand(0.9, 1.1) * s.mult;
+      dmg *= rand(0.9, 1.1) * s.mult * this._outclassed(n, s.kind === 'kick' ? 0 : def.damage);
       if (crit) dmg *= riposte ? 1.9 : 1.6;
       // guard: blocked from the front unless it's a kick / charged heavy
       const rx = pl.pos.x - n.pos.x, rz = pl.pos.z - n.pos.z, rl = Math.hypot(rx, rz) || 1;
@@ -759,6 +759,15 @@ export class Combat {
       if (blockedAny && !heavy && s.kind !== 'kick') { pl.vel.x -= dx * 3; pl.vel.y -= dz * 3; this.cd = Math.max(this.cd, 0.3); }
       else if (!heavy) { pl.vel.x += dx * 2.5; pl.vel.y += dz * 2.5; }
     }
+  }
+
+  // Tough fights need STR or a real weapon: hits against high-tier fighters are scaled by how
+  // outclassed you are (STR + weapon vs tier). 1 = fair fight, floor 0.35.
+  _outclassed(n, wpnDmg) {
+    const tier = n.tier || 0;
+    if (tier <= 0) return 1;
+    const power = (this.p.str || 0) + wpnDmg * 0.8 + 6;
+    return clamp(power / (tier * 9 + 10), 0.35, 1);
   }
 
   // Player (local) damages an NPC; handles crimes. Returns damage() result.
@@ -874,7 +883,10 @@ export class Combat {
     fx.number(pl.pos.x, 2.5, pl.pos.z, 'PARRY!', 'parry');
     fx.hitStop(0.12);
     g.cameraRig?.shake?.(0.15, 0.15);
-    if (npc) this.ctx.npcs.parried?.(npc);
+    if (npc) {
+      this.ctx.npcs.parried?.(npc);
+      if (npc.boss || npc.bossName) npc.parryImmuneUntil = g.elapsed + 4; // bosses don't fall for it twice in a row
+    }
     this.lastCombatT = g.elapsed;
     g.bus.emit('player:parry', { npc: npc?.id });
   }
@@ -997,7 +1009,8 @@ export class Combat {
       const fwx = Math.sin(pl.facing), fwz = Math.cos(pl.facing);
       const front = !opts.dir || (-opts.dir.x * fwx - opts.dir.z * fwz) > 0.1;
       if (front && opts.melee) {
-        if (this.parryOk && g.elapsed - this.blockAt < PARRY_WINDOW) { this._parry(opts.npc); return; }
+        const bossy = opts.npc && (opts.npc.boss || opts.npc.bossName);
+        if (this.parryOk && g.elapsed - this.blockAt < PARRY_WINDOW && !(bossy && opts.npc.parryImmuneUntil > g.elapsed)) { this._parry(opts.npc); return; }
         dmg = Math.round(dmg * (opts.heavyHit ? 0.45 : 0.15));
         blocked = true;
         fx.sfx.play('block');

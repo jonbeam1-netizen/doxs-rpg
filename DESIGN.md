@@ -190,7 +190,7 @@ Also owns `src/data/barks.js` (`bark(kind)` one-liners).
   `createStickman(lookToStickman(look))` anywhere you build a player-looking stickman.
 - Skateboard (src/skate): G mount, W push, Space ollie, left click kickflip. Unlocked via Skidmark Kev's quest
   (level 3+). Save: `p.skate`. Net message `{t:'skate', on, board, trick}`.
-- Keys in use: WASD Shift Space E F G Q R H N O P V X I Tab J M T Esc F1 1-9 , . arrows, LMB, MMB/RMB drag (camera). Heists: V mask, X drop bag.
+- Keys in use: WASD Shift Space E F G Q R H N O P V X I B C Z Y Tab J M T Esc F1 1-9 , . arrows, LMB (tap combo/hold heavy), RMB tap or B kick, C block/parry, Z roll, Y quick-heal, MMB tap lock-on, MMB/RMB drag camera. Heists: V mask, X drop bag.
 - `?dev` / `?mute` sessions are silent and never save.
 - `game.police` (src/npc/police.js + src/vehicles/police.js): wanted level, cruisers (2+ stars), roadblocks (4),
   helicopter (5), line-of-sight evasion. Net: police:snap, police:hit, police:steal, police:tire, police:heat.
@@ -198,3 +198,6 @@ Also owns `src/data/barks.js` (`bark(kind)` one-liners).
 - Pacing (balance pass): guided 9-step prologue; each main path ~60-70 min from a new game. Quest steps support
   `marker`, `finale`, `xp` options. Goals view: src/quests/goals.js. Stat-threshold unlock toasts: src/progress/milestones.js.
   Level-up: +1 STR/INT/CHA, energy refill. Post-ending: keep everything, +2 perk points, title.
+- Combat (round 3): combos, heavy, kick, block/parry, roll, lock-on, hit-stop via game.timeScale (wraps clock.getDelta).
+  Boss spec: startBrawl({..., boss: true | {name, hp, moves:['combo','charge','slam','block','summon'], weapon, scale, color, hat, dmg}}).
+- Traffic signals: game.world.signals (src/world/signals.js); AI cars and pedestrians obey them.
