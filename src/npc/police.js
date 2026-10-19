@@ -185,6 +185,13 @@ export class Police {
     return out;
   }
 
+  // Where should a cop chasing `t` look? null = they can see them (chase for real).
+  searchPointFor(t) {
+    if (t?.type === 'player') return this.heat >= 1 && this.lastSeen > 1.25 && this.lastKnown ? this.lastKnown : null;
+    if (t?.type === 'remote') { const h = this.remoteHeat.get(t.id); return h && !h.seen && h.heat >= 1 && h.lk ? h.lk : null; }
+    return null;
+  }
+
   // Spawn a pursuit cop on foot at (x,z) after a wanted target `w` (from wanted()).
   spawnCopAt(w, lvl, x, z, data = {}) {
     const swat = lvl >= 5 && chance(0.6);

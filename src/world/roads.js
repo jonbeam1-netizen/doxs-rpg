@@ -226,7 +226,7 @@ function edgeProps(C, e, nodes) {
         prev = pts;
       }
     }
-    if (desert) return;
+    if (desert || dist === 'blackwater') return; // island streets stay clean: lights + power lines only
     // --- clutter on sidewalks
     const bOff = e.hw + e.sw - 0.7, cOff = e.hw + 0.9;
     for (const side of [1, -1]) {

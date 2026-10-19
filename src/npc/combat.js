@@ -416,7 +416,7 @@ export class Combat {
 
   hurtPlayer(dmg, opts = {}) {
     const g = this.game, pl = g.player, p = this.p;
-    if (!pl || pl.dead || this.isDown || !g.started) return;
+    if (!pl || pl.dead || this.isDown || !g.started || this.ctx.police?.arresting) return;
     if (pl.vehicle) dmg = Math.round(dmg * (opts.gun ? 0.5 : 0));
     if (dmg <= 0) return;
     const fx = this.ctx.fx;

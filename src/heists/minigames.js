@@ -4,7 +4,7 @@ import { pick, randInt, clamp } from '../core/util.js';
 // from the heist system (so they tick even when requestAnimationFrame doesn't).
 // Each returns { update(dt), close(), done } and calls onDone(success, why).
 
-export function startLockpick(game, { pins = 3, hard = false, title = 'Lockpicking', onDone }) {
+export function startLockpick(game, { pins = 3, hard = false, skill = 1, title = 'Lockpicking', onDone }) {
   const wrap = document.createElement('div');
   wrap.className = 'heist-mg';
   wrap.innerHTML = `<div class="sys-hint">${hard ? 'No lockpick set. You\'re using a bobby pin and hope.' : 'Tension wrench in, pick up. Feel for the click.'}</div>
@@ -12,7 +12,7 @@ export function startLockpick(game, { pins = 3, hard = false, title = 'Lockpicki
     <div class="track"><div class="zone"></div><div class="needle"></div></div>
     <div class="status">Press <kbd>Space</kbd> / <kbd>E</kbd> (or click) when the needle is in the green.</div>
     <div class="ui-row" style="justify-content:center;margin-top:6px"><button class="ui-btn primary" data-set>Set pin</button></div>`;
-  const st = { p: 0, dir: 1, pin: 0, miss: 0, z0: 0, w: hard ? 0.1 : 0.16, done: false, cool: 0 };
+  const st = { p: 0, dir: 1, pin: 0, miss: 0, z0: 0, w: Math.min(0.4, (hard ? 0.1 : 0.16) * Math.sqrt(skill)), done: false, cool: 0 };
   const zoneEl = wrap.querySelector('.zone'), needle = wrap.querySelector('.needle'), status = wrap.querySelector('.status');
   const pinEls = [...wrap.querySelectorAll('.pins span')];
   const newZone = () => { st.z0 = 0.08 + Math.random() * (0.84 - st.w); zoneEl.style.left = `${st.z0 * 100}%`; zoneEl.style.width = `${st.w * 100}%`; };
@@ -50,7 +50,7 @@ export function startLockpick(game, { pins = 3, hard = false, title = 'Lockpicki
     update(dt) {
       if (st.done) return;
       if (st.cool > 0) st.cool -= dt;
-      const sp = (hard ? 0.95 : 0.7) + st.pin * 0.16;
+      const sp = ((hard ? 0.95 : 0.7) + st.pin * 0.16) / Math.sqrt(skill);
       st.p += st.dir * sp * dt;
       if (st.p > 1) { st.p = 1; st.dir = -1; } else if (st.p < 0) { st.p = 0; st.dir = 1; }
       needle.style.left = `${st.p * 100}%`;
@@ -65,7 +65,7 @@ export function startLockpick(game, { pins = 3, hard = false, title = 'Lockpicki
 const HEX = '0123456789ABCDEF';
 const code = () => HEX[randInt(0, 15)] + HEX[randInt(0, 15)];
 
-export function startHack(game, { rounds = 3, hard = false, title = 'Hacking', onDone }) {
+export function startHack(game, { rounds = 3, hard = false, skill = 1, title = 'Hacking', onDone }) {
   const wrap = document.createElement('div');
   wrap.className = 'heist-mg';
   wrap.innerHTML = `<div class="sys-hint">${hard ? 'No Hack-O-Matic. You\'re typing on a TV remote taped to a phone.' : 'Hack-O-Matic 3000 engaged. It beeps encouragingly.'}</div>
@@ -74,7 +74,7 @@ export function startHack(game, { rounds = 3, hard = false, title = 'Hacking', o
     <div class="tbar"><i></i></div>
     <div class="status">Round <b class="rn">1</b>/${rounds}</div>`;
   const grid = wrap.querySelector('.grid'), tgtEl = wrap.querySelector('.target'), tbar = wrap.querySelector('.tbar i'), status = wrap.querySelector('.status');
-  const st = { round: 0, target: '', limit: hard ? 5 : 7, t: 0, shuffle: 0, every: hard ? 0.9 : 1.5, done: false };
+  const st = { round: 0, target: '', limit: (hard ? 5 : 7) * skill, t: 0, shuffle: 0, every: (hard ? 0.9 : 1.5) * Math.sqrt(skill), done: false };
   let finished = false;
   const finish = (ok, why) => {
     if (finished) return;

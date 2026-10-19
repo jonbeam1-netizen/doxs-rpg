@@ -90,7 +90,8 @@ export class Ambient {
     const danger = this._danger(dist);
     const hour = g.time.hour;
     const lateNight = hour >= 1 && hour < 5;
-    let target = night ? 14 + danger : 20 + danger * 2;
+    // (~40% thinner than round 1: the streets felt like a parade)
+    let target = (night ? 14 + danger : 20 + danger * 2) * 0.6;
     if (lateNight) target *= 0.7;
     if (pl.vehicle) target *= 0.8;
     target = Math.round(target * this.density);
@@ -130,6 +131,15 @@ export class Ambient {
     const min = fill ? 10 : SPAWN_MIN, max = fill ? 80 : SPAWN_MAX;
     const B = w?.bounds;
     const ok = (x, z) => (!B || (x > B.minX + 2 && x < B.maxX - 2 && z > B.minZ + 2 && z < B.maxZ - 2)) && !g.physics.pointBlocked(x, z);
+    // Preferred: a real sidewalk spot near the player. If the world can't find one, don't spawn.
+    if (typeof w?.sidewalkPointNear === 'function') {
+      for (let i = 0; i < 3; i++) {
+        let p = null;
+        try { p = w.sidewalkPointNear(c.x, c.z, min, max); } catch { p = null; }
+        if (p && ok(p.x, p.z)) return p;
+      }
+      return null;
+    }
     if (w?.randomSidewalkPoint) {
       for (let i = 0; i < 8; i++) {
         let p = null;
@@ -139,10 +149,11 @@ export class Ambient {
         if (d >= min && d <= max && ok(p.x, p.z)) return p;
       }
     }
+    const npcs = this.ctx.npcs;
     for (let i = 0; i < 10; i++) {
       const a = Math.random() * Math.PI * 2, r = rand(min, max);
       const x = c.x + Math.sin(a) * r, z = c.z + Math.cos(a) * r;
-      if (ok(x, z)) return { x, z };
+      if (ok(x, z) && npcs.walkable(x, z)) return { x, z };
     }
     return null;
   }

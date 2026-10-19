@@ -199,7 +199,7 @@ export class Planner {
           <div class="d">${esc(M.desc)}</div>
           <div class="btns">${have ? (h.mask === mid ? '' : `<button class="ui-btn" data-wear="${mid}">Use this one</button>`) : `<button class="ui-btn" data-mask="${mid}" ${g.state.canAfford(M.price) ? '' : 'disabled'}>Buy</button>`}</div></div>`;
       }).join('');
-      return `<div class="sys-cashline"><span>Cash <b>${fmtMoney(g.state.p.money)}</b></span><span>Press <kbd>G</kbd> to put your mask on/off</span></div>
+      return `<div class="sys-cashline"><span>Cash <b>${fmtMoney(g.state.p.money)}</b></span><span>Press <kbd>V</kbd> to put your mask on/off</span></div>
         <div class="sys-sect">Tools of the trade</div><div class="sys-shop">${gear}</div>
         <div class="sys-sect">Masks</div><div class="sys-shop">${masks}</div>`;
     };

@@ -354,6 +354,27 @@ export class NPCManager {
     return out;
   }
 
+  // Is (x,z) somewhere a pedestrian should stroll (i.e. not the middle of a road)?
+  // Uses world.onSidewalk when the world provides it, else a road-graph distance test.
+  walkable(x, z) {
+    const w = this.game.world;
+    if (typeof w?.onSidewalk === 'function') { try { return !!w.onSidewalk(x, z); } catch { return true; } }
+    const r = w?.roads;
+    if (!r?.nodes || !r.edges) return true;
+    const N = r.nodes, info = r.info;
+    for (let i = 0; i < r.edges.length; i++) {
+      const A = N[r.edges[i][0]], B = N[r.edges[i][1]];
+      if (!A || !B) continue;
+      const e = info?.[i];
+      const hw = e?.hw ? e.hw - 0.3 : e?.lanes ? Math.max(...e.lanes) + 2.4 : 9;
+      if (x < Math.min(A.x, B.x) - hw || x > Math.max(A.x, B.x) + hw || z < Math.min(A.z, B.z) - hw || z > Math.max(A.z, B.z) + hw) continue;
+      const dx = B.x - A.x, dz = B.z - A.z, L2 = dx * dx + dz * dz || 1;
+      const t = clamp(((x - A.x) * dx + (z - A.z) * dz) / L2, 0, 1);
+      if (Math.hypot(A.x + dx * t - x, A.z + dz * t - z) < hw) return false;
+    }
+    return true;
+  }
+
   los(ax, az, bx, bz) {
     return this.game.physics.raycast(ax, az, bx, bz, 0.8, 1.2) >= 1;
   }
@@ -545,9 +566,21 @@ export class NPCManager {
       const a = Math.random() * TAU, r = Math.random() * npc.leash;
       return { x: npc.home.x + Math.cos(a) * r, z: npc.home.z + Math.sin(a) * r };
     }
-    // try a sidewalk point nearby; otherwise pick a clear direction
     const w = g.world;
-    if (w?.randomSidewalkPoint && chance(0.6)) {
+    const civilian = !npc.hostile && npc.state !== 'flee';
+    // civilians stick to sidewalks; crossing the road straight across is fine now and then
+    if (civilian && typeof w?.sidewalkPointNear === 'function') {
+      for (let i = 0; i < 4; i++) {
+        let p = null;
+        try { p = w.sidewalkPointNear(npc.pos.x, npc.pos.z, 4, 30); } catch { p = null; }
+        if (!p || !this.los(npc.pos.x, npc.pos.z, p.x, p.z)) continue;
+        const mx = (p.x + npc.pos.x) / 2, mz = (p.z + npc.pos.z) / 2;
+        if (!this.walkable(mx, mz) && !chance(0.05)) continue; // jaywalk rarely
+        return p;
+      }
+    }
+    // try a sidewalk point nearby; otherwise pick a clear direction
+    if (w?.randomSidewalkPoint && typeof w.sidewalkPointNear !== 'function' && chance(0.6)) {
       for (let i = 0; i < 4; i++) {
         let p = null;
         try { p = w.randomSidewalkPoint(w.districtAt?.(npc.pos.x, npc.pos.z)); } catch { p = null; }
@@ -559,6 +592,7 @@ export class NPCManager {
       const a = npc.facing + rand(-1.2, 1.2) + (i > 3 ? Math.PI : 0);
       const r = rand(8, 22);
       const x = npc.pos.x + Math.sin(a) * r, z = npc.pos.z + Math.cos(a) * r;
+      if (civilian && (!this.walkable(x, z) || !this.walkable((x + npc.pos.x) / 2, (z + npc.pos.z) / 2))) continue;
       if (!phys.pointBlocked(x, z) && this.los(npc.pos.x, npc.pos.z, x, z)) return { x, z };
     }
     return null;
@@ -577,7 +611,10 @@ export class NPCManager {
       if (chance(0.45) || npc.leash) { npc.state = 'idle'; npc.stateT = 0; npc.idleFor = rand(1, 5); }
       return;
     }
-    const sp = npc.walk * (npc.leaving ? 1.6 : 1);
+    // jaywalkers hustle across the road instead of strolling down the middle of it
+    npc.roadT = (npc.roadT ?? 0) - dt;
+    if (npc.roadT <= 0) { npc.roadT = 0.5; npc.onRoad = !npc.hostile && !this.walkable(npc.pos.x, npc.pos.z); }
+    const sp = npc.walk * (npc.leaving ? 1.6 : 1) * (npc.onRoad ? 2.4 : 1);
     npc.vx = (dx / d) * sp; npc.vz = (dz / d) * sp;
     if (npc.barkCd <= 0 && npc.dist < 10 && chance(0.004)) {
       this.ctx.fx.say(npc.group, line(npc.role, npc.kind), { ttl: 2.6 });
@@ -638,6 +675,12 @@ export class NPCManager {
   _sChase(npc, dt) {
     const tp = this._targetPos(npc.target);
     const fx = this.ctx.fx;
+    // cops who lost sight of a wanted suspect sweep the area they were last seen in
+    if (tp && npc.kind === 'cop' && !npc.brawlId) {
+      const lk = this.ctx.police?.searchPointFor?.(npc.target);
+      if (lk) { this._copSearch(npc, lk, dt); return; }
+      npc.searchPt = null;
+    }
     if (!tp) {
       npc.target = null;
       if (npc.brawlId || npc.kind === 'cop') { npc.state = 'hunt'; npc.stateT = 0; return; }
@@ -660,6 +703,19 @@ export class NPCManager {
     }
 
     npc.faceTo = Math.atan2(dx, dz);
+    // a wanted driver who stopped: walk up and drag them out (src/npc/police.js runs the bust)
+    if (npc.kind === 'cop' && inCar && this._targetCarSpeed(npc.target) < 2.5 && (this.ctx.police?._heatOf?.(npc.target) ?? 0) < 5) {
+      if (d > 3.2) {
+        const sp = d < 8 ? npc.run * 0.8 : npc.run;
+        npc.vx = ux * sp; npc.vz = uz * sp;
+        if (npc.stuckT > 0.35) { npc.avoidT = 0.6; npc.avoidSign = chance(0.5) ? 1 : -1; npc.stuckT = 0; }
+        if (npc.avoidT > 0) { npc.avoidT -= dt; const a = npc.avoidSign * 1.1, c = Math.cos(a), s2 = Math.sin(a); npc.vx = (ux * c - uz * s2) * sp; npc.vz = (ux * s2 + uz * c) * sp; }
+      } else {
+        npc.vx = npc.vz = 0;
+        if (npc.barkCd <= 0 && chance(0.3)) { fx.say(npc.group, pick(['OUT OF THE CAR!', "Hands where I can see 'em!", 'Step out of the vehicle, dirtbag!', "Unlock the door or I'm coming through the window!"]), { ttl: 1.6, kind: 'cop' }); npc.barkCd = 3; }
+      }
+      return;
+    }
     if (def.kind === 'gun') {
       const shootRange = Math.min(def.range * 0.55, 24);
       const seen = d < shootRange && this._losCached(npc, tp);
@@ -702,6 +758,19 @@ export class NPCManager {
     const sp = (d < 3 ? npc.walk * 1.6 : npc.run) * (npc.stun > 0 ? 0.3 : 1);
     npc.vx = mx * sp; npc.vz = mz * sp;
     if (npc.stuckT > 0.35) { npc.avoidT = 0.7; npc.avoidSign = chance(0.5) ? 1 : -1; npc.stuckT = 0; }
+  }
+
+  _copSearch(npc, lk, dt) {
+    if (!npc.searchPt || Math.hypot(npc.searchPt.x - npc.pos.x, npc.searchPt.z - npc.pos.z) < 3 || npc.stuckT > 1) {
+      const first = !npc.searchPt && Math.hypot(lk.x - npc.pos.x, lk.z - npc.pos.z) > 6;
+      const a = Math.random() * TAU, r = rand(4, 22);
+      npc.searchPt = first ? { x: lk.x, z: lk.z } : { x: lk.x + Math.sin(a) * r, z: lk.z + Math.cos(a) * r };
+      npc.stuckT = 0;
+    }
+    const dx = npc.searchPt.x - npc.pos.x, dz = npc.searchPt.z - npc.pos.z, d = Math.hypot(dx, dz) || 1;
+    const sp = npc.run * 0.6;
+    npc.vx = (dx / d) * sp; npc.vz = (dz / d) * sp;
+    if (npc.barkCd <= 0 && npc.dist < 30 && chance(0.01)) { this.ctx.fx.say(npc.group, pick(["Where'd he go?!", 'Check the dumpsters!', 'I swear he was right here.', 'Dispatch, we lost visual.']), { ttl: 2, kind: 'cop' }); npc.barkCd = 8; }
   }
 
   _losCached(npc, tp) {
@@ -766,6 +835,12 @@ export class NPCManager {
     }
     if (chance(0.35)) this.ctx.ambient?.panic(npc.pos.x, npc.pos.z, 22);
     try { this.game.net.connected && this.game.net.broadcast({ t: 'combat:shot', x: muzzle.x, y: muzzle.y, z: muzzle.z, x2: tp.x + ox, z2: tp.z + oz, w: npc.weapon, n: 1 }); } catch { /* ignore */ }
+  }
+
+  _targetCarSpeed(t) {
+    if (t?.type === 'player') return this.game.player?.vehicle?.speed ?? 0;
+    if (t?.type === 'remote') return Math.abs(Number(this.game.net.remotePlayers?.get?.(t.id)?.vehicle?.speed) || 0);
+    return 0;
   }
 
   _targetMoving(t) {

@@ -224,6 +224,8 @@ export class PoliceFleet {
       const d = Math.hypot(mx - w.pos.x, mz - w.pos.z);
       if (d < 70 || d > 135) continue;
       if (!this._farFromPlayers(mx, mz, 55)) continue;
+      // fleeing in a car? cut them off up ahead
+      if (i < 14 && w.inCar && w.speed > 8 && (mx - w.pos.x) * Math.sin(w.heading) + (mz - w.pos.z) * Math.cos(w.heading) < 20) continue;
       // prefer to pop in out of sight
       if (i < 18 && ph.raycast(mx, mz, w.pos.x, w.pos.z, 2, 1.2) >= 1) continue;
       // drive toward the suspect along this edge
@@ -339,7 +341,7 @@ export class PoliceFleet {
         P.pathT -= dt;
         if (!P.path || P.pathT <= 0 || P.pi >= P.path.length) { this._routeTo(c, aim.x, aim.z); P.pathT = 1.6; }
         if (P.path && P.pi < P.path.length) {
-          const r = this._followPath(c);
+          const r = this._followPath(c, d > 80 ? 1.3 : 1.12);
           tx = r.x; tz = r.z; desired = r.speed;
         } else { tx = aim.x; tz = aim.z; desired = 26; }
         c.aiSpeedMul = d > 90 ? 1.2 : 1.05;
@@ -350,8 +352,23 @@ export class PoliceFleet {
         if (P.shootT <= 0 && d < 30 && P.los) { P.shootT = rand(1.1, 2.2) / (w.heat >= 5 ? 1.5 : 1); this._carShoot(c, w, d); }
       }
     }
-    // steering toward the carrot
+    // swerve around slowpokes in the lane
     const f = c.forward;
+    P.avT = (P.avT || 0) - dt;
+    if (P.avT <= 0) {
+      P.avT = 0.2; P.avSide = 0;
+      for (const o of this.vm.cars) {
+        if (o === c || o.removed || o === this.vm.current) continue;
+        const ox = o.x - p.x, oz = o.z - p.z;
+        if (Math.abs(ox) > 20 || Math.abs(oz) > 20) continue;
+        const fw = ox * f.x + oz * f.z;
+        if (fw < 2 || fw > 8 + c.speed * 0.4) continue;
+        const lt = ox * -f.z + oz * f.x;
+        if (Math.abs(lt) < 2.6) { P.avSide = lt > 0 ? -1 : 1; break; }
+      }
+    }
+    if (P.avSide) { tx += -f.z * P.avSide * 4.5; tz += f.x * P.avSide * 4.5; }
+    // steering toward the carrot
     const dx = tx - p.x, dz = tz - p.z;
     const fwd = dx * f.x + dz * f.z, lat = dx * -f.z + dz * f.x;
     const ang = Math.atan2(lat, fwd);
@@ -421,7 +438,7 @@ export class PoliceFleet {
     }
   }
 
-  _followPath(c) {
+  _followPath(c, boost = 1) {
     const G = this._graph(), P = c.police;
     const path = P.path;
     const p = c.group.position;
@@ -437,14 +454,15 @@ export class PoliceFleet {
     let dn = Math.hypot(T.x - p.x, T.z - p.z);
     if (dn < Math.max(7, c.speed * 0.32) && i < path.length - 1) { P.pi = ++i; T = laneAt(i); dn = Math.hypot(T.x - p.x, T.z - p.z); }
     else if (dn < 6 && i === path.length - 1) { P.pi = path.length; }
-    let speed = 34;
+    const top = 35 * boost;
+    let speed = top;
     if (i < path.length - 1) {
       const N = nodeAt(i), M = nodeAt(i + 1);
       const ox = M.x - N.x, oz = M.z - N.z, ol = Math.hypot(ox, oz) || 1;
       const dot = (ox / ol) * T.ux + (oz / ol) * T.uz;
       const turnK = (1 - dot) / 2;
-      const corner = clamp(34 - 46 * turnK, 9, 34);
-      speed = Math.min(34, corner + Math.max(0, dn - 8) * 0.9);
+      const corner = clamp(36 - 40 * turnK, 12, 36);
+      speed = Math.min(top, corner + Math.max(0, dn - 8) * 1.1);
     }
     // aim a touch past the node so we don't overshoot the corner
     return { x: T.x, z: T.z, speed };

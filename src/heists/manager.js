@@ -100,16 +100,27 @@ export class HeistManager {
     const loc = this.g.locations.get(locId);
     if (!loc) return { x: 0, z: 0, f: 0 };
     const dx = loc.doorX ?? loc.x, dz = loc.doorZ ?? loc.z;
+    const ph = this.g.physics;
     let nx = dx - loc.x, nz = dz - loc.z;
+    // Prefer the building's collision box: the door sits just outside one of its faces.
+    let found = false;
+    for (const d of [0.8, 1.6, 2.6, 3.6]) {
+      for (const [ux, uz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+        let b = null;
+        try { b = ph.pointBlocked(dx - ux * d, dz - uz * d); } catch { b = null; }
+        if (b && b.tag !== 'water') { nx = ux; nz = uz; found = true; break; }
+      }
+      if (found) break;
+    }
     const len = Math.hypot(nx, nz);
     if (len < 0.01) { nx = 0; nz = 1; } else { nx /= len; nz /= len; }
     const tx = -nz, tz = nx;
     const [a, b] = SPOTS[spot] || SPOTS.door;
     let x = dx + tx * a + nx * b, z = dz + tz * a + nz * b;
-    const ph = this.g.physics;
-    for (let i = 0; i < 8; i++) {
-      if (!ph.pointBlocked(x, z) && !ph.resolveCircle(x, z, 0.6).hit) break;
-      x += nx * 0.8; z += nz * 0.8;
+    for (let i = 0; i < 6; i++) {
+      const r = ph.resolveCircle(x, z, 0.7);
+      if (!r.hit && !ph.pointBlocked(x, z)) break;
+      if (r.hit && (r.x !== x || r.z !== z)) { x = r.x; z = r.z; } else { x += nx * 0.8; z += nz * 0.8; }
     }
     return { x, z, f: Math.atan2(nx, nz) };
   }
@@ -135,7 +146,7 @@ export class HeistManager {
   toast(html, kind = 'info', ms = 3800) { try { this.g.ui.toast(html, kind, ms); } catch { /* ignore */ } }
 
   // ------------------------------------------------------------------ start (authority)
-  startRun(id, approach, { pitcher = null, invite = true } = {}) {
+  startRun(id, approach, { pitcher = null, pitcherInfo = {}, invite = true } = {}) {
     const g = this.g, def = HEISTS[id];
     if (!def || this.s) return false;
     const target = this.locPoint(def.loc), drop = this.locPoint(def.dropoff);
@@ -144,13 +155,14 @@ export class HeistManager {
     const myGear = this.myGearIds();
     const gear = this.gearUnion(myGear);
     const used = this.consumeGear(def);
+    const dropAt = this.spotPos(def.dropoff, 'street'); // out on the street, clear of the door prompt
 
     const obj = def.objectives[approach].map((o) => {
       const r = { k: o.k, type: o.type, label: o.label, x: target.x, z: target.z, f: 0, r: 2.4, base: o.need || 0, need: o.need || 0, fast: o.fast || null,
         prog: 0, done: false, pins: o.pins || 3, rounds: o.rounds || 3, verb: o.verb || 'Working', onDone: o.onDone || '', spot: o.spot || null };
       if (o.spot && o.spot !== 'truckRear') { const p = this.spotPos(def.loc, o.spot); r.x = p.x; r.z = p.z; r.f = p.f; }
       if (o.type === 'goto') r.r = 16;
-      if (o.type === 'escape') { r.x = drop.x; r.z = drop.z; r.r = 8; }
+      if (o.type === 'escape') { r.x = dropAt.x; r.z = dropAt.z; r.r = 8; }
       if (o.type === 'hold') r.need = this.needFor(r, gear);
       return r;
     });
@@ -163,7 +175,7 @@ export class HeistManager {
       timeLeft: def.time, alarm: false, susp: 0, extraGot: 0,
       crew: [{ id: me, name: this.myName(), masked: this.masked, mask: this.h.mask, out: false }],
       obj, bags: [], truck: null,
-      drop: { x: drop.x, z: drop.z, label: DROPOFF_LABEL[def.dropoff] || drop.loc.name },
+      drop: { x: dropAt.x, z: dropAt.z, label: DROPOFF_LABEL[def.dropoff] || drop.loc.name },
       target: { x: target.x, z: target.z, label: target.loc.name },
       gear,
     };
@@ -177,7 +189,7 @@ export class HeistManager {
     try { this.spawnGuards(); } catch (e) { console.error('[heists] guards failed', e); }
     try { this.spawnCiv(); } catch (e) { console.error('[heists] civ failed', e); }
     if (obj.some((o) => o.type === 'truck_find')) { try { this.spawnTruck(); } catch (e) { console.error('[heists] truck failed', e); } }
-    if (pitcher && pitcher !== me) this.addCrew(pitcher, { name: this.net.remotePlayers.get(pitcher)?.name || 'Your buddy' });
+    if (pitcher && pitcher !== me) this.addCrew(pitcher, { name: this.net.remotePlayers.get(pitcher)?.name || pitcherInfo.name || 'Your buddy', gear: pitcherInfo.gear || [], mask: pitcherInfo.mask });
     this.onLocalStart(used);
     if (this.shared && invite) {
       this.net.broadcast({ t: 'heist:invite', uid: s.uid, id, name: def.name, approach, leaderName: this.myName() });
@@ -237,7 +249,7 @@ export class HeistManager {
       const o = spots[i % Math.max(1, spots.length)] || { x: s.target.x, z: s.target.z };
       let x = o.x, z = o.z;
       for (let k = 0; k < 10; k++) {
-        const a = Math.random() * Math.PI * 2, r = rand(3, 7);
+        const a = Math.random() * Math.PI * 2, r = rand(5, 9);
         const tx = o.x + Math.cos(a) * r, tz = o.z + Math.sin(a) * r;
         if (!this.g.physics.pointBlocked(tx, tz) && !this.g.physics.resolveCircle(tx, tz, 0.5).hit) { x = tx; z = tz; break; }
       }
@@ -602,7 +614,8 @@ export class HeistManager {
   applyPayout(msg) {
     const g = this.g, h = this.h, def = HEISTS[msg.id];
     if (!def) return;
-    const share = Math.max(0, Math.round(Number(msg.share) || 0));
+    let share = Math.max(0, Math.round(Number(msg.share) || 0));
+    try { const pm = Number(g.perks?.mult?.('heistTake') ?? 1); if (Number.isFinite(pm) && pm > 0) share = Math.round(share * pm); } catch { /* no perks */ }
     const take = Math.max(0, Math.round(Number(msg.take) || 0));
     if (share > 0) g.state.addMoney(share, 'heist');
     g.state.addXP(def.xp);
@@ -641,7 +654,7 @@ export class HeistManager {
     this.toast(pick(RADIO.start), 'info', 5000);
     if (s.obj.some((o) => o.type === 'truck_find')) setTimeout(() => this.toast(pick(RADIO.truck), 'info', 6000), 2500);
     if (usedGear.length) this.toast(`Packed: ${usedGear.map(esc).join(', ')}`, 'info');
-    if (!this.masked) setTimeout(() => this.toast('Press <kbd>G</kbd> to pull your mask on when you get there.', 'info', 4000), 1200);
+    if (!this.masked) setTimeout(() => this.toast('Press <kbd>V</kbd> to pull your mask on when you get there.', 'info', 4000), 1200);
     this.spawnGetaway();
     g.bus.emit('heist:started', { id: s.id, approach: s.approach, crew: s.crew.map((c) => c.name), leader: s.leader === this.me() });
   }
@@ -745,7 +758,7 @@ export class HeistManager {
     this.t += dt;
     if (!g.started) return;
     // G toggles the mask anywhere (it's a free country)
-    if (!g.controlsLocked && g.input.wasPressed('KeyG') && !g.player.dead) this.toggleMask();
+    if (!g.controlsLocked && g.input.wasPressed('KeyV') && !g.player.dead) this.toggleMask();
     this.updateMaskVisual();
     if (this.mg) { try { this.mg.update(dt); } catch (e) { console.error('[heists] minigame failed', e); this.mg = null; } if (this.mg?.done) this.mg = null; }
     this.tickLeftovers(dt);
@@ -761,6 +774,11 @@ export class HeistManager {
     const style = this.h.mask;
     this.toast(this.masked ? `🎭 ${pick(['Mask on. You are now legally nobody.', 'Mask on. Breathe through your mouth.', 'Mask on. Feeling dangerous. And sweaty.'])}` : 'Mask off. Hello, face.', 'info', 1800);
     if (this.s) this.act({ a: 'mask', on: this.masked, style });
+  }
+
+  // Progression perk: speeds up lockpicking, safe-cracking and hacking.
+  skill() {
+    try { const m = Number(this.g.perks?.mult?.('lockpick') ?? 1); return Number.isFinite(m) && m > 0 ? clamp(m, 0.5, 3) : 1; } catch { return 1; }
   }
 
   onMaskChanged() {
@@ -861,13 +879,13 @@ export class HeistManager {
           const p = this.crewPos(c.id);
           if (!p) continue;
           const dx = p.x - n.pos.x, dz = p.z - n.pos.z, d = Math.hypot(dx, dz);
-          if (d > 12) continue;
+          if (d > 11) continue;
           const ang = Math.abs(((Math.atan2(dx, dz) - n.facing + Math.PI * 3) % (Math.PI * 2)) - Math.PI);
           if (ang > 1.0 && d > 2.2) continue;
           if (!npcs.los?.(n.pos.x, n.pos.z, p.x, p.z)) continue;
-          seen = Math.max(seen, (1.4 - d / 12) * (busy ? 1.4 : 1));
+          seen = Math.max(seen, (1.3 - d / 11) * (busy ? 1.25 : 1));
         }
-        n.data.sus = clamp((n.data.sus || 0) + (seen > 0 ? seen * dt * 0.9 : -dt * 0.25), 0, 1.05);
+        n.data.sus = clamp((n.data.sus || 0) + (seen > 0 ? seen * dt * 0.55 : -dt * 0.22), 0, 1.05);
         if (seen > 0 && n.data.sus > 0.3 && !n.data.susSaid) { n.data.susSaid = true; npcs.say?.(n, pick(GUARD_BARKS.sus), { ttl: 2 }); }
         if (n.data.sus < 0.1) n.data.susSaid = false;
         best = Math.max(best, n.data.sus);
@@ -951,10 +969,10 @@ export class HeistManager {
       const d = Math.hypot(pp.x - cur.x, pp.z - cur.z);
       if (d < cur.r + 0.3 && g.input.isDown('KeyE') && !carried) {
         if (!this.masked) {
-          if (this.t > v.warnT) { v.warnT = this.t + 3; this.toast('Put your mask on first, genius. (<kbd>G</kbd>) Unless you WANT to be on the news.', 'bad'); }
+          if (this.t > v.warnT) { v.warnT = this.t + 3; this.toast('Put your mask on first, genius. (<kbd>V</kbd>) Unless you WANT to be on the news.', 'bad'); }
         } else {
           holding = true;
-          v.holdAcc += dt;
+          v.holdAcc += dt * this.skill();
           v.holdSendT -= dt;
           if (v.holdSendT <= 0) { v.holdSendT = 0.2; const d2 = v.holdAcc; v.holdAcc = 0; this.act({ a: 'hold', k: cur.k, d: d2 }); }
         }
@@ -1009,7 +1027,7 @@ export class HeistManager {
     if (s.alarm && !v.lastAlarm) {
       v.lastAlarm = true;
       this.toast(pick(RADIO.alarm), 'bad', 5000);
-      if (Math.hypot(pp.x - s.target.x, pp.z - s.target.z) < 220 || s.truck) g.state.addHeat(2);
+      if (Math.hypot(pp.x - s.target.x, pp.z - s.target.z) < 220 || s.truck) g.state.addHeat((HEISTS[s.id]?.tier || 2) <= 1 ? 1 : 2);
       try { g.combat?.sfx?.('siren'); } catch { /* ignore */ }
     }
     if (s.alarm && active) {
@@ -1105,14 +1123,14 @@ export class HeistManager {
         getPos: () => { const c = this.truckCar(); return c && this.s?.truck && !this.s.truck.stopped ? { x: c.x, z: c.z } : null; },
         prompt: 'Throw the spike strip',
         enabled: () => !!this.s?.gear?.spikes && !this.s.truck?.stopped && !this.s.truck?.parked,
-        onInteract: () => { if (!this.masked) { this.toast('Mask first (<kbd>G</kbd>). Truck drivers have dashcams.', 'bad'); return; } this.act({ a: 'spikes' }); },
+        onInteract: () => { if (!this.masked) { this.toast('Mask first (<kbd>V</kbd>). Truck drivers have dashcams.', 'bad'); return; } this.act({ a: 'spikes' }); },
       });
       add({
         id: `heist:boot:${s.uid}`, radius: 5,
         getPos: () => { const c = this.truckCar(); return c && this.s?.truck?.parked && !this.s.truck.stopped ? { x: c.x, z: c.z } : null; },
         prompt: 'Slap a wheel boot on the truck',
         enabled: () => !!this.s?.truck?.parked && !this.s.truck.stopped,
-        onInteract: () => { if (!this.masked) { this.toast('Mask first (<kbd>G</kbd>). Smile, you\'re on the bank\'s camera.', 'bad'); return; } this.act({ a: 'boot' }); },
+        onInteract: () => { if (!this.masked) { this.toast('Mask first (<kbd>V</kbd>). Smile, you\'re on the bank\'s camera.', 'bad'); return; } this.act({ a: 'boot' }); },
       });
     }
   }
@@ -1136,7 +1154,7 @@ export class HeistManager {
     if (!s) return;
     const o = s.obj.find((x) => x.k === k);
     if (!o || o.done) return;
-    if (!this.masked) { this.toast('Put your mask on first, genius. (<kbd>G</kbd>)', 'bad'); return; }
+    if (!this.masked) { this.toast('Put your mask on first, genius. (<kbd>V</kbd>)', 'bad'); return; }
     if (o.type === 'hold') return; // holding E is handled per-frame
     if (this.mg) return;
     const done = (ok, why) => {
@@ -1146,8 +1164,8 @@ export class HeistManager {
       else this.toast(o.type === 'hack' ? 'Locked out. Try again, script kiddie.' : 'Pick snapped. Try again, butterfingers.', 'bad', 2200);
       this.act({ a: 'obj', k, ok: !!ok });
     };
-    if (o.type === 'lockpick') this.mg = startLockpick(g, { pins: o.pins, hard: !s.gear.picks, title: o.label, onDone: done });
-    else if (o.type === 'hack') this.mg = startHack(g, { rounds: s.gear.hacker ? Math.max(2, o.rounds - 1) : o.rounds + 1, hard: !s.gear.hacker, title: o.label, onDone: done });
+    if (o.type === 'lockpick') this.mg = startLockpick(g, { pins: o.pins, hard: !s.gear.picks, skill: this.skill(), title: o.label, onDone: done });
+    else if (o.type === 'hack') this.mg = startHack(g, { rounds: s.gear.hacker ? Math.max(2, o.rounds - 1) : o.rounds + 1, hard: !s.gear.hacker, skill: this.skill(), title: o.label, onDone: done });
   }
 
   syncProps(s) {

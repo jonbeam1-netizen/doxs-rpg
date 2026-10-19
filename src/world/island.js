@@ -55,6 +55,7 @@ export function buildIsland(C) {
     doors.blackwater_pier = fishingPier(C);
     doors.smugglers_cove = cove(C);
     beachJunk(C);
+    benches(C);
     seaCollision(C);
   } catch (e) { console.error('[world] island build failed', e); }
   g.reset();
@@ -118,7 +119,7 @@ function shore(C) {
       const flip = (u[1] * v[2] - u[2] * v[1]) * nx + (u[0] * v[1] - u[1] * v[0]) * nz < 0;
       const rock = '#4e4a44';
       if (!flip) g.quad('props', A, B, Ct, D, [0, 0, 1, 0, 1, 1, 0, 1], rock); else g.quad('props', B, A, D, Ct, [0, 0, 1, 0, 1, 1, 0, 1], rock);
-      if (r() < 0.55) P.rock(C, x0 - nx * 1.2 + (r() - 0.5) * 2, z0 - nz * 1.2 + (r() - 0.5) * 2, 0.9 + r() * 1.4);
+      if (r() < 0.22) P.rock(C, x0 - nx * 1.2 + (r() - 0.5) * 2, z0 - nz * 1.2 + (r() - 0.5) * 2, 0.9 + r() * 1.4);
       if (r() < 0.5) {
         // big crag in the water
         const d = 3 + r() * 10, s = 3 + r() * 6 * cl;
@@ -198,7 +199,7 @@ function bridge(C) {
     g.box('rust', tx, 17.5, 0, 3, 3, BRIDGE.hw * 2 + 9, { color: '#4a2e1e', uvScale: 3 });
     g.box('metal', tx, 13, 0, 1.2, 6, 1.2, { color: '#2a2622' });
   }
-  for (let z = -BRIDGE.hw + 0.5; z < BRIDGE.hw; z += 1) g.box('metal', mid, 0.03, z, 0.5, 0.06, 0.9, { color: '#2e2a26' });
+  for (let z = -BRIDGE.hw + 0.5; z < BRIDGE.hw; z += 1) g.box('metal', mid, 0.07, z, 0.5, 0.04, 0.9, { color: '#2e2a26' });
   // control house on the north tower
   g.box('f_corrugated_rust', mid - 22, 18.4, -(BRIDGE.hw + 3.2), 4, 2.4, 4, { uvScale: [12, 14] });
   // welcome gantry at the city end
@@ -234,8 +235,6 @@ function tollPlaza(C) {
   g.frame(x - 6, z - 1, 0);
   g.box('metal', 0, 2, 0, 0.2, 4, 0.2, { color: '#333' });
   locSign(C, { d: 0 }, 'isle_toll', 'TOLL $5 · PAY THE TROLL', { w: 4.6, h: 1.3, y: 3.6, z: 0.15, bg: '#c8b030', fg: '#1a1612', double: true, gain: 0.6, font: 'Barlow Condensed' });
-  P.oilDrums(C, x + 6, z - 1.5, 2);
-  P.cone(C, x - 2, z + 2.6); P.cone(C, x + 3, z + 2.8);
 }
 
 // ------------------------------------------------------------------ ferry piers (island + Rustyards)
@@ -245,8 +244,8 @@ function woodDeck(C, x0, z0, x1, z1, { piles = true } = {}) {
   const L = along ? x1 - x0 : z1 - z0;
   for (let s = 0; s < L; s += 24) {
     const e = Math.min(L, s + 24);
-    if (along) g.box('wood', x0 + (s + e) / 2, -0.25, (z0 + z1) / 2, e - s, 0.5, z1 - z0, { faces: 'all', uvScale: 3, color: '#6a5a46' });
-    else g.box('wood', (x0 + x1) / 2, -0.25, z0 + (s + e) / 2, x1 - x0, 0.5, e - s, { faces: 'all', uvScale: 3, color: '#6a5a46' });
+    if (along) g.box('wood', x0 + (s + e) / 2, -0.22, (z0 + z1) / 2, e - s, 0.56, z1 - z0, { faces: 'all', uvScale: 3, color: '#6a5a46' });
+    else g.box('wood', (x0 + x1) / 2, -0.22, z0 + (s + e) / 2, x1 - x0, 0.56, e - s, { faces: 'all', uvScale: 3, color: '#6a5a46' });
   }
   if (piles) for (let s = 1; s < L; s += 4) for (const side of [0, 1]) {
     if (along) g.cyl('wood', x0 + s, -2.6, side ? z1 - 0.3 : z0 + 0.3, 0.25, 0.25, 4.8, 6, { color: '#3e3022' });
@@ -293,9 +292,7 @@ function shack(C, x, z, rot, { w = 7, d = 6, h = 3, stilts = 0, facade = 'wood',
   g.box('f_' + facade, 0, 0.24 + h / 2, 0, w, h, d, { uvScale: [12, 14], uvOff: [r(), 0], color: tint });
   g.push(); g.translate(0, 0.24 + h, 0); g.rotY(PI / 2); g.gable('corr', 0, 0, 0, d + 0.8, 1.2, w + 0.8, { color: roofCol, uvScale: 3, endMat: 'f_' + facade, endColor: tint }); g.pop();
   if (door) { g.push(); g.translate(0, 0.24, d / 2); P.doorway(C, (r() - 0.5) * (w - 3), 1.1, 2.1, (r() * 6) | 0, { lamp: r() < 0.5, lampColor: '#ffb070' }); g.pop(); }
-  g.box('glassdark', w / 4, 1.6, d / 2 + 0.02, 1, 0.8, 0.04, { faces: 'f', color: r() < 0.3 ? '#806a40' : '#40505a' });
-  if (porch && r() < 0.6) { g.box('wood', 0, 0.6, d / 2 + 1.25, w, 0.06, 0.06, { color: '#4a3a28' }); }
-  if (r() < 0.5) g.cyl('metal', w / 2 - 0.6, 0.24 + h + 1.4, -d / 4, 0.12, 0.12, 1.6, 5, { color: '#2a2622' }); // stovepipe
+  if (r() < 0.4) g.cyl('metal', w / 2 - 0.6, 0.24 + h + 1.4, -d / 4, 0.12, 0.12, 1.6, 5, { color: '#2a2622' }); // stovepipe
 }
 
 function stiltVillage(C) {
@@ -373,7 +370,7 @@ function funland(C, live) {
   P.doorway(C, 0, 2.2, 2.8, 4, { lamp: true, lampColor: '#ff80c0', awning: '#8a1a4a' });
   g.box('chase', 0, 4.4, 0.12, A.w - 1, 0.7, 0.04, { faces: 'f', uvScale: [8, 0.7] });
   g.frame(acx, A.cz, FACE.w);
-  locSign(C, { d: A.d }, 'funland_arcade', 'ARCADE · PRIZES · TICKETS', { w: 12, h: 2, y: 6.2, bg: '#1a0a2a', fg: '#ffd040', neon: '#40e0ff', flicker: true, gain: 2.4, font: 'Barlow Condensed' });
+  locSign(C, { d: A.d }, 'funland_arcade', 'FUNLAND ARCADE', { w: 12, h: 2, y: 6.2, bg: '#1a0a2a', fg: '#ffd040', neon: '#40e0ff', flicker: true, gain: 2.4, font: 'Barlow Condensed' });
   C.obb(acx, A.cz, FACE.w, A.w, A.d, top);
   const doorX = fx - 1.6, doorZ = A.cz;
   g.identity(); g.plane('glow', doorX - 4, doorZ - 4, doorX + 4, doorZ + 4, 0.09, { color: '#ff80c0' });
@@ -399,7 +396,7 @@ function funland(C, live) {
   // ---- roller coaster skeleton
   const CO = SPOTS.coaster;
   const N = 84;
-  const H = (t) => 3.5 + 5 * (0.5 + 0.5 * Math.sin(t * 3 + 0.4)) + 11 * Math.max(0, Math.sin(t)) ** 3;
+  const H = (t) => 4 + 7 * (0.5 + 0.5 * Math.sin(t * 3 + 0.4)) + 17 * Math.max(0, Math.sin(t + 0.6)) ** 3;
   const P3 = (t) => [CO.cx + Math.cos(t) * CO.rx, H(t), CO.cz + Math.sin(t) * CO.rz];
   const broken = (i) => i >= 52 && i <= 55;
   for (let i = 0; i < N; i++) {
@@ -493,17 +490,14 @@ function funland(C, live) {
   }
   // lamps, trash, puddles, dead trees inside the park
   for (const [lx, lz] of [[1045, 12], [1060, -55], [1100, -90], [1130, 0], [1170, 10], [1060, 90], [1150, 92]]) P.streetlight(C, lx, lz, r() * 6, { flicker: r() < 0.6, color: '#ff9adf', h: 6.5, arm: 1.6 });
-  for (let i = 0; i < 46; i++) {
+  for (let i = 0; i < 14; i++) {
     const x = F.x0 + 4 + r() * (F.x1 - F.x0 - 8), z = F.z0 + 4 + r() * (F.z1 - F.z0 - 8);
     const k = r();
     if (Math.hypot(x - FW.x, z - FW.z) < 14 || Math.hypot(x - CA.x, z - CA.z) < 10) continue;
     if (x > 1076 && x < 1104 && z > -30 && z < -10) continue;
-    if (k < 0.35) P.puddle(C, x, z, 1 + r() * 2, r() * 6);
-    else if (k < 0.6) P.litter(C, x, z, 3, 6);
-    else if (k < 0.72) P.trashPile(C, x, z, 3);
-    else if (k < 0.8) P.deadTree(C, x, z, 0.8);
-    else if (k < 0.86) P.tires(C, x, z, 2);
-    else if (k < 0.9) P.shoppingCart(C, x, z, r() * 6);
+    if (k < 0.4) P.puddle(C, x, z, 1 + r() * 2, r() * 6);
+    else if (k < 0.75) P.deadTree(C, x, z, 0.8);
+    else P.trashPile(C, x, z, 3);
   }
   return { x: acx, z: A.cz, doorX, doorZ, facing: FACE.w };
 }
@@ -617,8 +611,6 @@ function prison(C) {
   const top = mass(C, { W: 16, D: 10, H: 5, facade: 'concrete', tint: '#c0bcb0', parapet: 0.5 });
   g.frame(vx, vz, FACE.s); g.translate(0, 0, 5);
   P.doorway(C, -3, 1.6, 2.6, 3, { lamp: true, lampColor: '#e8f0ff' });
-  g.box('glassdark', 3, 1.8, 0.05, 4, 1.2, 0.05, { faces: 'f', color: '#5a6a70' });
-  for (let x = 1.2; x < 5; x += 0.3) g.box('metal', x, 1.8, 0.1, 0.04, 1.3, 0.04, { color: '#111' });
   g.frame(vx, vz, FACE.s);
   locSign(C, { d: 10 }, 'pen_visit', 'VISITING · NO CONTACT · NO CAKE WITH FILES', { w: 9, h: 1.1, y: 4.3, bg: '#e0dcd0', fg: '#1a1a1a', gain: 0.6, font: 'Barlow Condensed' });
   C.obb(vx, vz, FACE.s, 16, 10, top);
@@ -721,7 +713,6 @@ function rustyHook(C) {
   g.push(); g.translate(0, top, 0); g.rotY(PI / 2); g.gable('corr', 0, 0, 0, R.d + 1, 2, R.w + 1, { color: '#6a3a2a', uvScale: 3, endMat: 'f_wood', endColor: '#a8a090' }); g.pop();
   g.translate(0, 0, R.d / 2);
   P.doorway(C, -4, 1.6, 2.5, 2, { lamp: true, lampColor: '#ffb060', awning: '#2a4a6a' });
-  g.box('glassdark', 3, 1.9, 0.05, 6, 1.4, 0.05, { faces: 'f', color: '#7a6a40' });
   g.frame(R.cx, R.cz, FACE.w);
   locSign(C, { d: R.d }, 'rusty_hook', 'THE RUSTY HOOK · SEAFOOD · BAIT · REGRET', { w: 13, h: 1.6, y: 5.2, bg: '#1a2a3a', fg: '#ffd890', neon: '#40c0ff', flicker: true, gain: 2, font: 'Special Elite' });
   // giant fish on the roof with a hook through its lip
@@ -736,7 +727,7 @@ function rustyHook(C) {
   C.obb(R.cx, R.cz, FACE.w, R.w, R.d, top + 2);
   // nets, crates, ice chest, crab pots out front-ish (side)
   const r = C.rng;
-  for (let i = 0; i < 4; i++) { const x = R.cx - 2 + (r() - 0.5) * 8, z = R.cz + R.w / 2 + 2 + r() * 4; g.frame(x, z, r() * 6); g.box('wood', 0, 0.4, 0, 1.2, 0.8, 0.9, { color: '#7a6a4a' }); C.solid(x - 0.6, z - 0.6, x + 0.6, z + 0.6, 0.8); }
+  for (let i = 0; i < 2; i++) { const x = R.cx - 2 + (r() - 0.5) * 8, z = R.cz + R.w / 2 + 2 + r() * 4; g.frame(x, z, r() * 6); g.box('wood', 0, 0.4, 0, 1.2, 0.8, 0.9, { color: '#7a6a4a' }); C.solid(x - 0.6, z - 0.6, x + 0.6, z + 0.6, 0.8); }
   P.oilDrums(C, R.cx + 4, R.cz - R.w / 2 - 2.5, 2);
   const doorX = R.cx - R.d / 2 - 1.6, doorZ = R.cz - 4;
   g.identity(); g.plane('glow', doorX - 3.5, doorZ - 3.5, doorX + 3.5, doorZ + 3.5, 0.09, { color: '#ffb060' });
@@ -804,7 +795,7 @@ function cove(C) {
   locSign(C, { d: 0 }, 'cove_sign', 'NOTHING TO SEE HERE', { w: 4.5, h: 0.9, y: 3.6, z: 3.6, bg: '#2a2218', fg: '#c8b890', gain: 0.6, font: 'Special Elite' });
   C.light(sx + Math.sin(face) * 2, 2.6, sz + Math.cos(face) * 2, '#ffb060', 'flicker');
   // crates, barrels, rowboats
-  for (let i = 0; i < 16; i++) {
+  for (let i = 0; i < 8; i++) {
     const a = face + (r() - 0.5) * 2.6, d = 7 + r() * 9;
     const x = sx + Math.sin(a) * d, z = sz + Math.cos(a) * d;
     if (!isLand(x, z, 2)) continue;
@@ -829,24 +820,31 @@ function cove(C) {
   return { x: sx, z: sz, doorX, doorZ, facing: face };
 }
 
+// ------------------------------------------------------------------ a few benches (boardwalk, Funland, pier)
+function benches(C) {
+  // Boardwalk south sidewalk, looking out over the beach
+  for (const x of [930, 1000, 1080, 1130, 1170]) P.bench(C, x, 125.4, 0);
+  // Funland: by the carousel and the food stand
+  P.bench(C, SPOTS.carousel.x + 11, SPOTS.carousel.z, PI / 2);
+  P.bench(C, 1060, 64, PI);
+  // end of the pier, facing the sea
+  P.bench(C, SPOTS.pier.x + 1.5, SPOTS.pier.z1 - 2, 0);
+}
+
 // ------------------------------------------------------------------ trash beach
 function beachJunk(C) {
   const r = C.rng;
-  for (let i = 0; i < 160; i++) {
+  for (let i = 0; i < 40; i++) {
     const th = 0.25 + r() * 2.5;
     const x0 = ISLE.cx + Math.cos(th) * (coastR(th) - 2 - r() * 26), z0 = ISLE.cz + Math.sin(th) * (coastR(th) - 2 - r() * 26);
     if (z0 < 128) continue;
     if (Math.abs(x0 - SPOTS.pier.x) < 6 || Math.hypot(x0 - SPOTS.beachShack.cx, z0 - SPOTS.beachShack.cz) < 13) continue;
     if (Math.hypot(x0 - SPOTS.cove.x, z0 - SPOTS.cove.z) < 30) continue;
     const k = r();
-    if (k < 0.4) P.litter(C, x0, z0, 3, 6);
-    else if (k < 0.55) P.tires(C, x0, z0, 1 + (r() * 2 | 0));
-    else if (k < 0.65) P.trashPile(C, x0, z0, 3);
-    else if (k < 0.72) P.mattress(C, x0, z0, r() * 6);
-    else if (k < 0.78) P.shoppingCart(C, x0, z0, r() * 6);
-    else if (k < 0.84) P.deadTree(C, x0, z0, 0.7);
-    else if (k < 0.9) P.rock(C, x0, z0, 0.6 + r());
-    else { const g = C.geo; g.frame(x0, z0, r() * 6); g.box('props', 0, 0.2, 0, 1.6, 0.4, 0.8, { color: '#d8d0c0' }); } // dead fridge
+    if (k < 0.3) P.tires(C, x0, z0, 1 + (r() * 2 | 0));
+    else if (k < 0.5) P.trashPile(C, x0, z0, 3);
+    else if (k < 0.75) P.deadTree(C, x0, z0, 0.7);
+    else P.rock(C, x0, z0, 0.6 + r());
   }
 }
 
@@ -867,7 +865,7 @@ const ISLE_LOTS = {
     const cs = Math.cos(lot.rot), sn = Math.sin(lot.rot), lz = lot.d / 2 - d / 2 - 2.2;
     shack(C, lot.cx + lz * sn, lot.cz + lz * cs, lot.rot, { w, d, h: 2.6 + r() * 0.8, facade: r() < 0.3 ? 'corrugated_rust' : 'wood', tint: ['#a89880', '#8a9a90', '#b0a090', '#9a8070', '#8a8a9a'][(r() * 5) | 0], roofCol: ['#6a5a4a', '#5a3a2a', '#4a5a6a'][(r() * 3) | 0] });
     C.obb(lot.cx + lz * sn, lot.cz + lz * cs, lot.rot, w, d, 4);
-    yardJunk(C, lot, 2);
+    if (r() < 0.4) yardJunk(C, lot, 1);
   },
   isle_bait(C, lot) {
     const r = C.rng, g = C.geo;
@@ -878,7 +876,6 @@ const ISLE_LOTS = {
     const top = mass(C, { W, D, H: 3.8, facade: r() < 0.5 ? 'wood' : 'stucco', tint: '#c0b090', parapet: 0.5 });
     g.frame(lot.cx, lot.cz, lot.rot); g.translate(0, 0, lz + D / 2);
     P.doorway(C, -W / 4, 1.3, 2.3, 2, { lamp: true, lampColor: '#ffb070', awning: '#3a5a6a' });
-    g.box('glassdark', W / 4, 1.7, 0.05, W / 3, 1.2, 0.05, { faces: 'f', color: '#806a40' });
     const txt = ['LIVE BAIT · COLD BEER · WORMS (SAME FRIDGE)', 'CRAB SHACK · ALL YOU CAN CATCH', 'NETS & KNOTS · NO CASH NO FISH', 'SALTY PETE\'S TACKLE & TATTOOS', 'CHUM BUCKET · FRESH-ISH'][(r() * 5) | 0];
     g.frame(lot.cx, lot.cz, lot.rot); g.translate(0, 0, lz);
     locSign(C, { d: D }, 'isle_bait_' + lot.seed, txt, { w: Math.min(W - 1, 9), h: 1, y: 3.2, bg: '#1e2a2a', fg: '#e8dcb0', gain: 1.2, font: 'Barlow Condensed', flicker: r() < 0.4 });
@@ -894,7 +891,7 @@ const ISLE_LOTS = {
       g.box('chain_d', x, 1.4, 0, 3.2, 1.8, 0.02, { faces: 'fb', uvScale: 0.6, color: '#8a9a7a' });
     }
     for (let i = 0; i < 6; i++) { const lx = (r() - 0.5) * (lot.w - 3), lzz = (r() - 0.5) * (lot.d - 3); g.frame(lot.cx, lot.cz, lot.rot); g.translate(lx, 0, lzz); g.rotY(r() * 6); g.box('chain_d', 0, 0.45, 0, 1.0, 0.9, 1.0, { faces: 'all', uvScale: 0.5, color: '#9a8a6a' }); }
-    yardJunk(C, lot, 3);
+    yardJunk(C, lot, 1);
   },
   isle_boathouse(C, lot) {
     const r = C.rng, g = C.geo;
@@ -919,7 +916,7 @@ function yardJunk(C, lot, n) {
     const lx = (r() - 0.5) * (lot.w - 2), lz = -lot.d / 2 + 1.5 + r() * 2;
     const x = lot.cx + lx * cs + lz * sn, z = lot.cz - lx * sn + lz * cs;
     const k = r();
-    if (k < 0.3) P.oilDrums(C, x, z, 2); else if (k < 0.5) P.tires(C, x, z, 2); else if (k < 0.75) P.litter(C, x, z, 2, 4); else P.trashPile(C, x, z, 3);
+    if (k < 0.5) P.oilDrums(C, x, z, 2); else P.tires(C, x, z, 2);
   }
 }
 

@@ -190,5 +190,5 @@ Also owns `src/data/barks.js` (`bark(kind)` one-liners).
   `createStickman(lookToStickman(look))` anywhere you build a player-looking stickman.
 - Skateboard (src/skate): G mount, W push, Space ollie, left click kickflip. Unlocked via Skidmark Kev's quest
   (level 3+). Save: `p.skate`. Net message `{t:'skate', on, board, trick}`.
-- Keys in use: WASD Shift Space E F G Q R H N O P Tab J M T Esc F1 1-9 , . arrows, LMB.
+- Keys in use: WASD Shift Space E F G Q R H N O P V X I Tab J M T Esc F1 1-9 , . arrows, LMB, MMB/RMB drag (camera). Heists: V mask, X drop bag.
 - `?dev` / `?mute` sessions are silent and never save.

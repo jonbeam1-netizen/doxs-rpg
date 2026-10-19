@@ -10,7 +10,9 @@ import { installNPCs } from './npc/index.js';
 import { installVehicles } from './vehicles/index.js';
 import { installSystems } from './systems/index.js';
 import { installQuests } from './quests/index.js';
+import { installHeists } from './heists/index.js';
 import { installSkate } from './skate/index.js';
+import { installIsland } from './island/index.js';
 import { installNet } from './net/index.js';
 
 async function boot() {
@@ -30,7 +32,7 @@ async function boot() {
   game.player.spawn(sp.x, sp.z, sp.facing ?? 0);
   game.cameraRig.follow(game.player.group);
 
-  for (const install of [installNPCs, installVehicles, installSystems, installQuests, installSkate, installProgress, installPhone, installNet]) {
+  for (const install of [installNPCs, installVehicles, installSystems, installQuests, installIsland, installHeists, installSkate, installProgress, installPhone, installNet]) {
     try { await install(game); } catch (e) { console.error('[boot] install failed:', install.name, e); }
   }
 

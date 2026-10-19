@@ -111,6 +111,7 @@ export function bench(C, x, z, rot) {
   g.box('wood', 0, 0.75, -0.22, 1.8, 0.4, 0.05, { color: '#5a4a38' });
   for (const s of [-0.8, 0.8]) g.box('metal', s, 0.22, 0, 0.06, 0.45, 0.4, { color: '#222' });
   C.obb(x, z, rot, 1.8, 0.5, 0.8);
+  C.seats?.push({ x, z, facing: rot, kind: 'bench', width: 1.8 });
 }
 
 export function phoneBooth(C, x, z, rot) {
@@ -139,6 +140,7 @@ export function busStop(C, x, z, rot) {
   g.push(); g.translate(1.75, 1.3, 0); g.rotY(PI / 2); g.wall('ads', -0.7, -0.8, 0.7, 0.8, 0.03, { uvRect: [uv[0] + 0.12, uv[1], uv[2] - 0.12, uv[3]], double: true }); g.pop();
   g.box('wood', 0, 0.45, -0.45, 2.6, 0.06, 0.4, { color: '#4a3a2a' });
   C.obb(x, z - 0, rot, 3.6, 0.3, 2.5);
+  C.seats?.push({ x: x - Math.sin(rot) * 0.45, z: z - Math.cos(rot) * 0.45, facing: rot, kind: 'busstop', width: 2.6 });
 }
 
 export function trafficLight(C, x, z, rot) {

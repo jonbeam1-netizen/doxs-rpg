@@ -55,6 +55,7 @@ export async function installWorld(game) {
     },
     light(x, y, z, color, kind = 'street') { lights.push({ x, y, z, color, kind }); },
     emit(x, y, z, type) { emitters.push({ x, y, z, type }); },
+    seats: [],
   };
 
   // ---- build
@@ -136,6 +137,21 @@ export async function installWorld(game) {
   for (const w of layout.walks) (walksBy[w.district] ??= []).push(w);
   const edgesBy = {};
   layout.edgeInfo.forEach((e, i) => { if (e.kind !== 'drag') (edgesBy[e.district] ??= []).push(i); });
+  // spatial buckets of sidewalk strips for fast "near" queries
+  const WCELL = 40, walkGrid = new Map();
+  layout.walks.forEach((w, i) => {
+    const pad = w.width / 2 + 1;
+    const x0 = Math.floor((Math.min(w.x1, w.x2) - pad) / WCELL), x1 = Math.floor((Math.max(w.x1, w.x2) + pad) / WCELL);
+    const z0 = Math.floor((Math.min(w.z1, w.z2) - pad) / WCELL), z1 = Math.floor((Math.max(w.z1, w.z2) + pad) / WCELL);
+    for (let gx = x0; gx <= x1; gx++) for (let gz = z0; gz <= z1; gz++) { const k = gx + ',' + gz; let a = walkGrid.get(k); if (!a) walkGrid.set(k, (a = [])); a.push(i); }
+  });
+  const walksIn = (x0, z0, x1, z1) => {
+    const out = new Set();
+    for (let gx = Math.floor(x0 / WCELL); gx <= Math.floor(x1 / WCELL); gx++) for (let gz = Math.floor(z0 / WCELL); gz <= Math.floor(z1 / WCELL); gz++) {
+      const a = walkGrid.get(gx + ',' + gz); if (a) for (const i of a) out.add(i);
+    }
+    return [...out];
+  };
   const pickWeighted = (arr, wf) => { let tot = 0; for (const a of arr) tot += wf(a); let r = Math.random() * tot; for (const a of arr) { if ((r -= wf(a)) <= 0) return a; } return arr[arr.length - 1]; };
 
   const world = {
@@ -194,6 +210,48 @@ export async function installWorld(game) {
       const x = A.x + e.dx * s + (-uz) * lane, z = A.z + e.dz * s + ux * lane;
       return { x, z, dir: Math.atan2(ux, uz), edge: ei, from: fwd ? e.a : e.b, to: fwd ? e.b : e.a };
     },
+    // A random walkable sidewalk point in the ring [minR, maxR] around (x, z), or null (e.g. out on the bridge).
+    sidewalkPointNear(x, z, minR = 0, maxR = 60) {
+      const cand = walksIn(x - maxR, z - maxR, x + maxR, z + maxR);
+      if (!cand.length) return null;
+      for (let tries = 0; tries < 14; tries++) {
+        const w = layout.walks[cand[(Math.random() * cand.length) | 0]];
+        const dx = w.x2 - w.x1, dz = w.z2 - w.z1, L = Math.hypot(dx, dz) || 1, ux = dx / L, uz = dz / L;
+        // param range along the strip that lies inside the maxR circle
+        const px = x - w.x1, pz = z - w.z1, proj = px * ux + pz * uz, perp2 = px * px + pz * pz - proj * proj;
+        const h2 = maxR * maxR - perp2;
+        if (h2 <= 0) continue;
+        const h = Math.sqrt(h2), s0 = Math.max(0, proj - h), s1 = Math.min(L, proj + h);
+        if (s1 <= s0) continue;
+        const sAt = s0 + Math.random() * (s1 - s0);
+        const lat = (Math.random() - 0.5) * Math.max(0.2, w.width - 2.2);
+        const qx = w.x1 + ux * sAt - uz * lat, qz = w.z1 + uz * sAt + ux * lat;
+        const d = Math.hypot(qx - x, qz - z);
+        if (d < minR || d > maxR) continue;
+        if (phys.pointBlocked(qx, qz) || phys.resolveCircle(qx, qz, 0.45).hit) continue;
+        return { x: qx, z: qz };
+      }
+      return null;
+    },
+    // Is (x, z) on a sidewalk strip?
+    onSidewalk(x, z) {
+      for (const i of walksIn(x, z, x, z)) {
+        const w = layout.walks[i];
+        const dx = w.x2 - w.x1, dz = w.z2 - w.z1, l2 = dx * dx + dz * dz || 1;
+        const t = Math.max(0, Math.min(1, ((x - w.x1) * dx + (z - w.z1) * dz) / l2));
+        if (Math.hypot(x - (w.x1 + dx * t), z - (w.z1 + dz * t)) <= w.width / 2 + 0.25) return true;
+      }
+      return false;
+    },
+    // Building walls you can lean on / slump against: points just outside a facade, facing out.
+    wallSpots(x, z, r = 30) {
+      const out = [];
+      for (let gx = Math.floor((x - r) / WCELL); gx <= Math.floor((x + r) / WCELL); gx++) for (let gz = Math.floor((z - r) / WCELL); gz <= Math.floor((z + r) / WCELL); gz++) {
+        const a = wallGrid.get(gx + ',' + gz); if (!a) continue;
+        for (const s of a) if ((s.x - x) ** 2 + (s.z - z) ** 2 <= r * r) out.push(s);
+      }
+      return out;
+    },
     nearestRoadNode(x, z) {
       let best = 0, bd = Infinity;
       const N = layout.nodes;
@@ -209,6 +267,30 @@ export async function installWorld(game) {
     stats: null,
   };
   game.world = world;
+  world.seats = C.seats; // [{x, z, facing, kind: 'bench'|'busstop', width}]
+
+  // ---- wall spots: sampled along building fronts (generic lots + location buildings)
+  const wallGrid = new Map();
+  {
+    const WALLED = new Set(['building', 'apartments', 'warehouse', 'mansion', 'burnt', 'location', 'isle_bait', 'isle_boathouse']);
+    const rects = [...layout.lots, ...layout.placed].filter((l) => WALLED.has(l.type ?? l.kind) && l.fx != null);
+    for (const l of rects) {
+      const ax = -l.fz, az = l.fx; // along the facade
+      const n = Math.max(1, Math.floor(l.w / 4.5));
+      for (let i = 0; i < n; i++) {
+        const t = (i + 0.5) / n - 0.5;
+        const off = l.d / 2 + 0.5;
+        const sx = l.cx + l.fx * off + ax * t * (l.w - 2), sz = l.cz + l.fz * off + az * t * (l.w - 2);
+        // must stand free with a wall right behind it, and not in a doorway
+        if (phys.pointBlocked(sx, sz) || phys.resolveCircle(sx, sz, 0.35).hit) continue;
+        if (!phys.pointBlocked(sx - l.fx * 0.9, sz - l.fz * 0.9)) continue;
+        if (game.locations.list.some((L) => Math.hypot((L.doorX ?? L.x) - sx, (L.doorZ ?? L.z) - sz) < 3)) continue;
+        const spot = { x: Math.round(sx * 100) / 100, z: Math.round(sz * 100) / 100, facing: Math.atan2(l.fx, l.fz) };
+        const k = Math.floor(sx / WCELL) + ',' + Math.floor(sz / WCELL);
+        let a = wallGrid.get(k); if (!a) wallGrid.set(k, (a = [])); a.push(spot);
+      }
+    }
+  }
 
   const map = new MapSystem(game, layout, { ext: MAP_EXT, coast: coastPolygon(), spots: ISLE_SPOTS });
 
@@ -254,6 +336,7 @@ export async function installWorld(game) {
 
   // ---- per-frame visuals (run from renderFn so they see this frame's camera)
   const tmpBox = new THREE.Vector3();
+  const isleFog = new THREE.Color();
   let fpsAcc = 0, fpsN = 0;
   world.stats = { fps: 0, calls: 0, tris: 0, verts, chunks: chunks.length, buildMs: 0 };
   function visuals(dt) {
@@ -261,6 +344,15 @@ export async function installWorld(game) {
     const focus = map.focus() ?? cam;
     let env = { night: 0, wet: 0, daylight: 1, flash: 0 };
     try { env = atmo.update(dt, focus); } catch (e) { if (!visuals._e1) { console.error('[world] atmosphere', e); visuals._e1 = true; } }
+    // Blackwater sea mist: thicker, greener fog over the island and the bridge
+    const isleK = Math.max(0, Math.min(1, (focus.x - 640) / 180));
+    if (isleK > 0 && game.scene.fog) {
+      const f = game.scene.fog;
+      f.near *= 1 - 0.4 * isleK; f.far *= 1 - 0.2 * isleK;
+      const l = (f.color.r + f.color.g + f.color.b) / 3;
+      isleFog.setRGB(l * 0.85, l * 1.0, l * 0.98);
+      f.color.lerp(isleFog, 0.35 * isleK);
+    }
     try { mats.update(game.elapsed, env.night, env.wet, env.daylight); } catch (e) { if (!visuals._e2) { console.error('[world] mats', e); visuals._e2 = true; } }
     try { particles.update(dt, cam, game.scene, 0.22 + env.daylight * 0.78); } catch (e) { if (!visuals._e3) { console.error('[world] particles', e); visuals._e3 = true; } }
     // chunk culling by distance

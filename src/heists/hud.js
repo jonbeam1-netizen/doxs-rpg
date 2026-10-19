@@ -122,7 +122,7 @@ export class HeistHud {
       ${rows}
       <div class="hh-loot">Secured <b>${fmtMoney(secured)}</b>${moving ? ` · in transit ${fmtMoney(moving)}` : ''}${mine.length ? `<br>You: ${mine.filter((b) => b.s === 'c').length ? '🎒 carrying a bag' : ''}${mine.some((b) => b.s === 'k') ? ` 🚗 ${mine.filter((b) => b.s === 'k').length} bag(s) in your car` : ''}` : ''}</div>
       ${s.crew.length > 1 ? `<div class="hh-crew">Crew: ${crew}</div>` : ''}
-      <div class="hh-keys"><kbd>G</kbd> mask · <kbd>X</kbd> drop bag · <kbd>E</kbd> work/grab</div>`;
+      <div class="hh-keys"><kbd>V</kbd> mask · <kbd>X</kbd> drop bag · <kbd>E</kbd> work/grab</div>`;
     if (html !== this._last) { this.el.innerHTML = html; this._last = html; }
     this.el.classList.toggle('on', hudVisible);
   }
