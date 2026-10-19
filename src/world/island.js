@@ -696,7 +696,7 @@ function lighthouse(C, live) {
     update(dt, env) {
       beam.rotation.y += dt * 0.9;
       beam.rotation.z = -0.06;
-      const want = Math.min(0.5, 0.06 + env.night * 0.25 + (env.fog ?? 0) * 0.2);
+      const want = Math.min(0.5, 0.015 + env.night * 0.28 + (env.fog ?? 0) * 0.2);
       beamMat.opacity += (want - beamMat.opacity) * Math.min(1, dt * 2);
     },
   });
