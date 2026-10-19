@@ -1,5 +1,6 @@
 import { mulberry32 } from '../core/util.js';
 import { LOCATIONS } from '../data/locations.js';
+import { ISLE_X0, ISLE_KINDS, ISLE_SEGMENTS, ISLE_RESERVED, ISLE_FILL, isleLotOk } from './island-layout.js';
 
 // Deterministic city layout (pure data, no THREE). Every co-op client builds
 // the identical Rotwell from WORLD_SEED.
@@ -16,6 +17,7 @@ export const WATER_X = 620;
 export const RING = 240;
 
 export function districtAt(x, z) {
+  if (x > ISLE_X0) return 'blackwater';
   const ax = Math.abs(x), az = Math.abs(z);
   if (ax <= 252 && az <= 252) return 'downtown';
   if (ax > az) return x > 0 ? 'rustyards' : 'dustbowl';
@@ -34,6 +36,7 @@ export const KINDS = {
   diag: { hw: 9, sw: 4, lanes: [2.6, 6.4], marks: 'ring', light: 34 },
   desert: { hw: 6.5, sw: 0, lanes: [2.6], marks: 'faded', light: 80 },
   drag: { hw: 9, sw: 0, lanes: [2.6, 6.4], marks: 'drag', light: 40 },
+  ...ISLE_KINDS,
 };
 
 function buildSegments() {
@@ -76,6 +79,8 @@ function buildSegments() {
   r(-360, 120, -540, 120, 'desert', 'Trailer Row');
   r(-360, -200, -540, -200, 'desert', 'Scrap Ln');
   r(-360, 260, -680, 260, 'drag', 'Drag Strip');
+  // Blackwater Isle (appended last so the city's node/edge order is unchanged)
+  for (const [x1, z1, x2, z2, kind, name] of ISLE_SEGMENTS) r(x1, z1, x2, z2, kind, name);
   return S;
 }
 
@@ -258,6 +263,7 @@ const FILL = {
   hilltop: { w: [36, 60], d: [32, 54], gapP: 1, gap: [4, 10], setback: [0.6, 0.6] },
   rustyards: { w: [30, 66], d: [24, 50], gapP: 1, gap: [4, 10], setback: [0.6, 3] },
   dustbowl: { w: [14, 30], d: [12, 26], gapP: 1, gap: [12, 45], setback: [3, 10] },
+  blackwater: ISLE_FILL,
 };
 
 // ------------------------------------------------------------------ main
@@ -308,8 +314,9 @@ export function buildLayout() {
   reserve(-680, 183, -368, 207, 'track'); reserve(-686, 183, -650, 236, 'track'); reserve(-392, 200, -368, 236, 'track'); // race loop
   reserve(-1000, -1000, 1000, -BOUND, 'edge'); reserve(-1000, BOUND, 1000, 1000, 'edge');
   reserve(-1000, -1000, -BOUND, 1000, 'edge');
+  for (const [x0, z0, x1, z1, tag] of ISLE_RESERVED) reserve(x0, z0, x1, z1, tag);
 
-  const inBounds = (r) => r.x0 > -BOUND + 1 && r.x1 < BOUND - 1 && r.z0 > -BOUND + 1 && r.z1 < BOUND - 1;
+  const inBounds = (r) => (r.x0 > ISLE_X0 ? isleLotOk(r) : (r.x0 > -BOUND + 1 && r.x1 < BOUND - 1 && r.z0 > -BOUND + 1 && r.z1 < BOUND - 1));
 
   // Frontage rect for an axis-aligned edge e, side s (+1/-1), along-position s0 (left edge), width w, depth d.
   // Returns rect + facing data. n = unit normal from road toward the lot.
@@ -328,7 +335,7 @@ export function buildLayout() {
   };
   const fits = (r) => inBounds(r) && !occupied.hits(r, 0.01) && roadClear(r);
 
-  const axisEdges = edgeInfo.filter((e) => e.axis && e.kind !== 'drag');
+  const axisEdges = edgeInfo.filter((e) => e.axis && e.kind !== 'drag' && e.kind !== 'bridge');
 
   // ---- locations
   const placed = [];
@@ -399,6 +406,7 @@ export function buildLayout() {
       case 'hilltop': l.type = r < 0.14 ? 'park' : r < 0.3 ? 'apartments' : 'mansion'; break;
       case 'rustyards': l.type = r < 0.22 ? 'containers' : r < 0.34 ? 'tanks' : r < 0.4 ? 'vacant' : 'warehouse'; break;
       case 'dustbowl': l.type = r < 0.45 ? 'trailer' : r < 0.65 ? 'shack' : r < 0.8 ? 'junk' : 'empty'; break;
+      case 'blackwater': l.type = r < 0.5 ? 'isle_shack' : r < 0.68 ? 'isle_bait' : r < 0.84 ? 'isle_nets' : 'isle_boathouse'; break;
       default: l.type = 'building';
     }
     if (l.type === 'building' && big < 120) l.type = l.district === 'gutterside' ? 'vacant' : 'parking';

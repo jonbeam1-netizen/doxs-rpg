@@ -42,6 +42,25 @@ export class Car {
     this.skid = 0;
     this.lastSkid = [null, null];
     this.impactCd = 0;
+    this.tires = 0;            // popped tires (0..4): spikes, cop bullets
+    this.sirenOn = false;      // light bar + siren (interceptors)
+    this.replica = false;      // host-simulated police car mirrored on a client
+    this.lb = null;
+    if (this.def.features?.lightbar) {
+      // Per-car light bar materials so each cruiser flashes on its own.
+      const red = [], blue = [];
+      for (const m of this.vis.meshes) {
+        if (m.userData.key === 'lbRed') red.push(m);
+        else if (m.userData.key === 'lbBlue') blue.push(m);
+      }
+      if (red.length && blue.length) {
+        const rm = red[0].material.clone(), bm = blue[0].material.clone();
+        rm.emissiveIntensity = 0.15; bm.emissiveIntensity = 0.15;
+        for (const m of red) m.material = rm;
+        for (const m of blue) m.material = bm;
+        this.lb = { red: rm, blue: bm };
+      }
+    }
     this.applyStats();
     this.hp = opts.hp != null ? clamp(opts.hp, 1, this.maxHp) : this.maxHp;
     // Collision circles along the length.
@@ -130,6 +149,7 @@ export class Car {
     const brake = (this.braking || this.input.reverse > 0) && !this.exploded && !this.dead;
     tail.emissiveIntensity = this.exploded ? 0 : (brake ? 2.6 : 0.35 + night * 0.9);
     this.effects(dt);
+    this.updateLightbar();
 
     if (this.dead && !this.exploded) {
       this.burnT -= dt;
@@ -144,8 +164,9 @@ export class Car {
     let vf = this.vel.x * fx + this.vel.y * fz;
     let vl = this.vel.x * rx + this.vel.y * rz;
     const boost = this.nitroT > 0;
-    const vmax = this.vmax * (boost ? 1.3 : 1) * (this.aiSpeedMul ?? 1);
-    const acc = this.accel * (boost ? 1.9 : 1) * (this.aiSpeedMul ?? 1);
+    const flat = this.tires > 0 ? 1 - this.tires * 0.13 : 1;
+    const vmax = this.vmax * (boost ? 1.3 : 1) * (this.aiSpeedMul ?? 1) * flat;
+    const acc = this.accel * (boost ? 1.9 : 1) * (this.aiSpeedMul ?? 1) * flat;
     let braking = false;
     const thr = inp.throttle, rev = inp.reverse;
     if (thr > 0) {
@@ -165,7 +186,9 @@ export class Car {
     if (hb) { vf = toward(vf, 0, (this.isBike ? 12 : thr > 0 ? 3.5 : 6.5) * dt); braking = braking || Math.abs(vf) > 1; }
 
     // Steering (speed-sensitive).
-    const st = clamp(inp.steer, -1, 1);
+    // Flat tires drag the wheel around.
+    const wob = this.tires > 0 && Math.abs(vf) > 3 ? Math.sin((this.game.elapsed || 0) * 9 + this.tires) * 0.09 * this.tires + 0.05 * this.tires : 0;
+    const st = clamp(inp.steer + wob, -1, 1);
     const rate = st === 0 ? 6 : Math.sign(st) !== Math.sign(this.steer) ? 8 : 3.6;
     this.steer = toward(this.steer, st, dt * rate);
     const sf = 1 / (1 + Math.abs(vf) / this.steerFalloff);
@@ -180,7 +203,7 @@ export class Car {
     // Grip: the handbrake kills rear grip, it comes back gradually.
     this.gripMul = toward(this.gripMul, hb && !this.isBike ? 0.13 : 1, dt * (hb ? 7 : 1.5));
     const before = Math.abs(vl);
-    vl *= Math.exp(-this.grip * this.gripMul * dt);
+    vl *= Math.exp(-this.grip * this.gripMul * (this.tires > 0 ? 1 - this.tires * 0.1 : 1) * dt);
     // Some sideways energy turns back into forward speed when you power out of a drift.
     if (thr > 0 && vf > 0) vf += (before - Math.abs(vl)) * 0.22;
 
@@ -243,12 +266,13 @@ export class Car {
       if (impact > 7) vm.fx.sparks(this._hitX ?? this.x, 0.6, this._hitZ ?? this.z, Math.round(4 + s * 14), 0.6 + s);
       if (this === vm.current) this.game.cameraRig?.shake(0.1 + s * 0.45, 0.2 + s * 0.2);
     }
-    if (impact > 6) this.damage((impact - 6) * 1.7 * (this.isBike ? 0.6 : 1), 'crash');
+    // (police cruisers have reinforced bumpers — and terrible drivers)
+    if (impact > 6) this.damage((impact - 6) * 1.7 * (this.isBike ? 0.6 : 1) * (this.police ? 0.35 : 1), 'crash');
     vm.onCarImpact?.(this, impact);
   }
 
   damage(n, source = '') {
-    if (this.dead || this.removed || n <= 0) return;
+    if (this.dead || this.removed || n <= 0 || this.replica) return;
     const armor = this.upgrades?.armor || 0;
     this.hp -= n * (1 - armor * 0.1);
     if (this.hp <= 0) {
@@ -259,7 +283,64 @@ export class Car {
     }
   }
 
-  repair() { this.hp = this.maxHp; }
+  repair() { this.hp = this.maxHp; this.fixTires(); }
+
+  // ---------------------------------------------------------------- tires & lights
+  popTire(n = 1) {
+    if (this.isBike && this.tires >= 2) return false;
+    const max = this.isBike ? 2 : 4;
+    if (this.tires >= max) return false;
+    this.tires = Math.min(max, this.tires + n);
+    // squash the wheels that went flat
+    const ws = this.vis.wheels;
+    for (let i = 0; i < ws.length; i++) ws[i].pivot.scale.set(1, i < this.tires ? 0.78 : 1, i < this.tires ? 1.06 : 1);
+    return true;
+  }
+
+  fixTires() {
+    if (!this.tires) return;
+    this.tires = 0;
+    for (const w of this.vis.wheels) w.pivot.scale.set(1, 1, 1);
+  }
+
+  setSiren(on) {
+    this.sirenOn = !!on && !!this.lb;
+    if (!this.sirenOn) this.updateLightbar(true);
+  }
+
+  updateLightbar(force = false) {
+    const lb = this.lb;
+    if (!lb || (!this.sirenOn && !force)) return;
+    if (!this.sirenOn || this.exploded) { lb.red.emissiveIntensity = 0.15; lb.blue.emissiveIntensity = 0.15; return; }
+    // wig-wag with a double strobe
+    const t = (this.game.elapsed || 0) * 3.2 + (this._lbPhase ??= Math.random() * 4);
+    const ph = t % 2, k = (ph % 1) < 0.22 || ((ph % 1) > 0.36 && (ph % 1) < 0.58);
+    lb.red.emissiveIntensity = ph < 1 && k ? 6 : 0.1;
+    lb.blue.emissiveIntensity = ph >= 1 && k ? 6 : 0.1;
+  }
+
+  // Client mirror of a host-simulated car: chase the snapshot pose.
+  updateReplica(dt) {
+    const n = this.net;
+    if (!n || this.removed) return;
+    const p = this.group.position;
+    const k = 1 - Math.exp(-10 * dt);
+    // extrapolate a little along the reported velocity
+    const age = Math.min(0.25, (this.game.elapsed || 0) - n.at);
+    const tx = n.x + n.vx * age, tz = n.z + n.vz * age;
+    const ox = p.x, oz = p.z;
+    if ((tx - ox) ** 2 + (tz - oz) ** 2 > 400) { p.x = tx; p.z = tz; } else { p.x += (tx - ox) * k; p.z += (tz - oz) * k; }
+    let dh = n.rot - this.heading;
+    dh = Math.atan2(Math.sin(dh), Math.cos(dh));
+    this.heading += dh * k;
+    this.vel.set(n.vx, n.vz);
+    this.vf = n.vf; this.speed = Math.abs(n.vf); this.steer = n.steer;
+    this.group.rotation.y = this.heading;
+    if (!this.exploded) animateCarMesh(this.group, this.vf, this.steer, dt);
+    this.vis.tailMat.emissiveIntensity = this.exploded ? 0 : 0.35 + (this.vm.nightLevel ?? 0) * 0.9;
+    this.effects(dt);
+    this.updateLightbar();
+  }
 
   effects(dt) {
     const fx = this.vm.fx;
@@ -286,6 +367,11 @@ export class Car {
         if (Math.random() < 0.35 * this.skid + 0.05) fx.tireSmoke(wx, wz, 0.6 + this.skid * 0.8);
       } else this.lastSkid[i] = null;
     });
+    // Riding on the rims.
+    if (this.tires >= 2 && this.speed > 8 && !this.dead && Math.random() < 0.25) {
+      const side = Math.random() < 0.5 ? -1 : 1;
+      fx.sparks(p.x - f.x * L2 * 0.5 + -f.z * side * this.dims.W * 0.45, 0.15, p.z - f.z * L2 * 0.5 + f.x * side * this.dims.W * 0.45, 2, 0.4);
+    }
     // Exhaust puffs (junkers smoke like chimneys).
     if (this.def.kind !== 'bike' && !this.dead) {
       this.exhaustAcc += dt * (this.def.tier === 'junk' ? 6 : 2.5) * (0.4 + this.input.throttle);
@@ -326,5 +412,6 @@ export class Car {
     this.group.removeFromParent();
     this.vis.tailMat.dispose();
     this.vis.driver.mat.dispose();
+    if (this.lb) { this.lb.red.dispose(); this.lb.blue.dispose(); }
   }
 }

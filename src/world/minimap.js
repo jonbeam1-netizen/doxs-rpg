@@ -15,14 +15,20 @@ const TYPE_ICON = {
   chop_shop: ['C', '#ff9030'], fight_club: ['!', '#ff3a1a'], warehouse: ['W', '#a0a0a0'], gas: ['⛽', '#60c060'], junkyard: ['J', '#b09060'],
   race: ['R', '#ffcc40'], bunker: ['☢', '#d0d040'], diner: ['D', '#ff6060'], liquor: ['L', '#7aff5a'], tattoo: ['I', '#ff60e0'],
   fortune: ['?', '#c080ff'], pawn: ['$', '#ffc020'], hobo_camp: ['~', '#a09070'], dealer: ['•', '#ff00ff'],
+  isle_arcade: ['A', '#ff70d0'], isle_seafood: ['F', '#60c0ff'], isle_pier: ['J', '#80d0ff'], isle_lighthouse: ['¡', '#fff0a0'],
+  isle_cove: ['$', '#c0a060'], isle_prison: ['#', '#c0c0c0'],
 };
-const DIST_LABEL_POS = { downtown: [0, -15], hilltop: [0, -520], rustyards: [470, 0], gutterside: [0, 600], dustbowl: [-500, 40] };
+const DIST_LABEL_POS = { downtown: [0, -15], hilltop: [0, -520], rustyards: [470, 0], gutterside: [0, 600], dustbowl: [-500, 40], blackwater: [1060, -245] };
 
 export class MapSystem {
-  constructor(game, layout) {
+  constructor(game, layout, opts = {}) {
     this.game = game;
     this.layout = layout;
-    this.S = 2048 / (HALF * 2);
+    this.ext = opts.ext ?? { minX: -HALF, maxX: HALF, minZ: -HALF, maxZ: HALF };
+    this.coast = opts.coast ?? null;
+    this.spots = opts.spots ?? null;
+    this.mw = this.ext.maxX - this.ext.minX; this.mh = this.ext.maxZ - this.ext.minZ;
+    this.S = 1.25; // base canvas px per meter
     this.base = this._buildBase();
     this.canvas = game.ui.minimap;
     this.ctx = this.canvas?.getContext('2d');
@@ -35,19 +41,29 @@ export class MapSystem {
   }
 
   _buildBase() {
-    const S = this.S, N = 2048;
-    const c = document.createElement('canvas'); c.width = c.height = N;
+    const S = this.S, E = this.ext;
+    const NW = Math.ceil(this.mw * S), NH = Math.ceil(this.mh * S);
+    const c = document.createElement('canvas'); c.width = NW; c.height = NH;
     const x = c.getContext('2d');
-    // ground per district
+    const P = (wx, wz) => [(wx - E.minX) * S, (wz - E.minZ) * S];
+    // ground per district (city), oily water everywhere east of the quay
     const step = 8;
-    for (let i = 0; i < N; i += step) for (let j = 0; j < N; j += step) {
-      const wx = i / S - HALF, wz = j / S - HALF;
-      if (wx >= WATER_X) { x.fillStyle = '#0c1214'; x.fillRect(i, j, step, step); continue; }
+    x.fillStyle = '#0c1214'; x.fillRect(0, 0, NW, NH);
+    for (let i = 0; i < NW; i += step) for (let j = 0; j < NH; j += step) {
+      const wx = i / S + E.minX, wz = j / S + E.minZ;
+      if (wx >= WATER_X) continue;
       const d = districtAt(wx, wz);
       x.fillStyle = shade(GROUND_COL[d], 0.42); x.fillRect(i, j, step, step);
     }
+    // Blackwater Isle landmass
+    if (this.coast) {
+      x.beginPath();
+      this.coast.forEach(([cx, cz], k) => { const [px, py] = P(cx, cz); if (k) x.lineTo(px, py); else x.moveTo(px, py); });
+      x.closePath();
+      x.fillStyle = shade(GROUND_COL.blackwater ?? '#4e4a3c', 0.5); x.fill();
+      x.strokeStyle = '#3a3a30'; x.lineWidth = 3; x.stroke();
+    }
     const L = this.layout;
-    const P = (wx, wz) => [(wx + HALF) * S, (wz + HALF) * S];
     // sidewalks then roads
     x.lineCap = 'butt';
     for (const pass of [0, 1]) for (const e of L.edgeInfo) {
@@ -70,6 +86,20 @@ export class MapSystem {
     // piers / overpass
     x.fillStyle = '#5a4a38';
     for (const pz of [-420, -170, 160, 410]) x.fillRect(...P(WATER_X, pz - 5), 68 * S, 10 * S);
+    const SP = this.spots;
+    if (SP) {
+      x.fillRect(...P(SP.ferry.x0, SP.ferry.z - 3), (SP.ferry.x1 - SP.ferry.x0) * S, 6 * S);
+      x.fillRect(...P(SP.pier.x - 3, SP.pier.z0), 6 * S, (SP.pier.z1 - SP.pier.z0) * S);
+      // Funland, prison, lighthouse
+      const F = SP.funland, Pn = SP.prison;
+      x.fillStyle = 'rgba(120,40,70,0.35)'; x.fillRect(...P(F.x0, F.z0), (F.x1 - F.x0) * S, (F.z1 - F.z0) * S);
+      x.strokeStyle = '#a04070'; x.lineWidth = 2; x.strokeRect(...P(F.x0, F.z0), (F.x1 - F.x0) * S, (F.z1 - F.z0) * S);
+      const [fx, fz] = P(SP.ferris.x, SP.ferris.z); x.strokeStyle = '#c06040'; x.lineWidth = 3; x.beginPath(); x.moveTo(fx, fz - SP.ferris.r * S); x.lineTo(fx, fz + SP.ferris.r * S); x.stroke();
+      const CO = SP.coaster; const [ccx, ccz] = P(CO.cx, CO.cz); x.strokeStyle = '#8a5a3a'; x.lineWidth = 2; x.beginPath(); x.ellipse(ccx, ccz, CO.rx * S, CO.rz * S, 0, 0, Math.PI * 2); x.stroke();
+      x.fillStyle = '#2a2a2a'; x.fillRect(...P(Pn.x0, Pn.z0), (Pn.x1 - Pn.x0) * S, (Pn.z1 - Pn.z0) * S);
+      x.strokeStyle = '#9a9a90'; x.lineWidth = 2.5; x.strokeRect(...P(Pn.x0, Pn.z0), (Pn.x1 - Pn.x0) * S, (Pn.z1 - Pn.z0) * S);
+      const [lx, lz] = P(SP.lighthouse.x, SP.lighthouse.z); x.fillStyle = '#e8e0c0'; x.beginPath(); x.arc(lx, lz, 4 * S, 0, 7); x.fill();
+    }
     x.fillStyle = 'rgba(120,115,105,0.55)'; x.fillRect(...P(-420, 428), 840 * S, 24 * S);
     return c;
   }
@@ -151,7 +181,7 @@ export class MapSystem {
     x.beginPath(); x.arc(R, R, R - 1, 0, Math.PI * 2); x.clip();
     x.fillStyle = '#0d0c0b'; x.fillRect(0, 0, W, W);
     x.translate(R, R); x.rotate(yaw); x.scale(Z, Z);
-    x.translate(-(f.x + HALF) * this.S, -(f.z + HALF) * this.S);
+    x.translate(-(f.x - this.ext.minX) * this.S, -(f.z - this.ext.minZ) * this.S);
     x.imageSmoothingEnabled = true;
     x.drawImage(this.base, 0, 0);
     x.restore();
@@ -220,14 +250,18 @@ export class MapSystem {
   openFull() {
     const g = this.game;
     if (this.panel && !this.panel.closed) { this.panel.close(); return; }
-    const size = Math.max(360, Math.min(innerHeight - 170, innerWidth - 80, 860));
+    const asp = this.mw / this.mh;
+    const cw = Math.round(Math.max(420, Math.min(innerWidth - 80, (innerHeight - 170) * asp, 1240)));
+    const ch = Math.round(cw / asp);
+    const size = cw;
     const wrap = document.createElement('div');
-    wrap.innerHTML = `<canvas width="${size * 2}" height="${size * 2}" style="width:${size}px;height:${size}px;display:block;margin:0 auto;cursor:crosshair;border:2px solid #3b342b;background:#0d0c0b"></canvas>
+    wrap.innerHTML = `<canvas width="${cw * 2}" height="${ch * 2}" style="width:${cw}px;height:${ch}px;display:block;margin:0 auto;cursor:crosshair;border:2px solid #3b342b;background:#0d0c0b"></canvas>
       <div style="text-align:center;margin-top:6px;font-size:14px;opacity:.75">Click to set a waypoint · right-click to clear · M / Esc to close</div>`;
     const cv = wrap.querySelector('canvas');
-    this.fullCanvas = cv; this.fullSize = size * 2;
+    this.fullCanvas = cv; this.fullSize = cw * 2; this.fullH = ch * 2;
     this.panel = g.ui.openPanel({ title: `${CITY_NAME} — City Map`, body: wrap, width: size + 60, onClose: () => { this.panel = null; } });
-    const toWorld = (ev) => { const r = cv.getBoundingClientRect(); return [((ev.clientX - r.left) / r.width) * HALF * 2 - HALF, ((ev.clientY - r.top) / r.height) * HALF * 2 - HALF]; };
+    const E = this.ext;
+    const toWorld = (ev) => { const r = cv.getBoundingClientRect(); return [((ev.clientX - r.left) / r.width) * this.mw + E.minX, ((ev.clientY - r.top) / r.height) * this.mh + E.minZ]; };
     cv.addEventListener('click', (ev) => {
       const [wx, wz] = toWorld(ev);
       g.world.markers.set('waypoint', { x: wx, z: wz, color: '#ffd040', label: 'Waypoint', icon: '✚' });
@@ -239,23 +273,24 @@ export class MapSystem {
 
   drawFull() {
     const cv = this.fullCanvas; if (!cv) return;
-    const g = this.game, x = cv.getContext('2d'), N = this.fullSize, k = N / (HALF * 2);
-    const P = (wx, wz) => [(wx + HALF) * k, (wz + HALF) * k];
-    x.clearRect(0, 0, N, N);
-    x.drawImage(this.base, 0, 0, N, N);
+    const g = this.game, x = cv.getContext('2d'), N = this.fullSize, NH = this.fullH, k = N / this.mw, E = this.ext;
+    const P = (wx, wz) => [(wx - E.minX) * k, (wz - E.minZ) * k];
+    x.clearRect(0, 0, N, NH);
+    x.drawImage(this.base, 0, 0, N, NH);
     // grime vignette
-    const vg = x.createRadialGradient(N / 2, N / 2, N * 0.3, N / 2, N / 2, N * 0.75); vg.addColorStop(0, 'rgba(0,0,0,0)'); vg.addColorStop(1, 'rgba(0,0,0,0.55)');
-    x.fillStyle = vg; x.fillRect(0, 0, N, N);
+    const vg = x.createRadialGradient(N / 2, NH / 2, NH * 0.3, N / 2, NH / 2, N * 0.6); vg.addColorStop(0, 'rgba(0,0,0,0)'); vg.addColorStop(1, 'rgba(0,0,0,0.55)');
+    x.fillStyle = vg; x.fillRect(0, 0, N, NH);
     // districts
     x.textAlign = 'center'; x.textBaseline = 'middle';
     for (const [id, [wx, wz]] of Object.entries(DIST_LABEL_POS)) {
       const D = DISTRICTS[id]; const [sx, sy] = P(wx, wz);
-      x.font = `${Math.round(N / 30)}px "Special Elite", monospace`;
+      if (!D) continue;
+      x.font = `${Math.round(NH / 30)}px "Special Elite", monospace`;
       x.lineWidth = 6; x.strokeStyle = 'rgba(0,0,0,0.85)'; x.strokeText(D.name.toUpperCase(), sx, sy);
       x.fillStyle = D.palette.accent; x.fillText(D.name.toUpperCase(), sx, sy);
     }
     // locations
-    const fs = Math.round(N / 72);
+    const fs = Math.round(NH / 72);
     for (const l of g.locations.list) {
       const [sx, sy] = P(l.doorX ?? l.x, l.doorZ ?? l.z);
       const [ch, col] = TYPE_ICON[l.type] ?? ['•', '#ccc'];

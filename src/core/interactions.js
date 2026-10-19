@@ -23,7 +23,8 @@ export class Interactions {
   update() {
     const g = this.game;
     const p = g.player;
-    if (!p || !g.started || g.controlsLocked || p.vehicle || p.dead) { this._show(null); return; }
+    // p.suppressInteract: a riding mode (e.g. the skateboard) has taken over the E key.
+    if (!p || !g.started || g.controlsLocked || p.vehicle || p.dead || p.suppressInteract) { this._show(null); return; }
     const px = p.group.position.x, pz = p.group.position.z;
     let best = null, bestD = Infinity;
     for (const it of this.items.values()) {

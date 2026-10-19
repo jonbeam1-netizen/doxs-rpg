@@ -2,13 +2,17 @@
 // at random, crickets-ish hiss at night. No audio files. Starts on the first
 // user gesture (browsers block audio before that).
 //
-// game.audio = { ctx, master, sfx (GainNode for other modules' sounds), setVolume(v) }
+// game.audio = { ctx, master, sfx (GainNode for other modules' sounds), setVolume(v),
+//                ui(kind)  short UI blips: 'click' 'open' 'close' 'perk' 'levelup' 'achievement' 'text' 'cash' 'error',
+//                onStart(fn)  run fn(ctx) once the AudioContext exists (after the first user gesture) }
 
 export function installAudio(game) {
   let vol = 0.6;
   try { vol = Number(localStorage.getItem('doxsrpg_vol') ?? 0.6); } catch { /* ignore */ }
 
-  const audio = { ctx: null, master: null, sfx: null, music: null, volume: vol, setVolume };
+  const startHooks = [];
+  const audio = { ctx: null, master: null, sfx: null, music: null, volume: vol, setVolume, ui: uiSound, onStart };
+  function onStart(fn) { if (audio.ctx) { try { fn(audio.ctx); } catch (e) { console.error(e); } } else startHooks.push(fn); }
   game.audio = audio;
 
   function setVolume(v) {
@@ -77,6 +81,42 @@ export function installAudio(game) {
     hiss.connect(hp).connect(nightGain).connect(amb);
     hiss.start();
     audio.amb = amb;
+    for (const fn of startHooks.splice(0)) { try { fn(ctx); } catch (e) { console.error('[audio] start hook failed', e); } }
+  }
+
+  // Tiny synthesized UI sounds.
+  function blip(t, freq, dur, { type = 'square', vol = 0.05, slide = 0, dest = null } = {}) {
+    const ctx = audio.ctx;
+    const o = ctx.createOscillator(); o.type = type;
+    o.frequency.setValueAtTime(freq, t);
+    if (slide) o.frequency.exponentialRampToValueAtTime(Math.max(30, freq * slide), t + dur);
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0, t);
+    g.gain.linearRampToValueAtTime(vol, t + 0.008);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    o.connect(g).connect(dest || audio.sfx);
+    o.start(t); o.stop(t + dur + 0.02);
+  }
+  function uiSound(kind = 'click') {
+    if (!audio.ctx || !audio.sfx) return;
+    const t = audio.ctx.currentTime + 0.01;
+    try {
+      switch (kind) {
+        case 'click': blip(t, 900, 0.05, { type: 'triangle', vol: 0.04 }); break;
+        case 'open': blip(t, 520, 0.08, { type: 'triangle', vol: 0.05, slide: 1.6 }); break;
+        case 'close': blip(t, 700, 0.08, { type: 'triangle', vol: 0.05, slide: 0.6 }); break;
+        case 'error': blip(t, 160, 0.18, { type: 'sawtooth', vol: 0.04 }); break;
+        case 'cash': [1318, 1760].forEach((f, i) => blip(t + i * 0.07, f, 0.12, { type: 'square', vol: 0.03 })); break;
+        case 'text': [0, 0.14].forEach((d) => blip(t + d, 1480, 0.09, { type: 'sine', vol: 0.06 })); break;
+        case 'perk': [523, 659, 784].forEach((f, i) => blip(t + i * 0.06, f, 0.18, { type: 'square', vol: 0.035 })); break;
+        case 'levelup': [392, 523, 659, 784, 1046].forEach((f, i) => blip(t + i * 0.07, f, 0.22, { type: 'square', vol: 0.035 })); break;
+        case 'achievement':
+          [[523, 0], [659, 0.1], [784, 0.2], [1046, 0.3], [784, 0.42], [1046, 0.5]].forEach(([f, d]) => blip(t + d, f, 0.25, { type: 'square', vol: 0.035 }));
+          blip(t + 0.5, 261, 0.6, { type: 'triangle', vol: 0.06 });
+          break;
+        default: blip(t, 600, 0.06);
+      }
+    } catch { /* ignore */ }
   }
 
   const unlock = () => { start(); audio.ctx?.resume?.(); };

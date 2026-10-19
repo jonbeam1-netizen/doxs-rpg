@@ -32,6 +32,11 @@ export const DISTRICTS = {
     vibe: 'Sun-bleached outskirts: trailer park, junkyard, biker bar, drag strip, and a fenced-off military bunker nobody talks about.',
     palette: { ground: '#5b4f3c', wall: ['#7a6a52', '#6b5c47', '#8a7a5e', '#54493a'], accent: '#d6b33c' },
   },
+  blackwater: {
+    id: 'blackwater', name: 'Blackwater Isle', dir: 'east', danger: 4,
+    vibe: 'A rusted-out island across the drawbridge: a dead amusement park, stilt shacks, a lighthouse, smugglers and a maximum-security prison. The fish have opinions.',
+    palette: { ground: '#4e4a3c', wall: ['#8a7a64', '#6a6a5e', '#9a8a70', '#5a5248'], accent: '#4ac0c8' },
+  },
 };
 
 // type -> who handles it:
@@ -91,4 +96,13 @@ export const LOCATIONS = [
   { id: 'drag_strip', type: 'race', name: 'Dustbowl Drag Strip', district: 'dustbowl' },
   { id: 'bunker', type: 'bunker', name: 'Restricted Bunker 9', district: 'dustbowl' },
   { id: 'dusty_pump', type: 'gas', name: 'Last Chance Gas', district: 'dustbowl' },
+
+  // ---- Blackwater Isle (east, across the drawbridge) — handled by src/island ----
+  { id: 'funland_arcade', type: 'isle_arcade', name: 'Funland Arcade', district: 'blackwater' },
+  { id: 'rusty_hook', type: 'isle_seafood', name: 'The Rusty Hook', district: 'blackwater' },
+  { id: 'blackwater_pier', type: 'isle_pier', name: 'Pier Zero (Fishing)', district: 'blackwater', open: true },
+  { id: 'blackwater_light', type: 'isle_lighthouse', name: 'Blackwater Light', district: 'blackwater' },
+  { id: 'smugglers_cove', type: 'isle_cove', name: "Smugglers' Cove", district: 'blackwater', open: true },
+  { id: 'blackwater_pen', type: 'isle_prison', name: 'Blackwater Pen (Visiting)', district: 'blackwater' },
+  { id: 'driftwood_shack', type: 'home', name: 'Driftwood Beach Shack', district: 'blackwater', home: { tier: 2, price: 25000, energyRestore: 0.92 } },
 ];

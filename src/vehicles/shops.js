@@ -320,11 +320,12 @@ function openChop(vm, loc) {
     }
 
     section('Body & paint');
-    const repairCost = Math.round((1 - hpFrac) * Math.max(250, d.price * 0.15));
-    opts.appendChild(btn('Bang out the dents (full repair)', hpFrac >= 0.999 ? null : Math.max(25, repairCost), () => {
+    const repairCost = Math.round((1 - hpFrac) * Math.max(250, d.price * 0.15)) + (car.tires || 0) * 60;
+    const pristine = hpFrac >= 0.999 && !car.tires;
+    opts.appendChild(btn(car.tires ? `Fix the dents & ${car.tires} flat tire${car.tires > 1 ? 's' : ''}` : 'Bang out the dents (full repair)', pristine ? null : Math.max(25, repairCost), () => {
       car.repair();
       line = 'Fixed. That smell? That\'s Bondo and hope.';
-    }, hpFrac >= 0.999, hpFrac >= 0.999 ? 'already pristine-ish' : ''));
+    }, pristine, pristine ? 'already pristine-ish' : ''));
     root.appendChild(opts);
     const paintCost = Math.round(150 + d.price * 0.01);
     root.appendChild(el(`<div style="font-size:15px;margin-top:6px">Paint job: <b>${fmtMoney(paintCost)}</b>${car.stolen ? ' <span class="ui-muted">(fresh paint on a hot car drops a wanted star)</span>' : ''}</div>`));
@@ -333,7 +334,9 @@ function openChop(vm, loc) {
       if (!g.state.spend(paintCost, 'paint')) return;
       car.repaint(c.hex);
       if (e) e.color = c.hex;
-      if (car.stolen && g.state.p.heat > 0) { g.state.addHeat(-1); g.ui.toast('New color, who dis? The cops lose interest a little.', 'good'); }
+      car.paintedAt = g.elapsed; // clears car-based recognition (see src/npc/police.js)
+      if (g.police?.onRepaint) g.police.onRepaint(car);
+      else if (car.stolen && g.state.p.heat > 0) { g.state.addHeat(-1); g.ui.toast('New color, who dis? The cops lose interest a little.', 'good'); }
       line = `${c.name}. Bold. Says "I have secrets" without saying "I have a warrant".`;
       vm.syncEntry(car, e);
       render();

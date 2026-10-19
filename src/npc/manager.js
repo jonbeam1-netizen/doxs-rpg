@@ -136,6 +136,36 @@ export class NPCManager {
     return this._applyDamage(npc, amount, attackerId, opts);
   }
 
+  // Something dangerous is coming from (x,z) (a speeding car if opts.dir is its
+  // heading, otherwise gunfire / a siren). Bystanders dive aside and run.
+  // Called by vehicles (speeding cars, horns, sirens) and police.
+  scare(npcOrId, x, z, opts = {}) {
+    const npc = typeof npcOrId === 'object' ? npcOrId : this.map.get(npcOrId);
+    if (!npc || npc.dead || npc.replica || npc.brawlId || npc.knockdown > 0) return false;
+    if (npc.kind === 'cop' || npc.kind === 'static') return false;
+    if (npc.dodge && npc.dodge.t > 0.15) return false;
+    let ax = npc.pos.x - x, az = npc.pos.z - z;
+    const dir = opts.dir;
+    if (dir) {
+      // sideways out of the car's path
+      const rx = -dir.z, rz = dir.x;
+      const side = ax * rx + az * rz >= 0 ? 1 : -1;
+      ax = rx * side + dir.x * 0.15; az = rz * side + dir.z * 0.15;
+    }
+    const l = Math.hypot(ax, az) || 1;
+    npc.dodge = { x: ax / l, z: az / l, t: opts.t ?? (dir ? 0.65 : 0.4) };
+    const tough = npc.hostile || npc.kind === 'thug' || npc.kind === 'gang' || npc.kind === 'dealer';
+    if (!tough && npc.state !== 'flee') {
+      this._flee(npc, null);
+      npc.fleePoint = { x, z };
+    }
+    if (npc.barkCd <= 0 && npc.dist < 30 && chance(0.35)) {
+      this.ctx.fx.say(npc.group, pick(dir ? ['WHOA!', 'Jesus, watch it!', 'MY HIP!', 'Not today, Satan!', 'AAAH!', 'Learn to DRIVE!'] : FLEE), { ttl: 1.4, kind: tough ? 'angry' : '' });
+      npc.barkCd = 3;
+    }
+    return true;
+  }
+
   // ------------------------------------------------------------ talk hookup
   _addTalk(npc) {
     const g = this.game;
@@ -457,6 +487,16 @@ export class NPCManager {
     }
     if (npc.stun > 0) { npc.stun -= dt; npc.vx *= 0.5; npc.vz *= 0.5; }
     npc.cd -= dt;
+    if (npc.dodge) {
+      // diving out of the way beats whatever else they were doing
+      const d = npc.dodge;
+      d.t -= dt;
+      const sp = npc.run * 1.25;
+      npc.vx = d.x * sp; npc.vz = d.z * sp;
+      npc.faceTo = Math.atan2(d.x, d.z);
+      if (d.t <= 0) npc.dodge = null;
+      return;
+    }
 
     // pending melee hit (wind-up finished?)
     if (npc.pendingHit > 0) {
@@ -671,7 +711,7 @@ export class NPCManager {
   }
 
   _sFlee(npc, dt) {
-    const from = this._targetPos(npc.fleeFrom) || this.game.player.group.position;
+    const from = npc.fleePoint || this._targetPos(npc.fleeFrom) || this.game.player.group.position;
     let dx = npc.pos.x - from.x, dz = npc.pos.z - from.z;
     const d = Math.hypot(dx, dz) || 1;
     dx /= d; dz /= d;
@@ -683,7 +723,7 @@ export class NPCManager {
     if (npc.stuckT > 0.3) { npc.avoidT = 0.8; npc.avoidSign = chance(0.5) ? 1 : -1; npc.stuckT = 0; }
     npc.vx = dx * npc.run; npc.vz = dz * npc.run;
     if ((npc.stateT > 7 && d > 25) || npc.stateT > 14) {
-      npc.state = 'wander'; npc.stateT = 0; npc.goal = null; npc.fleeRolled = false;
+      npc.state = 'wander'; npc.stateT = 0; npc.goal = null; npc.fleeRolled = false; npc.fleePoint = null;
       if (npc.brawlId) npc.state = 'hunt';
     }
   }
@@ -718,8 +758,13 @@ export class NPCManager {
     fx.tracer(muzzle.x, muzzle.y, muzzle.z, tp.x + ox, 1.2, tp.z + oz);
     if (hit) {
       const dmg = Math.round(def.damage * npc.dmgMult * rand(0.8, 1.15) * (npc.tierMult || 1));
-      this.ctx.combat?.hurtTarget(npc, npc.target, dmg, { dir: { x: (tp.x - npc.pos.x) / d, z: (tp.z - npc.pos.z) / d }, gun: true });
+      const fleet = this.game.vehicles?.police;
+      if (npc.kind === 'cop' && fleet && this._targetInVehicle(npc.target)) {
+        // cops aim for the tires (and the paint job)
+        fleet.shootTarget(npc.target, Math.round(dmg * 0.6), 0.3, npc.name);
+      } else this.ctx.combat?.hurtTarget(npc, npc.target, dmg, { dir: { x: (tp.x - npc.pos.x) / d, z: (tp.z - npc.pos.z) / d }, gun: true });
     }
+    if (chance(0.35)) this.ctx.ambient?.panic(npc.pos.x, npc.pos.z, 22);
     try { this.game.net.connected && this.game.net.broadcast({ t: 'combat:shot', x: muzzle.x, y: muzzle.y, z: muzzle.z, x2: tp.x + ox, z2: tp.z + oz, w: npc.weapon, n: 1 }); } catch { /* ignore */ }
   }
 

@@ -8,6 +8,7 @@ import { CarAudio } from './audio.js';
 import { Traffic } from './traffic.js';
 import { installShops } from './shops.js';
 import { installRace } from './race.js';
+import { PoliceFleet } from './police.js';
 
 // Vehicles: ownership, enter/exit, driving input, camera, HUD, collisions with
 // people and other cars, explosions, traffic, dealer / chop shop / drag strip.
@@ -32,6 +33,8 @@ class VehicleManager {
     this.fx = new VehicleFX(game);
     this.audio = new CarAudio(game);
     this.traffic = new Traffic(this);
+    this.police = new PoliceFleet(this);
+    this.scareT = 0;
     this._current = null;
     this.nightLevel = 0;
     this.recentHits = new Map();
@@ -225,6 +228,7 @@ class VehicleManager {
 
   despawnAll() {
     if (this._current) this.exit(true);
+    try { this.police.clearAll(); } catch (e) { console.error('[vehicles] police clear failed', e); }
     this.race?.abort?.(true);
     this.traffic.clear();
     for (const c of [...this.cars]) this.removeCar(c);
@@ -294,13 +298,19 @@ class VehicleManager {
   carjack(car) {
     const g = this.game;
     const hadDriver = car.hasDriver;
-    if (hadDriver) this.traffic.yank(car);
+    const cop = this.police.isCruiser(car);
+    if (cop) {
+      try { this.police.onStolen(car); } catch (e) { console.error('[vehicles] police steal failed', e); }
+      car.owner = 'civil';
+      if (hadDriver) car.setDriverVisible(false);
+      else this.audio.glass();
+    } else if (hadDriver) this.traffic.yank(car);
     else {
       this.audio.glass();
       g.ui.toast('You elbow the window in and hotwire it with a paperclip. Classy.', 'info', 3000);
     }
     this.traffic.release(car);
-    this.crime('steal', car.x, car.z);
+    if (!cop) this.crime('steal', car.x, car.z);
     const e = {
       uid: makeUid(), carId: car.carId, color: car.color, x: car.x, z: car.z, rot: car.heading, hp: Math.round(car.hp),
       upgrades: car.upgrades, stolen: true, destroyed: false,
@@ -309,7 +319,8 @@ class VehicleManager {
     car.owner = 'player'; car.uid = e.uid; car.stolen = true;
     this.capStolen(e.uid);
     this.enter(car);
-    g.ui.toast(`Stole a <b>${car.def.name}</b>. The chop shop in the Rustyards pays cash, no questions.`, 'bad', 3800);
+    if (cop) g.ui.toast('Stole a <b>Rotwell PD Interceptor</b>. <kbd>H</kbd> toggles the siren. Lose the heat and it\'s yours to keep.', 'bad', 4500);
+    else g.ui.toast(`Stole a <b>${car.def.name}</b>. The chop shop in the Rustyards pays cash, no questions.`, 'bad', 3800);
     g.bus.emit('car:stolen', { carId: car.carId, uid: e.uid });
   }
 
@@ -565,15 +576,25 @@ class VehicleManager {
       ci.nitro = can && inp.wasPressed('KeyN');
       ci.noReverse = false;
       if (can && inp.wasPressed('KeyN') && !cur.upgrades.nitro) g.ui.toast('No nitro installed. Chop Chop Customs can fix that.', 'info', 2000);
-      this.audio.horn(can && inp.isDown('KeyH'), cur.carId === 'puddlejumper' || cur.carId === 'moped');
-      if (can && inp.wasPressed('KeyH')) this.scarePeds(cur);
+      if (cur.lb) {
+        // interceptors: H toggles the light bar & siren instead of the horn
+        if (can && inp.wasPressed('KeyH')) {
+          cur.setSiren(!cur.sirenOn);
+          g.ui.toast(cur.sirenOn ? 'WEE-OOO. Traffic parts like you\'re important.' : 'Siren off. Back to being a regular criminal.', 'info', 1800);
+        }
+      } else {
+        this.audio.horn(can && inp.isDown('KeyH'), cur.carId === 'puddlejumper' || cur.carId === 'moped');
+        if (can && inp.wasPressed('KeyH')) this.scarePeds(cur);
+      }
     }
 
     this.traffic.update(dt);
+    try { this.police.update(dt); } catch (e) { if (!this._polErr) { console.error('[vehicles] police failed', e); this._polErr = true; } }
 
     for (const c of this.cars) {
       if (c.removed) continue;
-      if (c !== cur && !c.ai) {
+      if (c.replica) { try { c.updateReplica(dt); } catch (e) { if (!c._err) { console.error('[vehicles] replica update failed', e); c._err = true; } } continue; }
+      if (c !== cur && !c.ai && !c.police) {
         c.input.throttle = 0; c.input.reverse = 0; c.input.steer = 0; c.input.nitro = false; c.input.handbrake = true;
         if (!c.dead && c.vel.lengthSq() < 1e-4 && Math.abs(c.angVel) < 1e-3 && c.hp / c.maxHp > 0.45) { c.vf = 0; c.vl = 0; c.speed = 0; continue; }
       }
@@ -589,6 +610,7 @@ class VehicleManager {
       pl.group.visible = false;
       pl.speed = cur.speed;
       this.hitPeds(cur, dt);
+      this.warnPeds(cur, dt);
       this.updateCamera(cur, dt);
       this.updateAudio(cur);
       this.hudT -= dt;
@@ -660,7 +682,8 @@ class VehicleManager {
       <div style="font-size:40px;font-weight:800;line-height:1;color:#e6dfcf">${mph}<span style="font-size:14px;color:#a9a291"> MPH</span><span style="float:right;font-size:22px;color:#b0672a;margin-top:12px">${car._gear || 'N'}</span></div>
       <div style="height:6px;background:#1d1915;margin-top:4px"><i style="display:block;height:100%;width:${Math.round(hp * 100)}%;background:${hpCol}"></i></div>
       ${nitroBar}
-      <div style="font-size:12px;color:#8f8676;margin-top:3px">F exit · Space handbrake · H horn${n ? ' · N nitro' : ''}</div></div>`;
+      ${car.tires ? `<div style="font-size:13px;color:#e2402f;font-weight:800;margin-top:3px">FLAT TIRES ×${car.tires} <span style="font-weight:400;color:#8f8676">(chop shop fixes it)</span></div>` : ''}
+      <div style="font-size:12px;color:#8f8676;margin-top:3px">F exit · Space handbrake · H ${car.lb ? `siren${car.sirenOn ? ' <b style="color:#5f8bff">ON</b>' : ''}` : 'horn'}${n ? ' · N nitro' : ''}</div></div>`;
   }
 
   updatePrompt() {
@@ -708,6 +731,24 @@ class VehicleManager {
       }
       this.crime('assault', n.pos.x, n.pos.z);
     }
+  }
+
+  // Pedestrians dive out of the way of a speeding car.
+  warnPeds(car, dt) {
+    this.scareT -= dt;
+    if (this.scareT > 0 || car.speed < 11) return;
+    this.scareT = 0.2;
+    const npcs = this.game.npcs;
+    if (!npcs?.scare) return;
+    const f = car.forward;
+    const reach = 8 + car.speed * 0.6;
+    try {
+      for (const n of npcs.near(car.x + f.x * reach * 0.5, car.z + f.z * reach * 0.5, reach * 0.6)) {
+        const dx = n.pos.x - car.x, dz = n.pos.z - car.z;
+        const fw = dx * f.x + dz * f.z, lat = Math.abs(dx * -f.z + dz * f.x);
+        if (fw > 1 && fw < reach && lat < 2.5 + fw * 0.12) npcs.scare(n, car.x, car.z, { dir: { x: f.x, z: f.z } });
+      }
+    } catch { /* optional */ }
   }
 
   scarePeds(car) {
@@ -798,6 +839,7 @@ class VehicleManager {
           if (impact > 8) this.fx.sparks(hx, 0.6, hz, Math.round(5 + s * 12), 0.7 + s);
           a.damage((impact - 4) * 1.3 * (mb / tm) * 2, 'crash');
           b.damage((impact - 4) * 1.3 * (ma / tm) * 2, 'crash');
+          try { this.police.onCollide(a, b, impact); } catch (e) { console.error('[vehicles] police collide', e); }
           for (const c of [a, b]) {
             if (c.ai && c.ai.cruise) { c.ai.stunned = 1.5 + Math.random() * 1.5; }
             if (c === this._current) { this.game.cameraRig.shake(0.1 + s * 0.4, 0.25); this.onCarImpact(c, impact); }

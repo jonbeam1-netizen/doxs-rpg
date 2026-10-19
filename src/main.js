@@ -2,11 +2,15 @@ import { Game } from './core/game.js';
 import { Player, CameraRig } from './player/player.js';
 import { showTitle } from './ui/title.js';
 import { installAudio } from './audio/ambience.js';
+import { installRadio } from './audio/radio.js';
+import { installProgress } from './progress/index.js';
+import { installPhone } from './phone/index.js';
 import { installWorld } from './world/index.js';
 import { installNPCs } from './npc/index.js';
 import { installVehicles } from './vehicles/index.js';
 import { installSystems } from './systems/index.js';
 import { installQuests } from './quests/index.js';
+import { installSkate } from './skate/index.js';
 import { installNet } from './net/index.js';
 
 async function boot() {
@@ -16,6 +20,7 @@ async function boot() {
   game.titleButtons = [];
 
   installAudio(game);
+  try { installRadio(game); } catch (e) { console.error('[boot] radio failed', e); }
   await installWorld(game);
 
   game.cameraRig = new CameraRig(game);
@@ -25,7 +30,7 @@ async function boot() {
   game.player.spawn(sp.x, sp.z, sp.facing ?? 0);
   game.cameraRig.follow(game.player.group);
 
-  for (const install of [installNPCs, installVehicles, installSystems, installQuests, installNet]) {
+  for (const install of [installNPCs, installVehicles, installSystems, installQuests, installSkate, installProgress, installPhone, installNet]) {
     try { await install(game); } catch (e) { console.error('[boot] install failed:', install.name, e); }
   }
 

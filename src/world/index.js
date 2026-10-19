@@ -13,6 +13,8 @@ import { Particles } from './particles.js';
 import { Post } from './post.js';
 import { MapSystem } from './minimap.js';
 import { hashStr } from './textures.js';
+import { buildIsland, buildIslandLot, coastPolygon } from './island.js';
+import { ISLE_MAX_X, MAP_EXT, SPOTS as ISLE_SPOTS, TOLL_X, LAND_X, BRIDGE, ISLE, isLand } from './island-layout.js';
 
 // The city of Rotwell. See DESIGN.md "World" for the public API (game.world).
 
@@ -32,10 +34,10 @@ export async function installWorld(game) {
   await waitFonts();
   const layout = buildLayout();
   const mats = createMaterials();
-  const geo = new WorldGeo({ chunkSize: 140, min: -HALF, max: HALF });
+  const geo = new WorldGeo({ chunkSize: 140, min: -HALF, max: MAP_EXT.maxX });
   const phys = game.physics;
   game.renderer.toneMappingExposure = 1.5; // grimy but readable under ACES
-  phys.setBounds(-BOUND, -BOUND, BOUND, BOUND);
+  phys.setBounds(-BOUND, -BOUND, ISLE_MAX_X, BOUND);
 
   const lights = [], emitters = [];
   const C = {
@@ -65,10 +67,14 @@ export async function installWorld(game) {
   let spawn = { x: 0, z: 330, facing: 0 };
   const overpassDoor = buildOverpass(C);
   const dragDoor = buildDragStrip(C);
+  // Blackwater Isle (own RNG; hand-placed island locations come back as doors)
+  const isle = buildIsland(C);
   for (const L of LOCATIONS) {
     let doorX, doorZ, x, z, facing = 0;
     const lot = layout.locSpots[L.id];
-    if (L.id === 'hobo_camp') { x = doorX = overpassDoor.x; z = doorZ = overpassDoor.z; }
+    const isleDoor = L.district === 'blackwater' ? isle.doors[L.id] : null;
+    if (isleDoor) { ({ x, z, doorX, doorZ } = isleDoor); facing = isleDoor.facing ?? 0; }
+    else if (L.id === 'hobo_camp') { x = doorX = overpassDoor.x; z = doorZ = overpassDoor.z; }
     else if (L.id === 'drag_strip') { x = doorX = dragDoor.doorX; z = doorZ = dragDoor.doorZ; facing = Math.PI; }
     else if (lot && LANDMARKS[L.id]) {
       const prev = C.rng;
@@ -101,7 +107,7 @@ export async function installWorld(game) {
   }
 
   // generic lots
-  for (const lot of layout.lots) buildLot(C, lot);
+  for (const lot of layout.lots) (lot.district === 'blackwater' ? buildIslandLot : buildLot)(C, lot);
   buildDocks(C);
   buildScatter(C);
   buildEdges(C, game.scene);
@@ -112,6 +118,8 @@ export async function installWorld(game) {
   root.matrixAutoUpdate = false;
   game.scene.add(root);
   root.updateMatrixWorld(true);
+  // live island objects (Ferris wheel, lighthouse beam)
+  for (const o of isle.live) game.scene.add(o.object);
 
   // ---- atmosphere / fx
   const atmo = new Atmosphere(game, mats, lights);
@@ -134,7 +142,17 @@ export async function installWorld(game) {
     name: 'Rotwell',
     seed: WORLD_SEED,
     size: HALF * 2,
-    bounds: { minX: -BOUND, maxX: BOUND, minZ: -BOUND, maxZ: BOUND },
+    bounds: { minX: -BOUND, maxX: ISLE_MAX_X, minZ: -BOUND, maxZ: BOUND },
+    mapExtent: MAP_EXT,
+    // Blackwater Isle data for the island module (src/island)
+    island: {
+      center: { x: ISLE.cx, z: ISLE.cz }, spots: ISLE_SPOTS, doors: isle.doors, isLand,
+      tollX: TOLL_X, landX: LAND_X, bridge: BRIDGE,
+      lighthouse: isle.doors.blackwater_light?.tower ?? { x: ISLE_SPOTS.lighthouse.x, z: ISLE_SPOTS.lighthouse.z, y: 28 },
+      penGate: isle.doors.blackwater_pen?.gate ?? null,
+      ferry: { island: { x: ISLE_SPOTS.ferry.x0 + 2, z: ISLE_SPOTS.ferry.z }, city: { x: ISLE_SPOTS.cityFerry.x, z: ISLE_SPOTS.cityFerry.z } },
+      contains: (x, z) => x > 700 && isLand(x, z, -1),
+    },
     spawn,
     groundY: 0,
     districts: DISTRICTS,
@@ -192,7 +210,7 @@ export async function installWorld(game) {
   };
   game.world = world;
 
-  const map = new MapSystem(game, layout);
+  const map = new MapSystem(game, layout, { ext: MAP_EXT, coast: coastPolygon(), spots: ISLE_SPOTS });
 
   // dealer spots: a sidewalk point near the building line, deterministic per district
   world.dealerSpots = {};
@@ -257,6 +275,11 @@ export async function installWorld(game) {
       for (const m of c.userData.detail) m.visible = det;
     }
     if (post) post.update(env);
+    for (const o of isle.live) {
+      const near = Math.hypot(o.x - cam.x, o.z - cam.z) < (o.range ?? 500);
+      o.object.visible = near;
+      if (near) { try { o.update(dt, { ...env, fog: atmo.weather === 'fog' ? 1 : atmo.weather === 'rain' || atmo.weather === 'storm' ? 0.5 : 0 }); } catch (e) { if (!o._err) { console.error('[world] island live', e); o._err = true; } } }
+    }
     fpsAcc += dt; fpsN++;
     if (fpsAcc > 1) { world.stats.fps = Math.round(fpsN / fpsAcc); fpsAcc = 0; fpsN = 0; }
   }
@@ -292,5 +315,6 @@ export async function installWorld(game) {
   game.bus.on('game:start', () => { map.district = null; });
 
   world.stats.buildMs = Math.round(performance.now() - t0);
+  world.stats.islandWaterBoxes = C.islandWaterBoxes;
   console.info(`[world] Rotwell built in ${world.stats.buildMs}ms: ${layout.nodes.length} nodes, ${layout.edges.length} edges, ${layout.lots.length} lots, ${chunks.length} chunks, ${verts} verts, ${lights.length} light sources`);
 }

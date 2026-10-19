@@ -13,6 +13,9 @@ export class UI {
     this.stack = [];
     this.menuButtons = [];   // [{ label, onClick(game) }] — extra pause-menu entries
     this.sheetSections = []; // [(game) => html] — extra character-sheet sections
+    this.escHandlers = [];   // [() => bool] — consulted on Esc before the pause menu (return true = handled)
+    this.helpKeys = [];      // [[keyHtml, description]] — extra rows for the F1 help panel
+    this.bubbles = new Map();
     this.hudEl = document.getElementById('hud');
     this.layer = document.getElementById('dialog-layer');
     this.toastsEl = document.getElementById('toasts');
@@ -47,15 +50,43 @@ export class UI {
         <canvas id="minimap" width="200" height="200"></canvas>
       </div>
       <div class="hud-br"><div id="hud-weapon"></div><div id="hud-vehicle"></div></div>
-      <div class="hud-bl" id="hud-extra"></div>`;
+      <div class="hud-bl" id="hud-extra"></div>
+      <div class="hud-bubbles" id="hud-bubbles"></div>
+      <div class="hud-radio hidden" id="hud-radio"></div>`;
     this.h = {};
-    for (const id of ['name', 'level', 'hp', 'hp-t', 'en', 'en-t', 'xp', 'cash', 'bank', 'str', 'int', 'cha', 'karma', 'clock', 'district', 'heat', 'weapon', 'vehicle', 'extra', 'money-wrap']) {
+    for (const id of ['name', 'level', 'hp', 'hp-t', 'en', 'en-t', 'xp', 'cash', 'bank', 'str', 'int', 'cha', 'karma', 'clock', 'district', 'heat', 'weapon', 'vehicle', 'extra', 'money-wrap', 'bubbles', 'radio']) {
       this.h[id] = document.getElementById('hud-' + id);
     }
     this.minimap = document.getElementById('minimap');
   }
 
   showHud(on = true) { this.hudEl.classList.toggle('hidden', !on); }
+
+  // "!" notification bubbles on the HUD (left side). setBubble(id, null) removes one.
+  //   setBubble('phone', { icon: '✆', text: '2 new texts', key: 'O', onClick: () => ... , pulse: true })
+  setBubble(id, opts) {
+    const wrap = this.h.bubbles;
+    let el = this.bubbles.get(id);
+    if (!opts) { el?.remove(); this.bubbles.delete(id); return; }
+    if (!el) {
+      el = document.createElement('div');
+      el.className = 'hud-bubble';
+      el.addEventListener('click', () => { try { el._onClick?.(this.game); } catch (e) { console.error(e); } });
+      wrap.appendChild(el);
+      this.bubbles.set(id, el);
+    }
+    el._onClick = opts.onClick || null;
+    el.classList.toggle('pulse', opts.pulse !== false);
+    const html = `<span class="bang">${opts.icon ?? '!'}</span><span class="bt">${opts.text ?? ''}</span>${opts.key ? `<kbd>${opts.key}</kbd>` : ''}`;
+    if (el._html !== html) { el.innerHTML = html; el._html = html; }
+  }
+
+  // Camera / photo mode: hide every bit of HUD chrome.
+  setPhotoMode(on) {
+    this.photoMode = !!on;
+    document.body.classList.toggle('photo-mode', this.photoMode);
+    if (on) this.toast('Camera mode. <kbd>Esc</kbd> or <kbd>O</kbd> to get your HUD back.', 'info', 2200);
+  }
 
   // Free slots other modules own: 'district', 'heat', 'weapon', 'vehicle', 'extra'.
   setHud(slot, html) {
@@ -113,9 +144,15 @@ export class UI {
     setTimeout(() => { el.classList.add('out'); setTimeout(() => el.remove(), 400); }, ms);
   }
 
-  bigText(title, sub = '', ms = 2600) {
+  bigText(title, sub = '', ms = 2600, kind = null) {
+    const t = String(title).toUpperCase();
+    kind = kind || (/WRECKED|KNOCKED OUT|OVERDOSE|BLACKED OUT|DEAD|WASTED/.test(t) ? 'death'
+      : /BUSTED|ARREST|JAILED/.test(t) ? 'busted'
+        : /VICTORY|COMPLETE|PROMOTED|CHAMPION|GRADUATED|HIRED|HOMEOWNER|OFFICIAL|LEVEL/.test(t) ? 'win' : '');
+    this.bigEl.className = kind ? 'bt-' + kind : '';
     this.bigEl.innerHTML = `<div class="big">${title}</div>${sub ? `<div class="sub">${sub}</div>` : ''}`;
     this.bigEl.classList.remove('hidden');
+    void this.bigEl.offsetWidth;
     clearTimeout(this._bigT);
     this._bigT = setTimeout(() => this.bigEl.classList.add('hidden'), ms);
   }
@@ -223,10 +260,17 @@ export class UI {
     const t = e.target;
     if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA')) return;
     const top = this.top();
+    if (e.code === 'F1') {
+      e.preventDefault();
+      if (top?.isHelp) top.close(); else this.showControls();
+      return;
+    }
     if (e.code === 'Escape') {
       e.preventDefault();
-      if (top) { if (top.closable) top.close(); }
-      else this.openPauseMenu();
+      if (this.photoMode) { this.setPhotoMode(false); return; }
+      if (top) { if (top.closable) top.close(); return; }
+      for (const h of this.escHandlers) { try { if (h()) return; } catch (err) { console.error(err); } }
+      this.openPauseMenu();
       return;
     }
     if (top?.isDialog && /^Digit[1-9]$/.test(e.code)) { top.choose(Number(e.code.slice(5)) - 1); return; }
@@ -244,7 +288,7 @@ export class UI {
       { label: 'Resume' },
       { label: 'Save game', onSelect: () => g.state.save(false) },
       { label: 'Character sheet', hint: 'Tab', onSelect: () => this.openCharacterSheet() },
-      { label: 'Controls', onSelect: () => this.showControls() },
+      { label: 'Controls', hint: 'F1', onSelect: () => this.showControls() },
       ...this.menuButtons.map((b) => ({ label: b.label, hint: b.hint, onSelect: () => b.onClick(g) })),
       {
         label: 'Quit to title', onSelect: async () => {
@@ -256,27 +300,42 @@ export class UI {
   }
 
   showControls() {
-    this.openPanel({
-      title: 'Controls',
-      body: `<table class="ui-table">
-        <tr><td><kbd>W A S D</kbd></td><td>Move (camera-relative)</td></tr>
-        <tr><td><kbd>Shift</kbd></td><td>Run</td></tr>
-        <tr><td><kbd>Space</kbd></td><td>Jump / handbrake</td></tr>
-        <tr><td><kbd>Mouse</kbd></td><td>Look (click to lock mouse, or hold right-click and drag)</td></tr>
-        <tr><td><kbd>← →</kbd></td><td>Turn the camera</td></tr>
-        <tr><td><kbd>Wheel</kbd></td><td>Zoom</td></tr>
-        <tr><td><kbd>Left click</kbd></td><td>Attack / shoot</td></tr>
-        <tr><td><kbd>Q</kbd></td><td>Switch weapon</td></tr>
-        <tr><td><kbd>E</kbd></td><td>Enter buildings, talk, use things</td></tr>
-        <tr><td><kbd>F</kbd></td><td>Get in / out of a vehicle</td></tr>
-        <tr><td><kbd>Tab</kbd></td><td>Character sheet &amp; inventory</td></tr>
-        <tr><td><kbd>J</kbd></td><td>Quest log</td></tr>
-        <tr><td><kbd>M</kbd></td><td>City map</td></tr>
-        <tr><td><kbd>T</kbd></td><td>Co-op chat</td></tr>
-        <tr><td><kbd>Esc</kbd></td><td>Close / pause menu</td></tr>
-        <tr><td><kbd>1-9</kbd></td><td>Pick a dialog option</td></tr>
-      </table>`,
+    const rows = [
+      ['<kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd>', 'Move (camera-relative) / drive'],
+      ['<kbd>Shift</kbd>', 'Run'],
+      ['<kbd>Space</kbd>', 'Jump / handbrake'],
+      ['<kbd>Mouse</kbd>', 'Look (click to lock the mouse, or hold right-click and drag)'],
+      ['<kbd>←</kbd><kbd>→</kbd>', 'Turn the camera'],
+      ['<kbd>Wheel</kbd>', 'Zoom'],
+      ['<kbd>LMB</kbd>', 'Attack / shoot'],
+      ['<kbd>Q</kbd>', 'Switch weapon'],
+      ['<kbd>R</kbd>', 'Reload'],
+      ['<kbd>E</kbd>', 'Enter buildings, talk, use things'],
+      ['<kbd>F</kbd>', 'Get in / out of a vehicle'],
+      ['<kbd>H</kbd>', 'Horn (in a car) — scares pedestrians'],
+      ['<kbd>N</kbd>', 'Nitro (if installed)'],
+      ['<kbd>,</kbd><kbd>.</kbd>', 'Car radio: previous / next station'],
+      ['<kbd>O</kbd>', 'Phone — map, bank, taxi, dealer, texts, radio, camera, settings'],
+      ['<kbd>P</kbd>', 'Perks &amp; achievements'],
+      ['<kbd>Tab</kbd>', 'Character sheet'],
+      ['<kbd>I</kbd>', 'Inventory'],
+      ['<kbd>J</kbd>', 'Quest log'],
+      ['<kbd>M</kbd>', 'City map'],
+      ['<kbd>T</kbd>', 'Co-op chat'],
+      ['<kbd>1</kbd>-<kbd>9</kbd>', 'Pick a dialog option'],
+      ['<kbd>F1</kbd>', 'This help'],
+      ['<kbd>Esc</kbd>', 'Close / pause menu'],
+      ...this.helpKeys,
+    ];
+    const entry = this.openPanel({
+      title: 'How To Not Die (Controls)',
+      width: 620,
+      className: 'help-modal',
+      body: `<table class="ui-table help-table">${rows.map(([k, d]) => `<tr><td class="keys">${k}</td><td>${d}</td></tr>`).join('')}</table>
+        <div class="ui-muted" style="margin-top:10px">Pro tip: everything in Rotwell is either for sale, on fire, or both.</div>`,
     });
+    entry.isHelp = true;
+    return entry;
   }
 
   openCharacterSheet() {

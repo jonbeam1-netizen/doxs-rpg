@@ -1,15 +1,24 @@
 import { lin, mixCol, mulCol } from './geo.js';
 import { districtAt, WATER_X, HALF } from './layout.js';
 import * as P from './props.js';
+import { mulberry32 } from '../core/util.js';
+
+// Island edges draw from their own RNG so adding Blackwater never reshuffles the city.
+const isleRng = mulberry32(0xB1AC_3A7E);
+function withRng(C, e, fn) {
+  if (e.district !== 'blackwater') return fn();
+  const prev = C.rng; C.rng = isleRng;
+  try { return fn(); } finally { C.rng = prev; }
+}
 
 // Ground, road surfaces, sidewalks, curbs, lane markings, crosswalks and the
 // street furniture that lines every road.
 
 export const GROUND_COL = {
-  downtown: '#6b675f', gutterside: '#4f473b', hilltop: '#5a5838', rustyards: '#4b463f', dustbowl: '#a68e64',
+  downtown: '#6b675f', gutterside: '#4f473b', hilltop: '#5a5838', rustyards: '#4b463f', dustbowl: '#a68e64', blackwater: '#4e4a3c',
 };
-const ASPHALT_TINT = { downtown: '#d8d4cc', gutterside: '#c8c0b4', hilltop: '#d0ccc4', rustyards: '#b8b4ac', dustbowl: '#d8c8b0' };
-const WALK_TINT = { downtown: '#e0dcd4', gutterside: '#b8ae9c', hilltop: '#d8d4c4', rustyards: '#a8a298', dustbowl: '#c8b498' };
+const ASPHALT_TINT = { downtown: '#d8d4cc', gutterside: '#c8c0b4', hilltop: '#d0ccc4', rustyards: '#b8b4ac', dustbowl: '#d8c8b0', blackwater: '#aca69a' };
+const WALK_TINT = { downtown: '#e0dcd4', gutterside: '#b8ae9c', hilltop: '#d8d4c4', rustyards: '#a8a298', dustbowl: '#c8b498', blackwater: '#9e9688' };
 
 function hash2(x, z) { const s = Math.sin(x * 127.1 + z * 311.7) * 43758.5453; return s - Math.floor(s); }
 function vnoise(x, z) {
@@ -93,7 +102,7 @@ export function buildRoads(C) {
         }
       }
     }
-    markings(C, e, A, B);
+    withRng(C, e, () => markings(C, e, A, B));
   }
 }
 
@@ -102,7 +111,7 @@ function markings(C, e, A, B) {
   const dx = e.dx, dz = e.dz, px = -dz, pz = dx;
   const c0 = e.clear[0].mark, c1 = e.len - e.clear[1].mark;
   const Y = '#c9a232', W = '#d8d4c8';
-  const fade = e.district === 'gutterside' || e.district === 'dustbowl' ? 0.55 : e.district === 'rustyards' ? 0.7 : 0.9;
+  const fade = e.district === 'gutterside' || e.district === 'dustbowl' || e.district === 'blackwater' ? 0.55 : e.district === 'rustyards' ? 0.7 : 0.9;
   const line = (off, s0, s1, w, col) => {
     if (s1 - s0 < 0.3) return;
     g.strip('marking', A.x + dx * s0 + px * off, A.z + dz * s0 + pz * off, A.x + dx * s1 + px * off, A.z + dz * s1 + pz * off, w, 0.06, { color: mulCol(col, fade * (0.8 + C.rng() * 0.25)) });
@@ -164,14 +173,27 @@ function markings(C, e, A, B) {
 export function buildStreetProps(C) {
   const L = C.layout;
   const { nodes, edgeInfo } = L;
+  for (const e of edgeInfo) withRng(C, e, () => edgeProps(C, e, nodes));
+  trafficLights(C, nodes, edgeInfo);
+}
+
+function edgeProps(C, e, nodes) {
   const rng = C.rng;
-  for (const e of edgeInfo) {
+  {
     const A = nodes[e.a];
     const dx = e.dx, dz = e.dz, px = -dz, pz = dx;
     const at = (s, off) => [A.x + dx * s + px * off, A.z + dz * s + pz * off];
     const c0 = e.clear[0].mark + 3, c1 = e.len - e.clear[1].mark - 3;
-    if (c1 - c0 < 6) continue;
+    if (c1 - c0 < 6) return;
     const dist = e.district;
+    if (e.kind === 'bridge') {
+      // rusty lamp posts on both rails, nothing else
+      for (let s = c0 + 8, k = 0; s < c1; s += e.light, k++) for (const side of [1, -1]) {
+        const [x, z] = at(s, (e.hw + 0.7) * side);
+        P.streetlight(C, x, z, Math.atan2(-px * side, -pz * side), { flicker: (k + (side > 0 ? 1 : 0)) % 3 === 0, color: '#ffb060', arm: 2.2, h: 7.6 });
+      }
+      return;
+    }
     const slum = dist === 'gutterside';
     const desert = e.kind === 'desert' || e.kind === 'drag';
     // --- lights
@@ -194,7 +216,7 @@ export function buildStreetProps(C) {
       }
     }
     // --- power lines (one side, near building line)
-    if ((slum || dist === 'rustyards' || dist === 'dustbowl') && e.kind !== 'drag') {
+    if ((slum || dist === 'rustyards' || dist === 'dustbowl' || dist === 'blackwater') && e.kind !== 'drag') {
       let prev = null;
       const off = desert ? -(e.hw + 4.5) : -(e.hw + e.sw - 0.5);
       for (let s = c0 + 8; s < c1; s += 38) {
@@ -204,7 +226,7 @@ export function buildStreetProps(C) {
         prev = pts;
       }
     }
-    if (desert) continue;
+    if (desert) return;
     // --- clutter on sidewalks
     const bOff = e.hw + e.sw - 0.7, cOff = e.hw + 0.9;
     for (const side of [1, -1]) {
@@ -246,6 +268,9 @@ export function buildStreetProps(C) {
       C.geo.disc('decal_dark', 0, 0.055, 0, 0.6 + rng() * 1.6, 8, { color: '#141210' });
     }
   }
+}
+
+function trafficLights(C, nodes, edgeInfo) {
   // traffic lights at downtown/hilltop intersections (blinking amber forever — the city stopped paying)
   for (const e of edgeInfo) {
     if (!['downtown', 'hilltop'].includes(e.district) || e.kind === 'desert') continue;

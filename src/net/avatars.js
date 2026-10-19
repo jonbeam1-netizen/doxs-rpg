@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { createStickman } from '../entities/stickman.js';
+import { createStickman, lookToStickman } from '../entities/stickman.js';
 import { angleLerp, clamp } from '../core/util.js';
 import { WEAPONS } from '../data/weapons.js';
 import { makeNameTag, makeBubble } from './labels.js';
@@ -53,7 +53,7 @@ export function endEmote(model) {
   if (!model.dead) { model.body.rotation.x = 0; model.body.position.set(0, 0, 0); }
 }
 
-const lookKey = (l) => `${l?.color ?? ''}|${l?.hat ?? ''}|${l?.hatColor ?? ''}`;
+const lookKey = (l) => `${l?.color ?? ''}|${l?.hat ?? ''}|${l?.hatColor ?? ''}|${l?.skin ?? ''}|${l?.build ?? ''}`;
 
 let gunGeo, gunMat, goldMat, clubGeo, clubMat;
 function weaponMesh(id) {
@@ -113,7 +113,7 @@ export class Avatars {
 
   _buildModel(rp, look) {
     const old = rp._model;
-    const model = createStickman({ color: look?.color ?? 0x141414, hat: look?.hat ?? null, hatColor: look?.hatColor ?? 0x2a2420 });
+    const model = createStickman(lookToStickman({ color: 0x141414, hatColor: 0x2a2420, ...(look || {}) }));
     if (old) { old.dispose(); }
     rp.group.add(model.group);
     rp._model = model;

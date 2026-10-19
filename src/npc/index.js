@@ -10,7 +10,10 @@
 //   combat:brawl        client -> host  { id, spec }
 //   combat:brawlResult  host -> client  { id, won }
 //   combat:shot         any -> all      cosmetic tracers { x,y,z, s:[[x,z]...], w }
-//   police:heat         client -> host  { heat }  so the host can send cops after wanted clients
+//   police:heat         client -> host  { heat, seen, lx, lz, hid }  so the host can send cops/cruisers
+//                       after wanted clients and search where the client was last seen
+// Pursuit vehicles (cruisers, roadblocks, helicopter) and their police:snap / police:hit /
+// police:steal / police:tire messages live in src/vehicles/police.js.
 import { NPCManager } from './manager.js';
 import { Combat } from './combat.js';
 import { Police } from './police.js';
@@ -56,6 +59,22 @@ export async function installNPCs(game) {
     blood: (x, z, amt) => fx.blood(x, z, amt),
     dropCash: (x, z, amount) => fx.dropPickup(x, z, { kind: 'cash', amount }),
     _ctx: ctx,
+  };
+
+  // ---- public API: game.police (heat, evasion, wanted list for the pursuit fleet)
+  game.police = {
+    get heat() { return police.heat; },
+    get seen() { return police.lastSeen < 1; },
+    get searching() { return police.heat >= 1 && police.lastSeen > 1.25; },
+    get lastKnown() { return police.lastKnown; },
+    get hiding() { return police.hiding; },
+    searchRadius: () => police.searchRadius(),
+    wanted: () => police.wanted(),
+    spawnCopAt: (w, lvl, x, z, data) => police.spawnCopAt(w, lvl, x, z, data),
+    onRepaint: (car) => police.onRepaint(car),
+    crime: (type, x, z) => police.crime(type, x ?? game.player.pos.x, z ?? game.player.pos.z),
+    clearHeat: (silent) => police.clearHeat(silent),
+    arrest: (opts) => police.arrest(opts),
   };
 
   // ---- per-frame

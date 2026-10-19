@@ -3,7 +3,10 @@ import * as THREE from 'three';
 // The stick figure used for the player, every NPC, and remote co-op players.
 // Faces +Z. Rotate the returned `group` around Y to turn it.
 //
-// const s = createStickman({ color, scale, hat, hatColor });
+// const s = createStickman({ color, scale, hat, hatColor, skin, build });
+//   skin:  optional head color (defaults to the body color — classic stick figure)
+//   build: one of BUILDS keys ('average', 'scrawny', 'lanky', 'chonky', 'shrimp')
+// lookToStickman(look) turns a saved state.p.look into createStickman options.
 // s.animate(dt, speed, { aim, airborne })  // call every frame
 // s.punch()                                // play a swing
 // s.setDead(true)                          // ragdoll-ish flop
@@ -29,23 +32,45 @@ function geos() {
 
 const eyeMat = new THREE.MeshBasicMaterial({ color: 0xd8d2c0 });
 
-export function createStickman({ color = 0x141414, scale = 1, hat = null, hatColor = 0x3a2a1a, eyes = true } = {}) {
+// Body shapes for the character creator. h = overall height scale, g = limb girth, t = torso girth.
+export const BUILDS = {
+  average: { label: 'Average Joe', h: 1, g: 1, t: 1 },
+  scrawny: { label: 'Twig', h: 0.98, g: 0.65, t: 0.7 },
+  lanky:   { label: 'Lanky Boi', h: 1.12, g: 0.8, t: 0.85 },
+  chonky:  { label: 'Absolute Unit', h: 0.96, g: 1.6, t: 2.1 },
+  shrimp:  { label: 'Fun Size', h: 0.84, g: 1.05, t: 1.1 },
+};
+
+export function lookToStickman(look = {}) {
+  return {
+    color: look?.color ?? 0x141414,
+    skin: look?.skin ?? null,
+    hat: look?.hat ?? null,
+    hatColor: look?.hatColor ?? 0x2a2420,
+    build: look?.build ?? 'average',
+  };
+}
+
+export function createStickman({ color = 0x141414, scale = 1, hat = null, hatColor = 0x3a2a1a, eyes = true, skin = null, build = null } = {}) {
   const g = geos();
   const mat = new THREE.MeshStandardMaterial({ color, roughness: 0.75, metalness: 0.08 });
+  const headMat = skin != null ? new THREE.MeshStandardMaterial({ color: skin, roughness: 0.7, metalness: 0.02 }) : mat;
+  const B = BUILDS[build] || BUILDS.average;
   const root = new THREE.Group();
   const body = new THREE.Group();
-  body.scale.setScalar(scale);
+  body.scale.setScalar(scale * B.h);
   root.add(body);
 
   const hips = new THREE.Group();
   hips.position.y = 0.95;
   body.add(hips);
   const torso = new THREE.Mesh(g.torso, mat);
+  torso.scale.set(B.t, 1, B.t * 0.9);
   hips.add(torso);
   const neck = new THREE.Group();
   neck.position.y = 0.62;
   hips.add(neck);
-  const head = new THREE.Mesh(g.head, mat);
+  const head = new THREE.Mesh(g.head, headMat);
   head.position.y = 0.27;
   neck.add(head);
 
@@ -61,20 +86,21 @@ export function createStickman({ color = 0x141414, scale = 1, hat = null, hatCol
     const upper = new THREE.Group();
     upper.position.set(x, y, 0);
     parent.add(upper);
-    upper.add(new THREE.Mesh(g.limb, mat));
+    const um = new THREE.Mesh(g.limb, mat); um.scale.set(B.g, 1, B.g); upper.add(um);
     const lower = new THREE.Group();
     lower.position.y = -0.45;
     upper.add(lower);
-    lower.add(new THREE.Mesh(g.limb, mat));
+    const lm = new THREE.Mesh(g.limb, mat); lm.scale.set(B.g, 1, B.g); lower.add(lm);
     const end = new THREE.Group();
     end.position.y = -0.47;
     lower.add(end);
     return { upper, lower, end };
   }
-  const armL = limb(neck, 0.07, 0);
-  const armR = limb(neck, -0.07, 0);
-  const legL = limb(hips, 0.09, 0);
-  const legR = limb(hips, -0.09, 0);
+  const sw0 = Math.max(0, B.t - 1) * 0.07; // wider shoulders/hips for bigger torsos
+  const armL = limb(neck, 0.07 + sw0, 0);
+  const armR = limb(neck, -0.07 - sw0, 0);
+  const legL = limb(hips, 0.09 + sw0 * 0.6, 0);
+  const legR = limb(hips, -0.09 - sw0 * 0.6, 0);
 
   if (hat) addHat(head, hat, hatColor);
 
@@ -87,7 +113,8 @@ export function createStickman({ color = 0x141414, scale = 1, hat = null, hatCol
     if (st.flash > 0) {
       st.flash -= dt;
       mat.emissive.setRGB(Math.max(0, st.flash) * 3, 0, 0);
-      if (st.flash <= 0) mat.emissive.copy(baseEmissive);
+      if (headMat !== mat) headMat.emissive.copy(mat.emissive);
+      if (st.flash <= 0) { mat.emissive.copy(baseEmissive); if (headMat !== mat) headMat.emissive.copy(baseEmissive); }
     }
     if (st.dead) return;
     const s = Math.min(speed / 6, 1.5);
@@ -147,10 +174,15 @@ export function createStickman({ color = 0x141414, scale = 1, hat = null, hatCol
     }
   }
   function setColor(c) { mat.color.set(c); }
-  function dispose() { mat.dispose(); root.removeFromParent(); }
+  function dispose() {
+    mat.dispose();
+    if (headMat !== mat) headMat.dispose();
+    root.traverse((o) => { if (o.isMesh && o.material?.userData?.stickOwned) o.material.dispose(); });
+    root.removeFromParent();
+  }
 
   return {
-    group: root, body, mat,
+    group: root, body, mat, headMat,
     parts: { hips, torso, neck, head, armL, armR, legL, legR },
     rightHand: armR.end, leftHand: armL.end,
     animate, punch, flash, setDead, setColor, dispose,
@@ -163,6 +195,7 @@ export const HAT_TYPES = ['fedora', 'cap', 'beanie', 'tophat', 'hardhat', 'cop',
 function addHat(head, type, color) {
   const g = geos();
   const m = new THREE.MeshStandardMaterial({ color, roughness: 0.8 });
+  m.userData.stickOwned = true;
   const hat = new THREE.Group();
   hat.position.y = 0.14;
   switch (type) {
@@ -190,6 +223,7 @@ function addHat(head, type, color) {
     }
     case 'crown': {
       const c = new THREE.Mesh(new THREE.CylinderGeometry(0.17, 0.15, 0.14, 8, 1, true), new THREE.MeshStandardMaterial({ color: 0xc9a227, metalness: 0.8, roughness: 0.35, side: THREE.DoubleSide }));
+      c.material.userData.stickOwned = true;
       c.position.y = 0.04; hat.add(c);
       break;
     }

@@ -213,10 +213,18 @@ export class Traffic {
     const G = this.graph();
     const p = car.group.position;
     let tx, tz, desired = ai.cruise;
+    // sirens behind you? pull over to the curb and let them by
+    ai.sirT = (ai.sirT ?? Math.random() * 0.3) - dt;
+    if (ai.sirT <= 0) {
+      ai.sirT = 0.3;
+      const s = this.vm.police?.sirenNear?.(p.x, p.z, 40);
+      if (s && s.car !== car) ai.yieldT = 2.5 + Math.random();
+    }
+    if (ai.yieldT > 0) { ai.yieldT -= dt; desired = Math.min(desired, 2.5); }
     if (G && ai.to != null && G.nodes[ai.to] && G.nodes[ai.from]) {
       const A = G.nodes[ai.from], B = G.nodes[ai.to];
       const dx = B.x - A.x, dz = B.z - A.z, len = Math.hypot(dx, dz) || 1, ux = dx / len, uz = dz / len;
-      const lane = this.laneOffset();
+      const lane = this.laneOffset() * (ai.yieldT > 0 ? 2.3 : 1);
       const ax = A.x - uz * lane, az = A.z + ux * lane;
       const along = (p.x - ax) * ux + (p.z - az) * uz;
       if (ai.nextFor !== ai.to) {

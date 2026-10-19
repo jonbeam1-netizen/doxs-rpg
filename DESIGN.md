@@ -180,3 +180,15 @@ Also owns `src/data/barks.js` (`bark(kind)` one-liners).
 | Systems/Economy | src/systems/**, src/data/items.js, src/data/drugs.js, src/data/jobs.js, src/data/courses.js |
 | Quests/Story | src/quests/**, src/data/barks.js, src/data/quests.js |
 | Co-op | src/net/**, README.md |
+
+## Round 2 additions
+- `game.perks` (src/progress): `has(id)`, `mult(key)` → number (1 = no bonus). Keys: meleeDamage, gunDamage,
+  shopDiscount, drugPrice, heatDecay, jobPay, energyCost, carSpeed, heistTake, lockpick, dateChance. P key panel.
+  Achievements in src/progress/achievements.js. Save: `p.progress`, `p.background`.
+- `game.phone` (src/phone, O key) and `game.radio` (src/audio/radio.js, `,` `.` change station). Save: `p.phone`.
+- Character creator (src/ui/creator.js): look = { color, skin, build, hat, hatColor }. Use
+  `createStickman(lookToStickman(look))` anywhere you build a player-looking stickman.
+- Skateboard (src/skate): G mount, W push, Space ollie, left click kickflip. Unlocked via Skidmark Kev's quest
+  (level 3+). Save: `p.skate`. Net message `{t:'skate', on, board, trick}`.
+- Keys in use: WASD Shift Space E F G Q R H N O P Tab J M T Esc F1 1-9 , . arrows, LMB.
+- `?dev` / `?mute` sessions are silent and never save.

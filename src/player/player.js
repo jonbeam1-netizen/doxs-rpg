@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { createStickman } from '../entities/stickman.js';
+import { createStickman, lookToStickman } from '../entities/stickman.js';
 import { angleLerp, clamp, lerp } from '../core/util.js';
 
 // Local player: on-foot movement, jumping, collisions, animation.
@@ -40,11 +40,7 @@ export class Player {
 
   applyLook(look = {}) {
     const old = this.model;
-    const model = createStickman({
-      color: look.color ?? 0x101010,
-      hat: look.hat ?? null,
-      hatColor: look.hatColor ?? 0x2a2420,
-    });
+    const model = createStickman(lookToStickman({ color: 0x101010, ...(look || {}) }));
     model.group.position.copy(old.group.position);
     model.group.rotation.y = this.facing;
     model.group.visible = old.group.visible;
@@ -91,7 +87,8 @@ export class Player {
     if (len > 0) { mx /= len; mz /= len; }
 
     const running = inp.isDown('ShiftLeft') || inp.isDown('ShiftRight');
-    const target = (running ? this.runSpeed : this.walkSpeed) * this.speedMult * (this.aiming ? 0.6 : 1);
+    const perkMult = g.perks ? g.perks.mult(running ? 'runSpeed' : 'walkSpeed') : 1;
+    const target = (running ? this.runSpeed : this.walkSpeed) * this.speedMult * perkMult * (this.aiming ? 0.6 : 1);
     const accel = 1 - Math.exp(-12 * dt);
     this.vel.x = lerp(this.vel.x, mx * target, accel);
     this.vel.y = lerp(this.vel.y, mz * target, accel);
@@ -132,6 +129,41 @@ export class CameraRig {
     this.shakeT = 0;
     this.shakeAmp = 0;
     this._look = new THREE.Vector3();
+    // Mouse sensitivity multiplier (1 = default) and invert-Y, set from the phone's Settings app.
+    this.sensitivity = 1;
+    this.invertY = false;
+    try {
+      const sv = Number(localStorage.getItem('doxsrpg_sens'));
+      if (sv > 0) this.sensitivity = sv;
+      this.invertY = localStorage.getItem('doxsrpg_invy') === '1';
+    } catch { /* ignore */ }
+    this._fly = 0;
+  }
+
+  setSensitivity(v) {
+    this.sensitivity = clamp(Number(v) || 1, 0.2, 3);
+    try { localStorage.setItem('doxsrpg_sens', String(this.sensitivity)); } catch { /* ignore */ }
+  }
+
+  setInvertY(on) {
+    this.invertY = !!on;
+    try { localStorage.setItem('doxsrpg_invy', on ? '1' : '0'); } catch { /* ignore */ }
+  }
+
+  // Slow moody flyover of the city while the title screen is up.
+  _titleFlyover(dt) {
+    const g = this.game, cam = g.camera;
+    const b = g.world?.bounds || { minX: -200, maxX: 200, minZ: -200, maxZ: 200 };
+    // Orbit the mainland (bounds may stretch east to cover the island district).
+    const maxX = Math.min(b.maxX, -b.minX);
+    const cx = (b.minX + maxX) / 2, cz = (b.minZ + b.maxZ) / 2;
+    const r = Math.max(60, Math.min(maxX - b.minX, b.maxZ - b.minZ) * 0.22);
+    this._fly += dt * 0.022;
+    const t = this._fly;
+    cam.position.set(cx + Math.sin(t) * r, 42 + Math.sin(t * 0.7) * 14, cz + Math.cos(t) * r);
+    const lr = r * 0.35;
+    this._look.set(cx + Math.sin(t + 1.1) * lr, 4, cz + Math.cos(t + 1.1) * lr);
+    cam.lookAt(this._look);
   }
 
   follow(obj, { height = 1.6, dist = null } = {}) {
@@ -146,10 +178,11 @@ export class CameraRig {
 
   update(dt) {
     const g = this.game, inp = g.input;
+    if (!g.started) { this._titleFlyover(dt); return; }
     if (!g.controlsLocked) {
-      const sens = 0.0028;
+      const sens = 0.0028 * this.sensitivity;
       this.yaw -= inp.mouse.dx * sens;
-      this.pitch = clamp(this.pitch + inp.mouse.dy * sens, -0.15, 1.35);
+      this.pitch = clamp(this.pitch + inp.mouse.dy * sens * (this.invertY ? -1 : 1), -0.15, 1.35);
       if (inp.isDown('ArrowLeft')) this.yaw += 2.2 * dt;
       if (inp.isDown('ArrowRight')) this.yaw -= 2.2 * dt;
       if (inp.mouse.wheel) this.dist = clamp(this.dist + inp.mouse.wheel * 1.2, this.minDist, this.maxDist);

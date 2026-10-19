@@ -5,6 +5,7 @@ import { fbm } from './roads.js';
 import * as P from './props.js';
 import { locSign } from './landmarks.js';
 import { hoboCamp } from './landmarks.js';
+import { BRIDGE } from './island-layout.js';
 
 const PI = Math.PI;
 
@@ -72,7 +73,9 @@ export function buildDocks(C) {
     P.oilDrums(C, pend - 8, pz + 2, 3);
   }
   // water collision: everything east of the quay except the piers
-  const zs = [-HALF - 20, ...piers.flatMap((p) => [p - pw / 2, p + pw / 2]), HALF + 20];
+  // (the Blackwater bridge punches one more gap at z = 0)
+  const gaps = [...piers.map((p) => [p - pw / 2, p + pw / 2]), [BRIDGE.z - BRIDGE.hw, BRIDGE.z + BRIDGE.hw]].sort((a, b) => a[0] - b[0]);
+  const zs = [-HALF - 20, ...gaps.flat(), HALF + 20];
   for (let i = 0; i < zs.length; i += 2) C.solid(WATER_X, zs[i], HALF + 40, zs[i + 1], 0.3, 'water');
   for (const pz of piers) {
     C.solid(pend, pz - pw / 2, HALF + 40, pz + pw / 2, 0.3, 'water');
@@ -89,11 +92,14 @@ export function buildDocks(C) {
     for (const x of [600, 603, 610, 613]) {
       if (C.rng() < 0.25) continue;
       const n = 1 + (C.rng() * 3.5 | 0);
-      for (let k = 0; k < n; k++) P.container(C, x, k * 2.6, z, (C.rng() - 0.5) * 0.03, cols[(C.rng() * cols.length) | 0], { solid: k === 0 });
+      for (let k = 0; k < n; k++) {
+        const rot = (C.rng() - 0.5) * 0.03, col = cols[(C.rng() * cols.length) | 0];
+        if (Math.abs(z - BRIDGE.z) > 17) P.container(C, x, k * 2.6, z, rot, col, { solid: k === 0 }); // keep the bridge approach clear (same RNG draws)
+      }
     }
   }
   // bollards + tires along the quay
-  for (let z = -680; z < 680; z += 12) { if (piers.some((p) => Math.abs(p - z) < 6)) continue; g.frame(WATER_X - 1, z, 0); g.cyl('metal', 0, 0.35, 0, 0.25, 0.3, 0.7, 7, { color: '#2a2a2a' }); if (C.rng() < 0.4) { g.push(); g.translate(1.05, -0.6, 0); g.rotZ(PI / 2); g.cyl('props', 0, 0, 0, 0.6, 0.6, 0.3, 8, { color: '#111' }); g.pop(); } }
+  for (let z = -680; z < 680; z += 12) { if (piers.some((p) => Math.abs(p - z) < 6)) continue; if (Math.abs(z - BRIDGE.z) < BRIDGE.hw + 1) { C.rng(); continue; } g.frame(WATER_X - 1, z, 0); g.cyl('metal', 0, 0.35, 0, 0.25, 0.3, 0.7, 7, { color: '#2a2a2a' }); if (C.rng() < 0.4) { g.push(); g.translate(1.05, -0.6, 0); g.rotZ(PI / 2); g.cyl('props', 0, 0, 0, 0.6, 0.6, 0.3, 8, { color: '#111' }); g.pop(); } }
   // a rusting ship moored offshore
   g.frame(700, -260, 0);
   g.box('rust', 0, 3, 0, 22, 9, 110, { faces: 'all', uvScale: 6, color: '#5a3a2a' });
