@@ -59,7 +59,10 @@ game.ui         dialog({title, speaker, text|html, options:[{label, hint, disabl
 game.net        NetBase facade (src/core/net-base.js): connected, isHost, isClient, isAuthority, localId,
                 remotePlayers Map, on(type, fn(msg, fromId)), broadcast(msg), sendToHost(msg), sendTo(id,msg)
 game.player     Player: group, pos, facing, speed, vehicle, dead, moveLocked, aiming, faceOverride, speedMult,
-                swingStyle, model (stickman API), spawn(x,z,facing)
+                swingStyle, model (stickman API), spawn(x,z,facing), applyLook(look)
+                NOTE: the model/group is rebuilt on 'look:change' / 'state:reset' — always read
+                game.player.group / game.player.model fresh (don't cache them), and re-attach anything
+                you parented to the model (e.g. weapon meshes) on 'player:model-rebuilt' {model}.
 game.cameraRig  yaw, pitch, dist, follow(obj,{height,dist}), shake(amount,time), forward
 game.controlsLocked  true while title/dialogs are open — don't move/attack then.
 game.addSystem({ name, init?(game), update?(dt, game) })   per-frame hook

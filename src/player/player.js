@@ -24,6 +24,30 @@ export class Player {
     this.dead = false;
     this.moveLocked = false;  // cutscenes, arrests, etc.
     this.aiming = false;      // combat sets when holding a gun
+
+    // Outfit changes (clothing store, loading a save) rebuild the stick figure.
+    // Anything attached to the old model (weapon meshes) should re-attach on 'player:model-rebuilt'.
+    const rebuild = () => this.applyLook(game.state.p.look);
+    game.bus.on('look:change', rebuild);
+    game.bus.on('state:reset', rebuild);
+  }
+
+  applyLook(look = {}) {
+    const old = this.model;
+    const model = createStickman({
+      color: look.color ?? 0x101010,
+      hat: look.hat ?? null,
+      hatColor: look.hatColor ?? 0x2a2420,
+    });
+    model.group.position.copy(old.group.position);
+    model.group.rotation.y = this.facing;
+    model.group.visible = old.group.visible;
+    this.game.scene.add(model.group);
+    old.dispose();
+    this.model = model;
+    this.group = model.group;
+    if (this.game.cameraRig?.target === old.group) this.game.cameraRig.target = model.group;
+    this.game.bus.emit('player:model-rebuilt', { model });
   }
 
   get pos() { return this.group.position; }
