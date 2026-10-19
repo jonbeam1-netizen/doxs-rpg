@@ -32,12 +32,12 @@ export function installEvents(game, I) {
     pts.userData.seeds = Array.from({ length: n }, () => [Math.random(), (Math.random() - 0.5) * 1.6, (Math.random() - 0.5) * 3.2, 0.6 + Math.random() * 0.6]);
     return pts;
   }
-  function flow(pts, t, height, spread) {
+  function flow(pts, t, height, spread, base = 0.95, shrink = 0.8) {
     const pos = pts.geometry.attributes.position, S = pts.userData.seeds;
     for (let k = 0; k < S.length; k++) {
       const [ph, sx, sz, sp] = S[k];
-      const a = (t * 0.7 * sp + ph) % 1;
-      pos.setXYZ(k, sx * (1 - a * 0.5) + Math.sin(t * 3 + k) * 0.1 * a * spread, 1.0 + a * height, sz * (1 - a * 0.6));
+      const a = (t * 0.9 * sp + ph) % 1;
+      pos.setXYZ(k, sx * 0.55 * (1 - a * shrink) + Math.sin(t * 3 + k) * 0.08 * a * spread, base + a * a * height, sz * 0.6 * (1 - a * shrink));
     }
     pos.needsUpdate = true;
   }
@@ -83,7 +83,19 @@ export function installEvents(game, I) {
   // ------------------------------------------------------------ spawners
   function spawn(kind, at) {
     if (ev) end();
-    const s = at || spotNear();
+    let s = at || spotNear();
+    let carRot = Math.PI / 2;
+    if (kind === 'carfire' && !at) {
+      // the wreck must sit fully on the sidewalk, lengthwise along it
+      const fits = (p, rot) => { const ax = Math.sin(rot), az = Math.cos(rot), bx = az, bz = -ax;
+        return [[2.2, 1.1], [2.2, -1.1], [-2.2, 1.1], [-2.2, -1.1]].every(([u, v]) => w.onSidewalk(p.x + ax * u + bx * v, p.z + az * u + bz * v) && !game.physics.pointBlocked(p.x + ax * u + bx * v, p.z + az * u + bz * v)); };
+      s = null;
+      for (let i = 0; i < 10 && !s; i++) {
+        const p = spotNear();
+        if (!p) continue;
+        if (fits(p, Math.PI / 2)) { s = p; carRot = Math.PI / 2; } else if (fits(p, 0)) { s = p; carRot = 0; }
+      }
+    }
     if (!s) return null;
     const pp = I.pp();
     const face = Math.atan2(pp.x - s.x, pp.z - s.z); // toward the player
@@ -100,12 +112,13 @@ export function installEvents(game, I) {
       prompt = 'Street fight! <small>bet or jump in</small>'; label = 'Street fight';
       I.toast('You hear yelling nearby. Sounds like a <b>street fight</b>.', 'info', 3000);
     } else if (kind === 'carfire') {
-      const car = makeProp('burntcar'); car.rotation.y = Math.PI / 2; g.add(car);
-      e.fire = particles(46, 0xff7a20, 0.42, THREE.AdditiveBlending, 0.9);
-      e.smoke = particles(30, 0x2a2622, 1.2, THREE.NormalBlending, 0.45);
-      g.add(e.fire, e.smoke); e.fx = [e.fire, e.smoke];
-      e.fire.rotation.y = e.smoke.rotation.y = Math.PI / 2;
-      solid = [4.2, 2.0, 1.6];
+      const car = makeProp('burntcar'); car.rotation.y = carRot; g.add(car);
+      e.fire = particles(90, 0xff6a18, 0.34, THREE.AdditiveBlending, 0.85);
+      e.core = particles(50, 0xffd060, 0.24, THREE.AdditiveBlending, 0.9);
+      e.smoke = particles(34, 0x5a544e, 1.3, THREE.NormalBlending, 0.32);
+      g.add(e.fire, e.core, e.smoke); e.fx = [e.fire, e.core, e.smoke];
+      e.fire.rotation.y = e.core.rotation.y = e.smoke.rotation.y = carRot;
+      solid = carRot ? [4.2, 2.0, 1.6] : [2.0, 4.2, 1.6];
       prompt = 'Burning car'; label = 'Car fire';
       I.toast('Something\'s burning. Smells like tires and bad decisions: a <b>car fire</b>.', 'info', 3000);
     } else if (kind === 'flashmob') {
@@ -284,8 +297,9 @@ export function installEvents(game, I) {
       for (const c of e.crowd) { const P2 = c.parts; P2.armR.upper.rotation.set(-2.4 + Math.sin(t * 8) * 0.4, 0, -0.2); }
       if (e.resolve) { e.resolve.t -= dt; if (e.resolve.t <= 0) resolveFight(e); }
     } else if (e.kind === 'carfire') {
-      if (e.fire.visible) flow(e.fire, t, 1.6, 1);
-      flow(e.smoke, t * 0.6, 5, 3);
+      if (e.fire.visible) { flow(e.fire, t, 1.5, 1); flow(e.core, t * 1.3, 0.7, 0.5, 0.9, 0.5); }
+      e.core.visible = e.fire.visible;
+      flow(e.smoke, t * 0.5, 6, 3, 1.6, 0.2);
     } else if (e.kind === 'flashmob') {
       const k = Math.sin(t * 6), j = (e.joined = Math.max(0, (e.joined || 0) - dt));
       for (const d of e.dancers) {

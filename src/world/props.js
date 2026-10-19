@@ -298,8 +298,7 @@ export function shoppingCart(C, x, z, rot) {
 
 export function mattress(C, x, z, rot) {
   const g = C.geo; g.frame(x, z, rot);
-  if (C.rng() < 0.5) { g.translate(0, 0.9, -0.2); g.rotX(-1.2); }
-  g.box('props_d', 0, 0.12, 0, 1.4, 0.22, 1.9, { color: ['#a8987a', '#9a8a8a', '#8a8060'][(C.rng() * 3) | 0] });
+  g.box('props_d', 0, 0.11, 0, 1.4, 0.22, 1.9, { color: ['#a8987a', '#9a8a8a', '#8a8060'][(C.rng() * 3) | 0] });
 }
 
 export function cactus(C, x, z, s = 1) {
@@ -403,7 +402,7 @@ export function tank(C, x, z, r, h, color = '#6a5a4c') {
 
 export function smokestack(C, x, z, r, h) {
   const g = C.geo; g.frame(x, z, 0);
-  g.cyl('f_industrial', 0, h / 2, 0, r * 0.75, r, h, 12, { uvScale: 12 });
+  g.cyl('w_industrial', 0, h / 2, 0, r * 0.75, r, h, 12, { uvScale: 12 });
   for (let i = 1; i < 4; i++) g.cyl('props', 0, h - i * 3, 0, r * 0.8, r * 0.8, 0.6, 12, { color: i === 1 ? '#8a1a1a' : '#d8d0c0' });
   g.sphere('beacon', 0, h + 0.3, 0, 0.35, 6, 3, {});
   C.solid(x - r, z - r, x + r, z + r, h);
@@ -460,7 +459,7 @@ export function chainFence(C, x0, z0, x1, z1, { h = 2.6, razor = false, gap = nu
 }
 
 // Masonry wall between two points.
-export function wallRun(C, x0, z0, x1, z1, { h = 2.2, t = 0.5, mat = 'f_stone', color = '#ffffff', cap = '#8a8274', solid = true } = {}) {
+export function wallRun(C, x0, z0, x1, z1, { h = 2.2, t = 0.5, mat = 'w_stone', color = '#ffffff', cap = '#8a8274', solid = true } = {}) {
   const g = C.geo;
   const dx = x1 - x0, dz = z1 - z0, L = Math.hypot(dx, dz);
   if (L < 0.3) return;

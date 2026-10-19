@@ -148,7 +148,7 @@ function bridge(C) {
   for (let x = x0; x < x1; x += 30) {
     const xe = Math.min(x1, x + 30), cx = (x + xe) / 2, L = xe - x;
     g.identity();
-    g.box('f_concrete', cx, -0.75, 0, L, 1.5, W, { faces: 'all', uvScale: [12, 14], color: '#6e6a62' });
+    g.box('w_concrete', cx, -0.75, 0, L, 1.5, W, { faces: 'all', uvScale: [12, 14], color: '#6e6a62' });
     // rails (metal) + kick curbs
     for (const s of [-1, 1]) {
       g.box('metal', cx, 1.05, s * (BRIDGE.hw - 0.2), L, 0.12, 0.12, { color: '#5a3a26' });
@@ -161,8 +161,8 @@ function bridge(C) {
   for (const s of [-1, 1]) C.solid(x0, s > 0 ? BRIDGE.hw - 0.45 : -BRIDGE.hw, x1, s > 0 ? BRIDGE.hw : -BRIDGE.hw + 0.45, 1.1);
   // piers into the water
   for (let x = x0 + 22; x < x1 - 8; x += 36) {
-    for (const s of [-1, 1]) g.cyl('f_concrete', x, -6, s * 6, 1.3, 1.6, 9.5, 8, { uvScale: 12, color: '#5a564e' });
-    g.box('f_concrete', x, -1.9, 0, 2.2, 1.2, 15, { uvScale: [12, 14], color: '#5a564e' });
+    for (const s of [-1, 1]) g.cyl('w_concrete', x, -6, s * 6, 1.3, 1.6, 9.5, 8, { uvScale: 12, color: '#5a564e' });
+    g.box('w_concrete', x, -1.9, 0, 2.2, 1.2, 15, { uvScale: [12, 14], color: '#5a564e' });
   }
   // steel truss along both sides
   const rust = '#6a3a22';
@@ -187,7 +187,7 @@ function bridge(C) {
   for (const tx of [mid - 22, mid + 22]) for (const s of [-1, 1]) {
     const tz = s * (BRIDGE.hw + 3.2);
     g.identity();
-    g.box('f_brick_dirty', tx, 5, tz, 5, 16, 5, { uvScale: [12, 14], color: '#a89080' });
+    g.box('w_brick_dirty', tx, 5, tz, 5, 16, 5, { uvScale: [12, 14], color: '#a89080' });
     g.box('rust', tx, 14, tz, 5.6, 2.6, 5.6, { color: '#5a3a2a', uvScale: 3 });
     g.box('roof', tx, 15.35, tz, 5.8, 0.1, 5.8, { faces: 't' });
     g.box('glassdark', tx, 10.5, tz - s * 2.52, 2.4, 1.6, 0.06, { color: '#4a5a60', faces: 'fb' });
@@ -201,17 +201,17 @@ function bridge(C) {
   }
   for (let z = -BRIDGE.hw + 0.5; z < BRIDGE.hw; z += 1) g.box('metal', mid, 0.07, z, 0.5, 0.04, 0.9, { color: '#2e2a26' });
   // control house on the north tower
-  g.box('f_corrugated_rust', mid - 22, 18.4, -(BRIDGE.hw + 3.2), 4, 2.4, 4, { uvScale: [12, 14] });
+  g.box('w_corrugated_rust', mid - 22, 18.4, -(BRIDGE.hw + 3.2), 4, 2.4, 4, { uvScale: [12, 14] });
   // welcome gantry at the city end
   g.frame(632, 0, PI / 2);
   for (const s of [-1, 1]) g.box('metal', s * (BRIDGE.hw + 0.8), 4, 0, 0.5, 8, 0.5, { color: '#2a2622' });
   g.box('metal', 0, 7.6, 0, BRIDGE.hw * 2 + 2.2, 0.5, 0.4, { color: '#2a2622' });
-  locSign(C, { d: 0 }, 'isle_gantry', 'BLACKWATER ISLE · TOLL $5 · NO LIFEGUARD (EVER)', { w: 14, h: 1.6, y: 6.6, z: 0.25, bg: '#1e2a22', fg: '#e8e2c8', border: '#0a0f0c', double: true, gain: 1.4, font: 'Barlow Condensed' });
+  locSign(C, { d: 0 }, 'isle_gantry', 'BLACKWATER ISLE ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â· TOLL $5 ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â· NO LIFEGUARD (EVER)', { w: 14, h: 1.6, y: 6.6, z: 0.25, bg: '#1e2a22', fg: '#e8e2c8', border: '#0a0f0c', double: true, gain: 1.4, font: 'Barlow Condensed' });
   // and a "welcome" from the island side
   g.frame(LAND_X - 6, 0, -PI / 2);
   for (const s of [-1, 1]) g.box('metal', s * (BRIDGE.hw + 0.8), 4, 0, 0.5, 8, 0.5, { color: '#2a2622' });
   g.box('metal', 0, 7.6, 0, BRIDGE.hw * 2 + 2.2, 0.5, 0.4, { color: '#2a2622' });
-  locSign(C, { d: 0 }, 'isle_gantry2', 'ROTWELL — GOOD LUCK OUT THERE', { w: 12, h: 1.5, y: 6.6, z: 0.25, bg: '#2a2218', fg: '#d8c890', double: true, gain: 1.2, font: 'Barlow Condensed' });
+  locSign(C, { d: 0 }, 'isle_gantry2', 'ROTWELL ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â GOOD LUCK OUT THERE', { w: 12, h: 1.5, y: 6.6, z: 0.25, bg: '#2a2218', fg: '#d8c890', double: true, gain: 1.2, font: 'Barlow Condensed' });
   C.emit(mid - 22, 19, -(BRIDGE.hw + 3.2), 'smoke');
 }
 
@@ -221,7 +221,7 @@ function tollPlaza(C) {
   const { x, z } = SPOTS.tollBooth; // north shoulder
   g.frame(x, z, 0);
   g.box('props', 0, 0.12, 0, 4.4, 0.24, 3.6, { color: '#8a7a3a' });
-  g.box('f_corrugated_rust', 0, 1.6, 0, 3, 2.8, 2.4, { uvScale: [12, 14] });
+  g.box('w_corrugated_rust', 0, 1.6, 0, 3, 2.8, 2.4, { uvScale: [12, 14] });
   g.box('glassdark', 0, 1.9, 1.22, 2.2, 1.1, 0.04, { faces: 'f', color: '#5a6a70' });
   g.box('corr', 0, 3.15, 0, 3.8, 0.15, 3.2, { color: '#7a6a5a', uvScale: 3 });
   g.box('lamp_flk', 0, 3.05, 1.2, 1.4, 0.04, 0.4, { color: '#ffd080', faces: 'u' });
@@ -234,7 +234,7 @@ function tollPlaza(C) {
   C.light(x, 3, z + 1.6, '#ffd080', 'flicker');
   g.frame(x - 6, z - 1, 0);
   g.box('metal', 0, 2, 0, 0.2, 4, 0.2, { color: '#333' });
-  locSign(C, { d: 0 }, 'isle_toll', 'TOLL $5 · PAY THE TROLL', { w: 4.6, h: 1.3, y: 3.6, z: 0.15, bg: '#c8b030', fg: '#1a1612', double: true, gain: 0.6, font: 'Barlow Condensed' });
+  locSign(C, { d: 0 }, 'isle_toll', 'TOLL $5 ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â· PAY THE TROLL', { w: 4.6, h: 1.3, y: 3.6, z: 0.15, bg: '#c8b030', fg: '#1a1612', double: true, gain: 0.6, font: 'Barlow Condensed' });
 }
 
 // ------------------------------------------------------------------ ferry piers (island + Rustyards)
@@ -255,7 +255,7 @@ function woodDeck(C, x0, z0, x1, z1, { piles = true } = {}) {
 function ferryBoat(C, x, z, rot) {
   const g = C.geo; g.frame(x, z, rot);
   g.box('rust', 0, -0.4, 0, 6, 2.4, 16, { faces: 'all', uvScale: 3, color: '#3a4a52' });
-  g.box('f_corrugated', 0, 1.8, -1, 4.6, 2.2, 7, { uvScale: [12, 14], color: '#c8c0b0' });
+  g.box('w_corrugated', 0, 1.8, -1, 4.6, 2.2, 7, { uvScale: [12, 14], color: '#c8c0b0' });
   g.box('glassdark', 0, 2.2, 2.52, 4, 0.9, 0.05, { faces: 'f', color: '#5a6a70' });
   g.cyl('rust', 0, 4, -3, 0.5, 0.5, 2.4, 8, { color: '#8a2a1a' });
   g.box('metal', 0, 0.9, 7.8, 5.6, 0.1, 0.4, { color: '#2a2622' });
@@ -270,28 +270,30 @@ function ferries(C) {
   g.frame(F.x0 + 5, F.z, PI / 2);
   for (const s of [-1, 1]) for (const t of [-1.6, 1.6]) g.box('metal', s * 2.2, 1.4, t, 0.15, 2.8, 0.15, { color: '#3a3a36' });
   g.box('corr', 0, 2.9, 0, 5.2, 0.12, 4, { color: '#7a6e60', uvScale: 3 });
-  locSign(C, { d: 0 }, 'ferry_isle', 'FERRY TO RUSTYARDS · $10', { w: 4.2, h: 1, y: 3.6, z: 0, bg: '#1a2a3a', fg: '#e8e0c8', double: true, gain: 1.4, font: 'Barlow Condensed' });
+  locSign(C, { d: 0 }, 'ferry_isle', 'FERRY TO RUSTYARDS ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â· $10', { w: 4.2, h: 1, y: 3.6, z: 0, bg: '#1a2a3a', fg: '#e8e0c8', double: true, gain: 1.4, font: 'Barlow Condensed' });
   C.light(F.x0 + 5, 2.6, F.z, '#e8f0ff', 'street');
   ferryBoat(C, F.x0 - 4, F.z + 8, 0);
   // city side: pier at z = -170 already exists; add a booth + boat
   const cf = SPOTS.cityFerry;
   g.frame(cf.x - 11, cf.z + 3, PI);
-  g.box('f_wood', 0, 1.3, 0, 2.4, 2.6, 2, { uvScale: [12, 14], color: '#9a8a70' });
+  g.box('w_wood', 0, 1.3, 0, 2.4, 2.6, 2, { uvScale: [12, 14], color: '#9a8a70' });
   g.box('corr', 0, 2.7, 0, 3, 0.12, 2.6, { color: '#7a6e60', uvScale: 3 });
-  locSign(C, { d: 0 }, 'ferry_city', 'BLACKWATER FERRY · $10', { w: 3.6, h: 0.9, y: 3.3, z: 0, bg: '#1a2a3a', fg: '#e8e0c8', double: true, gain: 1.4, font: 'Barlow Condensed' });
+  locSign(C, { d: 0 }, 'ferry_city', 'BLACKWATER FERRY ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â· $10', { w: 3.6, h: 0.9, y: 3.3, z: 0, bg: '#1a2a3a', fg: '#e8e0c8', double: true, gain: 1.4, font: 'Barlow Condensed' });
   C.solid(cf.x - 12.2, cf.z + 2, cf.x - 9.8, cf.z + 4, 3);
   ferryBoat(C, cf.x + 6, cf.z + 12, PI / 2);
 }
 
 // ------------------------------------------------------------------ shacks (stilts, village lots)
-function shack(C, x, z, rot, { w = 7, d = 6, h = 3, stilts = 0, facade = 'wood', tint = '#c8b8a0', roofCol = '#7a6a5a', porch = true, door = true } = {}) {
+function shack(C, x, z, rot, { w = 7, d = 6, h = 3, stilts = 0, facade = 'wood', tint = '#c8b8a0', roofCol = '#7a6a5a', porch = true, door = true, blank = null } = {}) {
   const g = C.geo, r = C.rng;
   g.frame(x, z, rot);
   if (stilts > 0) for (const s of [-1, 1]) for (const t of [-1, 1]) g.cyl('wood', s * (w / 2 - 0.3), -stilts / 2 + 0.1, t * (d / 2 - 0.3), 0.2, 0.22, stilts + 0.4, 5, { color: '#3a2e22' });
   g.box('wood', 0, 0.12, 0.6, w + 0.4, 0.24, d + 2.6, { color: '#5a4a38', uvScale: 3 });
-  g.box('f_' + facade, 0, 0.24 + h / 2, 0, w, h, d, { uvScale: [12, 14], uvOff: [r(), 0], color: tint });
-  g.push(); g.translate(0, 0.24 + h, 0); g.rotY(PI / 2); g.gable('corr', 0, 0, 0, d + 0.8, 1.2, w + 0.8, { color: roofCol, uvScale: 3, endMat: 'f_' + facade, endColor: tint }); g.pop();
-  if (door) { g.push(); g.translate(0, 0.24, d / 2); P.doorway(C, (r() - 0.5) * (w - 3), 1.1, 2.1, (r() * 6) | 0, { lamp: r() < 0.5, lampColor: '#ffb070' }); g.pop(); }
+  r();
+  const dx = door ? (r() - 0.5) * (w - 3) : 0;
+  mass(C, { W: w, D: d, H: h, y0: 0.24, facade, tint, parapet: 0, doors: door ? [{ x: dx, w: 1.1, h: 2.1 }] : blank });
+  g.push(); g.translate(0, 0.24 + h, 0); g.rotY(PI / 2); g.gable('corr', 0, 0, 0, d + 0.8, 1.2, w + 0.8, { color: roofCol, uvScale: 3, endMat: 'w_' + facade, endColor: tint }); g.pop();
+  if (door) { g.push(); g.translate(0, 0.24, d / 2); P.doorway(C, dx, 1.1, 2.1, [0, 1, 5][(r() * 3) | 0], { lamp: r() < 0.5, lampColor: '#ffb070' }); g.pop(); }
   if (r() < 0.4) g.cyl('metal', w / 2 - 0.6, 0.24 + h + 1.4, -d / 4, 0.12, 0.12, 1.6, 5, { color: '#2a2622' }); // stovepipe
 }
 
@@ -358,13 +360,13 @@ function funland(C, live) {
   g.box('chase', 0, 9.6, 0.62, 13.6, 0.6, 0.04, { faces: 'f', uvScale: [8, 0.6] });
   clownHead(C, SPOTS.gate.x, 15.2, SPOTS.gate.z, -PI / 2, 1.15);
   g.frame(SPOTS.gate.x - 0.5, -9, -PI / 2);
-  locSign(C, { d: 0 }, 'funland_rules', 'NO REFUNDS · NO RUNNING · NO WITNESSES', { w: 6, h: 0.9, y: 2.6, z: 0, bg: '#e8e0c8', fg: '#8a1010', double: true, gain: 0.4, font: 'Barlow Condensed' });
+  locSign(C, { d: 0 }, 'funland_rules', 'NO REFUNDS ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â· NO RUNNING ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â· NO WITNESSES', { w: 6, h: 0.9, y: 2.6, z: 0, bg: '#e8e0c8', fg: '#8a1010', double: true, gain: 0.4, font: 'Barlow Condensed' });
   g.frame(SPOTS.gate.x - 0.5, -9, -PI / 2); g.box('metal', 0, 1.2, 0, 0.15, 2.4, 0.15, { color: '#333' });
 
   // ---- arcade (gatehouse). Front faces west onto Pen Rd.
   const acx = fx + A.d / 2;
   g.frame(acx, A.cz, FACE.w);
-  const top = mass(C, { W: A.w, D: A.d, H: 6.5, facade: 'stucco_pink', tint: '#c89090', parapet: 0.8 });
+  const top = mass(C, { W: A.w, D: A.d, H: 6.5, facade: 'stucco_pink', tint: '#c89090', parapet: 0.8, doors: [{ x: 0, w: 2.2, h: 2.8 }] });
   g.frame(acx, A.cz, FACE.w);
   g.translate(0, 0, A.d / 2);
   P.doorway(C, 0, 2.2, 2.8, 4, { lamp: true, lampColor: '#ff80c0', awning: '#8a1a4a' });
@@ -388,8 +390,8 @@ function funland(C, live) {
   }
   g.identity();
   g.box('rust', FW.x, FW.hub, FW.z, 7.4, 1.2, 1.2, { color: '#4a2a1e' });
-  g.box('f_concrete', FW.x, 0.3, FW.z, 10, 0.6, 24, { uvScale: [12, 14], color: '#7a766c' });
-  g.box('f_wood', FW.x - 6, 1.5, FW.z + 6, 3, 3, 3, { uvScale: [12, 14], color: '#b04040' }); // operator booth
+  g.box('w_concrete', FW.x, 0.3, FW.z, 10, 0.6, 24, { uvScale: [12, 14], color: '#7a766c' });
+  g.box('w_wood', FW.x - 6, 1.5, FW.z + 6, 3, 3, 3, { uvScale: [12, 14], color: '#b04040' }); // operator booth
   C.solid(FW.x - 7.5, FW.z + 4.5, FW.x - 4.5, FW.z + 7.5, 3);
   live.push(ferrisWheel(C, FW));
 
@@ -459,12 +461,12 @@ function funland(C, live) {
       g.box('props', 0, 0.55, 0, 1.4, 0.5, 2, { color: ['#c02a2a', '#2a8a3a', '#d8b030', '#3a5ac0'][i % 4] });
       g.cyl('metal', 0, 2.9, -0.6, 0.03, 0.03, 4.6, 3, { color: '#888' });
     }
-    g.frame(bx, bz - 7.4, PI); locSign(C, { d: 0 }, 'bumper', 'BUMPER CARS · WHIPLASH INCLUDED', { w: 8, h: 1, y: 6.4, z: 0, bg: '#2a5a8a', fg: '#ffe8a0', double: true, gain: 1.6, font: 'Barlow Condensed' });
+    g.frame(bx, bz - 7.4, PI); locSign(C, { d: 0 }, 'bumper', 'BUMPER CARS ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â· WHIPLASH INCLUDED', { w: 8, h: 1, y: 6.4, z: 0, bg: '#2a5a8a', fg: '#ffe8a0', double: true, gain: 1.6, font: 'Barlow Condensed' });
   }
   // ---- food stand + clown billboard + dead lamps
   { const sx = 1068, sz = 52;
     g.frame(sx, sz, PI / 2);
-    g.box('f_wood', 0, 1.5, 0, 6, 3, 4, { uvScale: [12, 14], color: '#d8c090' });
+    g.box('w_wood', 0, 1.5, 0, 6, 3, 4, { uvScale: [12, 14], color: '#d8c090' });
     g.box('props', 0, 3.4, 1.2, 7, 0.2, 2.6, { color: '#c03030' });
     locSign(C, { d: 4 }, 'fried', 'FRIED EVERYTHING', { w: 5, h: 0.9, y: 4.0, bg: '#c03030', fg: '#fff0c0', gain: 1.4, font: 'Barlow Condensed' });
     C.obb(sx, sz, PI / 2, 6, 4, 3);
@@ -479,7 +481,7 @@ function funland(C, live) {
   // funhouse with a clown mouth door (decorative)
   { const hx = 1165, hz = -88;
     g.frame(hx, hz, 0);
-    mass(C, { W: 18, D: 10, H: 7, facade: 'stucco', tint: '#a0c0a0', parapet: 0.6 });
+    mass(C, { W: 18, D: 10, H: 7, facade: 'stucco', tint: '#a0c0a0', parapet: 0.6, doors: [{ x: 0, w: 4.5, h: 3.4 }] });
     g.frame(hx, hz, 0);
     g.box('props', 0, 1.6, 5.05, 4, 3.2, 0.1, { color: '#0a0606', faces: 'f' });
     g.box('props', 0, 3.6, 5.1, 5, 0.6, 0.2, { color: '#c02020' });
@@ -576,7 +578,7 @@ function prison(C) {
     for (let s = 0; s < L; s += 30) {
       const t0 = s / L, t1 = Math.min(1, (s + 30) / L);
       const ax = x0 + (x1 - x0) * t0, az = z0 + (z1 - z0) * t0, bx = x0 + (x1 - x0) * t1, bz = z0 + (z1 - z0) * t1;
-      P.wallRun(C, ax, az, bx, bz, { h: H, t: 1.2, mat: 'f_concrete', color: '#b0aca0', cap: '#6a665e' });
+      P.wallRun(C, ax, az, bx, bz, { h: H, t: 1.2, mat: 'w_concrete', color: '#b0aca0', cap: '#6a665e' });
     }
   };
   // chain fence posts sit at y=0; lift the razor fence visually by putting it on the wall top
@@ -598,21 +600,21 @@ function prison(C) {
   }
   // gate: big barred doors (locked) between two pillars
   g.identity();
-  for (const s of [-1, 1]) { g.box('f_concrete', gate + s * (gw + 0.8), H / 2 + 1, S.z1, 1.6, H + 2, 2, { uvScale: [12, 14], color: '#9a968a' }); C.solid(gate + s * (gw + 0.8) - 0.8, S.z1 - 1, gate + s * (gw + 0.8) + 0.8, S.z1 + 1, H + 2); }
+  for (const s of [-1, 1]) { g.box('w_concrete', gate + s * (gw + 0.8), H / 2 + 1, S.z1, 1.6, H + 2, 2, { uvScale: [12, 14], color: '#9a968a' }); C.solid(gate + s * (gw + 0.8) - 0.8, S.z1 - 1, gate + s * (gw + 0.8) + 0.8, S.z1 + 1, H + 2); }
   for (let x = gate - gw + 0.3; x < gate + gw; x += 0.45) g.box('metal', x, 3.2, S.z1, 0.09, 6.4, 0.09, { color: '#2a2a2a' });
   for (const y of [0.3, 3.2, 6.2]) g.box('metal', gate, y, S.z1, gw * 2, 0.25, 0.2, { color: '#3a3a3a' });
   g.box('beacon', gate, H + 2.3, S.z1, 0.5, 0.5, 0.5, {});
   C.solid(gate - gw, S.z1 - 0.3, gate + gw, S.z1 + 0.3, 6.4);
   g.frame(gate, S.z1 + 1.2, 0);
-  locSign(C, { d: 0 }, 'pen_sign', 'BLACKWATER PENITENTIARY · MAXIMUM SECURITY, MINIMUM DIGNITY', { w: 16, h: 1.4, y: H + 1.2, z: 0, bg: '#202428', fg: '#d8d8d0', border: '#0a0a0a', gain: 1.2, font: 'Barlow Condensed' });
+  locSign(C, { d: 0 }, 'pen_sign', 'BLACKWATER PENITENTIARY ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â· MAXIMUM SECURITY, MINIMUM DIGNITY', { w: 16, h: 1.4, y: H + 1.2, z: 0, bg: '#202428', fg: '#d8d8d0', border: '#0a0a0a', gain: 1.2, font: 'Barlow Condensed' });
   // visiting gatehouse to the east of the gate; door faces south onto the end of Pen Rd
   const vx = gate + gw + 9.6, vz = S.z1 + 2;
   g.frame(vx, vz, FACE.s);
-  const top = mass(C, { W: 16, D: 10, H: 5, facade: 'concrete', tint: '#c0bcb0', parapet: 0.5 });
+  const top = mass(C, { W: 16, D: 10, H: 5, facade: 'concrete', tint: '#c0bcb0', parapet: 0.5, doors: [{ x: -3, w: 1.6, h: 2.6 }] });
   g.frame(vx, vz, FACE.s); g.translate(0, 0, 5);
   P.doorway(C, -3, 1.6, 2.6, 3, { lamp: true, lampColor: '#e8f0ff' });
   g.frame(vx, vz, FACE.s);
-  locSign(C, { d: 10 }, 'pen_visit', 'VISITING · NO CONTACT · NO CAKE WITH FILES', { w: 9, h: 1.1, y: 4.3, bg: '#e0dcd0', fg: '#1a1a1a', gain: 0.6, font: 'Barlow Condensed' });
+  locSign(C, { d: 10 }, 'pen_visit', 'VISITING ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â· NO CONTACT ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â· NO CAKE WITH FILES', { w: 9, h: 1.1, y: 4.3, bg: '#e0dcd0', fg: '#1a1a1a', gain: 0.6, font: 'Barlow Condensed' });
   C.obb(vx, vz, FACE.s, 16, 10, top);
   const doorX = vx - 3, doorZ = vz + 5 + 1.5;
   g.identity(); g.plane('glow', doorX - 3.5, doorZ - 3.5, doorX + 3.5, doorZ + 3.5, 0.09, { color: '#e8f0ff' });
@@ -621,8 +623,10 @@ function prison(C) {
   const blocks = [[985, -186, 40, 14], [1040, -186, 40, 14], [1100, -184, 34, 18], [985, -163, 22, 12]];
   for (const [bx, bz, w, d] of blocks) {
     g.frame(bx, bz, 0);
-    const t = mass(C, { W: w, D: d, H: 10.5, facade: 'industrial', tint: '#c8c4b8', parapet: 0.6 });
-    g.frame(bx, bz, 0);
+    const t = 10.5;
+    g.box('w_concrete', 0, t / 2, 0, w, t, d, { faces: 'fbrl', uvScale: [12, 14], color: '#c8c4b8' });
+    g.box('roof', 0, t - 0.01, 0, w, 0.02, d, { faces: 't', uvScale: 8 });
+    g.box('props', 0, t + 0.3, 0, w + 0.2, 0.6, d + 0.2, { faces: 'fbrl', color: '#6a665e' });
     for (let x = -w / 2 + 1.5; x < w / 2 - 1; x += 2.5) for (let y = 2; y < 10; y += 3.2) g.box('props', x, y, d / 2 + 0.05, 0.5, 1.0, 0.06, { color: '#0a0a0a', faces: 'f' });
     C.obb(bx, bz, 0, w, d, t);
   }
@@ -635,7 +639,7 @@ function prison(C) {
   for (const [tx, tz] of [[S.x0, S.z0], [S.x1, S.z0], [S.x0, S.z1], [S.x1, S.z1]]) {
     g.frame(tx, tz, 0);
     for (const s of [-1.6, 1.6]) for (const t of [-1.6, 1.6]) g.box('metal', s, 7, t, 0.4, 14, 0.4, { color: '#4a4a46' });
-    g.box('f_concrete', 0, 14.5, 0, 5, 3, 5, { uvScale: [12, 14], color: '#a8a49a' });
+    g.box('w_concrete', 0, 14.5, 0, 5, 3, 5, { uvScale: [12, 14], color: '#a8a49a' });
     g.box('glassdark', 0, 15.2, 0, 5.1, 1.2, 5.1, { faces: 'fbrl', color: '#40505a' });
     g.box('roof', 0, 16.05, 0, 5.6, 0.1, 5.6, { faces: 't' });
     g.box('lamp', 2.6, 15.6, 2.6, 0.6, 0.5, 0.6, { color: '#f0f4ff' });
@@ -654,7 +658,7 @@ function lighthouse(C, live) {
   const L = SPOTS.lighthouse;
   const H = 26;
   g.frame(L.x, L.z, 0);
-  g.cyl('f_concrete', 0, 0.6, 0, 6, 6.5, 1.2, 14, { uvScale: 12, color: '#7a766c' });
+  g.cyl('w_concrete', 0, 0.6, 0, 6, 6.5, 1.2, 14, { uvScale: 12, color: '#7a766c' });
   const bands = 6;
   for (let i = 0; i < bands; i++) {
     const y0 = 1.2 + i * (H / bands), r0 = 4 - (i / bands) * 1.2, r1 = 4 - ((i + 1) / bands) * 1.2;
@@ -672,11 +676,11 @@ function lighthouse(C, live) {
   C.light(L.x, top + 2, L.z, '#fff0c0', 'street');
   // keeper's cottage (the location door)
   const cx = L.x + 14, cz = L.z + 6;
-  shack(C, cx, cz, FACE.s, { w: 9, d: 7, h: 3, facade: 'wood', tint: '#d8d0c0', roofCol: '#4a5a6a', door: false });
+  shack(C, cx, cz, FACE.s, { w: 9, d: 7, h: 3, facade: 'wood', tint: '#d8d0c0', roofCol: '#4a5a6a', door: false, blank: [{ x: 0, w: 1.2, h: 2.2 }] });
   g.frame(cx, cz, FACE.s); g.translate(0, 0.24, 3.5);
   P.doorway(C, 0, 1.2, 2.2, 1, { lamp: true, lampColor: '#ffd090' });
   g.frame(cx, cz, FACE.s);
-  locSign(C, { d: 7 }, 'lighthouse', 'BLACKWATER LIGHT · KEEPER: KNOCK LOUD', { w: 6, h: 0.9, y: 3.2, bg: '#1a2a3a', fg: '#e8e0c8', gain: 1.2, font: 'Barlow Condensed' });
+  locSign(C, { d: 7 }, 'lighthouse', 'BLACKWATER LIGHT ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â· KEEPER: KNOCK LOUD', { w: 6, h: 0.9, y: 3.2, bg: '#1a2a3a', fg: '#e8e0c8', gain: 1.2, font: 'Barlow Condensed' });
   C.obb(cx, cz, FACE.s, 9, 7, 4.5);
   const doorX = cx, doorZ = cz + 3.5 + 1.6;
   C.light(doorX, 2.8, doorZ, '#ffd090', 'door');
@@ -708,13 +712,13 @@ function rustyHook(C) {
   const g = C.geo;
   const R = SPOTS.rustyHook;
   g.frame(R.cx, R.cz, FACE.w);
-  const top = mass(C, { W: R.w, D: R.d, H: 4.6, facade: 'wood', tint: '#a8a090', parapet: 0 });
+  const top = mass(C, { W: R.w, D: R.d, H: 4.6, facade: 'wood', tint: '#a8a090', parapet: 0, doors: [{ x: -4, w: 1.6, h: 2.5 }] });
   g.frame(R.cx, R.cz, FACE.w);
-  g.push(); g.translate(0, top, 0); g.rotY(PI / 2); g.gable('corr', 0, 0, 0, R.d + 1, 2, R.w + 1, { color: '#6a3a2a', uvScale: 3, endMat: 'f_wood', endColor: '#a8a090' }); g.pop();
+  g.push(); g.translate(0, top, 0); g.rotY(PI / 2); g.gable('corr', 0, 0, 0, R.d + 1, 2, R.w + 1, { color: '#6a3a2a', uvScale: 3, endMat: 'w_wood', endColor: '#a8a090' }); g.pop();
   g.translate(0, 0, R.d / 2);
   P.doorway(C, -4, 1.6, 2.5, 2, { lamp: true, lampColor: '#ffb060', awning: '#2a4a6a' });
   g.frame(R.cx, R.cz, FACE.w);
-  locSign(C, { d: R.d }, 'rusty_hook', 'THE RUSTY HOOK · SEAFOOD · BAIT · REGRET', { w: 13, h: 1.6, y: 5.2, bg: '#1a2a3a', fg: '#ffd890', neon: '#40c0ff', flicker: true, gain: 2, font: 'Special Elite' });
+  locSign(C, { d: R.d }, 'rusty_hook', 'THE RUSTY HOOK ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â· SEAFOOD ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â· BAIT ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â· REGRET', { w: 13, h: 1.6, y: 5.2, bg: '#1a2a3a', fg: '#ffd890', neon: '#40c0ff', flicker: true, gain: 2, font: 'Special Elite' });
   // giant fish on the roof with a hook through its lip
   g.frame(R.cx, R.cz, FACE.w);
   g.push(); g.translate(0, top + 3.4, 0); g.rotY(PI / 2);
@@ -739,11 +743,11 @@ function rustyHook(C) {
 function beachShack(C) {
   const g = C.geo;
   const B = SPOTS.beachShack;
-  shack(C, B.cx, B.cz, FACE.n, { w: B.w, d: B.d, h: 3.2, stilts: 1.2, facade: 'wood', tint: '#b8a888', roofCol: '#4a6a7a', door: false });
+  shack(C, B.cx, B.cz, FACE.n, { w: B.w, d: B.d, h: 3.2, stilts: 1.2, facade: 'wood', tint: '#b8a888', roofCol: '#4a6a7a', door: false, blank: [{ x: 0, w: 1.3, h: 2.3 }] });
   g.frame(B.cx, B.cz, FACE.n); g.translate(0, 0.24, B.d / 2);
   P.doorway(C, 0, 1.3, 2.3, 0, { lamp: true, lampColor: '#ffc080' });
   g.frame(B.cx, B.cz, FACE.n);
-  locSign(C, { d: B.d }, 'driftwood', 'DRIFTWOOD SHACK · OCEAN VIEW (SMELL INCLUDED)', { w: 9, h: 0.9, y: 3.8, bg: '#3a5a6a', fg: '#f0e8d0', gain: 0.8, font: 'Barlow Condensed' });
+  locSign(C, { d: B.d }, 'driftwood', 'DRIFTWOOD SHACK ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â· OCEAN VIEW (SMELL INCLUDED)', { w: 9, h: 0.9, y: 3.8, bg: '#3a5a6a', fg: '#f0e8d0', gain: 0.8, font: 'Barlow Condensed' });
   // hammock + tiki torches + a beached rowboat out back
   g.frame(B.cx, B.cz - 0, FACE.n);
   for (const s of [-1, 1]) { g.box('wood', s * 4, 1.2, -B.d / 2 - 3, 0.2, 2.4, 0.2, { color: '#4a3a28' }); }
@@ -765,14 +769,14 @@ function fishingPier(C) {
   // the end: bait shed, rods, bucket, a bench and a light
   const ez = Pr.z1 - 4;
   g.frame(Pr.x - 1.6, ez - 3, 0);
-  g.box('f_wood', 0, 1.1, 0, 2, 2.2, 1.8, { uvScale: [12, 14], color: '#8a7a60' });
+  g.box('w_wood', 0, 1.1, 0, 2, 2.2, 1.8, { uvScale: [12, 14], color: '#8a7a60' });
   g.box('corr', 0, 2.3, 0, 2.4, 0.1, 2.2, { color: '#6a5a4a', uvScale: 3 });
   C.solid(Pr.x - 2.7, ez - 4, Pr.x - 0.5, ez - 2, 2.2);
   for (let i = 0; i < 3; i++) { g.frame(Pr.x + 2.6, ez - 1 + i * 1.2, 0); g.rotX(-0.5); g.cyl('metal', 0, 1.4, 0, 0.02, 0.03, 2.8, 3, { color: '#2a2a2a' }); }
   g.frame(Pr.x + 1.2, ez + 1.5, 0); g.cyl('props', 0, 0.3, 0, 0.3, 0.25, 0.6, 8, { color: '#d8d0c0', capTop: false });
   P.streetlight(C, Pr.x - 2.4, ez + 2.5, PI / 2, { flicker: true, color: '#ffd8a0', h: 5, arm: 1.4 });
   g.frame(Pr.x, Pr.z0 + 8, 0);
-  locSign(C, { d: 0 }, 'pier_sign', 'PIER ZERO · FISH AT OWN RISK · DO NOT EAT THE GLOWING ONES', { w: 7, h: 1, y: 3.2, z: 0, bg: '#2a3a4a', fg: '#e8e0c8', double: true, gain: 1, font: 'Barlow Condensed' });
+  locSign(C, { d: 0 }, 'pier_sign', 'PIER ZERO ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â· FISH AT OWN RISK ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â· DO NOT EAT THE GLOWING ONES', { w: 7, h: 1, y: 3.2, z: 0, bg: '#2a3a4a', fg: '#e8e0c8', double: true, gain: 1, font: 'Barlow Condensed' });
   for (const s of [-1, 1]) g.box('wood', s * 3.3, 1.6, 0, 0.25, 3.2, 0.25, { color: '#4a3a2a' });
   return { x: Pr.x, z: Pr.z1 - 6, doorX: Pr.x, doorZ: Pr.z1 - 5, facing: 0, open: true };
 }
@@ -873,10 +877,10 @@ const ISLE_LOTS = {
     g.frame(lot.cx, lot.cz, lot.rot);
     const lz = lot.d / 2 - D / 2 - 0.6;
     g.translate(0, 0, lz);
-    const top = mass(C, { W, D, H: 3.8, facade: r() < 0.5 ? 'wood' : 'stucco', tint: '#c0b090', parapet: 0.5 });
+    const top = mass(C, { W, D, H: 3.8, facade: r() < 0.5 ? 'wood' : 'stucco', tint: '#c0b090', parapet: 0.5, doors: [{ x: -W / 4, w: 1.3, h: 2.3 }] });
     g.frame(lot.cx, lot.cz, lot.rot); g.translate(0, 0, lz + D / 2);
     P.doorway(C, -W / 4, 1.3, 2.3, 2, { lamp: true, lampColor: '#ffb070', awning: '#3a5a6a' });
-    const txt = ['LIVE BAIT · COLD BEER · WORMS (SAME FRIDGE)', 'CRAB SHACK · ALL YOU CAN CATCH', 'NETS & KNOTS · NO CASH NO FISH', 'SALTY PETE\'S TACKLE & TATTOOS', 'CHUM BUCKET · FRESH-ISH'][(r() * 5) | 0];
+    const txt = ['LIVE BAIT ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â· COLD BEER ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â· WORMS (SAME FRIDGE)', 'CRAB SHACK ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â· ALL YOU CAN CATCH', 'NETS & KNOTS ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â· NO CASH NO FISH', 'SALTY PETE\'S TACKLE & TATTOOS', 'CHUM BUCKET ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â· FRESH-ISH'][(r() * 5) | 0];
     g.frame(lot.cx, lot.cz, lot.rot); g.translate(0, 0, lz);
     locSign(C, { d: D }, 'isle_bait_' + lot.seed, txt, { w: Math.min(W - 1, 9), h: 1, y: 3.2, bg: '#1e2a2a', fg: '#e8dcb0', gain: 1.2, font: 'Barlow Condensed', flicker: r() < 0.4 });
     C.obb(lot.cx + lz * Math.sin(lot.rot), lot.cz + lz * Math.cos(lot.rot), lot.rot, W, D, top);
@@ -899,7 +903,7 @@ const ISLE_LOTS = {
     g.frame(lot.cx, lot.cz, lot.rot);
     const top = mass(C, { W, D, H: 5.5, facade: 'corrugated_rust', tint: '#b0a090', parapet: 0 });
     g.frame(lot.cx, lot.cz, lot.rot);
-    g.push(); g.translate(0, top, 0); g.gable('corr', 0, 0, 0, W + 0.6, 1.8, D + 0.6, { color: '#5a4a3a', uvScale: 3, endMat: 'f_corrugated_rust', endColor: '#b0a090' }); g.pop();
+    g.push(); g.translate(0, top, 0); g.gable('corr', 0, 0, 0, W + 0.6, 1.8, D + 0.6, { color: '#5a4a3a', uvScale: 3, endMat: 'w_corrugated_rust', endColor: '#b0a090' }); g.pop();
     g.box('props', 0, 2, D / 2 + 0.05, W * 0.6, 4, 0.06, { faces: 'f', color: '#2a2622' });
     // boat on a trailer out front
     g.translate(W / 2 - 2, 0, D / 2 + 3); g.rotY(PI / 2 + (r() - 0.5) * 0.3);

@@ -17,7 +17,10 @@ export class Interactions {
     return it.id;
   }
 
-  remove(id) { this.items.delete(id); }
+  remove(id) { this.items.delete(id); if (this.current?.id === id) this.refresh(); }
+
+  // Force the "Press E" prompt to re-evaluate (e.g. after a prompt's text changed).
+  refresh() { this.current = null; this.game.ui.setPrompt(null); }
   has(id) { return this.items.has(id); }
 
   update() {

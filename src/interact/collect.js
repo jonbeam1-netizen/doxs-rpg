@@ -105,10 +105,11 @@ export function installCollect(game, I) {
     const pp = I.pp(), t = game.elapsed;
     if (game.player.vehicle || game.player.dead) return;
     for (const o of rats) {
-      if (o.hidden || !o.group.visible) continue;
+      if (o.hidden) continue;
+      if ((pp.x - o.x) ** 2 + (pp.z - o.z) ** 2 < 1.25) { collectRat(o); continue; }
+      if (!o.group.visible) continue;
       o.fig.rotation.y = t * 1.6 + o.x;
       o.fig.position.y = 0.06 + Math.sin(t * 2.4 + o.z) * 0.05;
-      if ((pp.x - o.x) ** 2 + (pp.z - o.z) ** 2 < 1.25) collectRat(o);
     }
   });
 
@@ -272,6 +273,6 @@ export function installCollect(game, I) {
   game.bus.on('game:start', () => { syncRats(); syncTags(); });
   game.bus.on('look:change', () => syncTags());
 
-  I.hooks.sheet.push((s) => `<span class="ix-rats">🐀 Rotwell Rats <b>${s.rats.length}/${RAT_TOTAL}</b></span> · 🎨 Tags <b>${Object.keys(s.tags).length}/${TAG_TOTAL}</b>`);
+  I.hooks.sheet.unshift((s) => `<span class="ix-rats">🐀 Rotwell Rats <b>${s.rats.length}/${RAT_TOTAL}</b></span> · 🎨 Tags <b>${Object.keys(s.tags).length}/${TAG_TOTAL}</b>`);
   I.rats = rats; I.tags = tags;
 }

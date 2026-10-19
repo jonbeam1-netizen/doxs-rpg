@@ -34,6 +34,33 @@ export const FACTIONS = {
   bikers:    { name: 'Dustbowl Bikers', color: '#3b2a1a', hat: 'cap', hatColor: '#111111', weapons: ['crowbar', 'bat', 'knife', 'fists'], scale: 1.12, hp: 95 },
 };
 
+// Fighting styles. Every attack is telegraphed (wind-up pose + glow + "!"), so fights are learnable.
+//   wind: wind-up seconds   recover: vulnerable time after swinging   dmg: damage mult
+//   block / dodge: base chance to guard / sidestep a player attack (grows with tier)
+//   poise: light hits don't interrupt them (kick / charged heavy does)
+export const ARCH = {
+  brawler: { wind: 0.5,  recover: 0.5,  dmg: 1,    reach: 1,    block: 0.06, dodge: 0,    style: null },
+  rusher:  { wind: 0.36, recover: 0.75, dmg: 0.95, reach: 1,    block: 0,    dodge: 0.12, style: 'slash', lunge: 7.5, startReach: 2.7 },
+  slugger: { wind: 0.72, recover: 0.75, dmg: 1.3,  reach: 1.1,  block: 0.05, dodge: 0,    style: 'overhead', heavy: true },
+  heavy:   { wind: 0.66, recover: 0.6,  dmg: 1.25, reach: 1.05, block: 0.4,  dodge: 0,    style: 'heavy', heavy: true, poise: true },
+  gunner:  { wind: 0.5,  recover: 0.5,  dmg: 1,    reach: 1,    block: 0,    dodge: 0.1,  style: null },
+  cop:     { wind: 0.5,  recover: 0.6,  dmg: 1,    reach: 1,    block: 0.12, dodge: 0,    style: 'overhead', taser: true },
+  boss:    { wind: 0.55, recover: 0.5,  dmg: 1.2,  reach: 1.1,  block: 0.3,  dodge: 0,    style: 'heavy', heavy: true, poise: true },
+};
+const TELE = { normal: 0xff9a1a, heavy: 0xff3a12, taser: 0x3ad0ff };
+
+function archFor(npc) {
+  if (npc.spec?.arch && ARCH[npc.spec.arch]) return npc.spec.arch;
+  if (npc.boss) return 'boss';
+  const w = npc.weapon;
+  if (npc.wdef?.kind === 'gun') return 'gunner';
+  if (npc.kind === 'cop') return 'cop';
+  if (w === 'knife' || w === 'bottle' || w === 'machete') return 'rusher';
+  if (w === 'bat' || w === 'crowbar' || w === 'sledge') return 'slugger';
+  if (npc.scale >= 1.12 || npc.faction === 'bikers' || (npc.role === 'fighter' && (npc.tier || 0) >= 2)) return 'heavy';
+  return 'brawler';
+}
+
 let nextId = 1;
 const TAU = Math.PI * 2;
 const _v = new THREE.Vector3();
@@ -45,6 +72,7 @@ export class NPCManager {
     this.map = new Map();
     this.snapSeq = 0;
     this.t = 0;
+    this.attackers = new Map(); // target key -> npcs currently winding up / swinging at it (turn-taking)
   }
 
   // ------------------------------------------------------------ public API
@@ -92,10 +120,19 @@ export class NPCManager {
       cd: rand(0.3, 0.9), pendingHit: 0, stun: 0, knockdown: 0, avoidT: 0, avoidSign: 1, deadT: 0,
       acc: 0, near: true, dist: 0, losT: 0, sawPlayer: false, barkCd: rand(3, 10), punchSeq: 0, shotSeq: 0,
       brawlId: spec.brawlId ?? null, lastAttacker: null, giveUpT: 0, shadowOn: true, provoked: false,
+      tier: spec.tier ?? 0, arch: null, A: null, atk: null, guard: 0, guardCd: rand(0.5, 2), dodgeCd: 0,
+      hitChain: 0, chainT: -9, poiseT: 0, circleSide: chance(0.5) ? 1 : -1, circleT: rand(1.5, 4), taserCd: rand(1, 3),
+      boss: null, bossName: spec.bossName ?? null, windSeq: 0, airVy: null, riposteUntil: 0,
       net: null,
       remove: () => this.remove(npc),
     };
     if (role === 'drunk') npc.drunkWobble = 0.1 + Math.random() * 6;
+    if (spec.boss) {
+      const B = spec.boss;
+      npc.boss = { name: B.name || npc.name, tag: B.tag || 'BOSS', moves: new Set(B.moves || ['combo']), enraged: false, summoned: false, chargeCd: rand(2, 4), slamCd: rand(3, 5) };
+      npc.name = npc.boss.name;
+      npc.bossName = npc.boss.name;
+    }
     this.map.set(id, npc);
     this._attachWeapon(npc);
 
@@ -193,6 +230,20 @@ export class NPCManager {
     const m = weaponMesh(npc.weapon);
     if (m) { npc.model.rightHand.add(m); npc.weaponObj = m; }
     npc.wdef = weaponDef(npc.weapon);
+    this._setArch(npc);
+  }
+
+  _setArch(npc) {
+    npc.arch = archFor(npc);
+    const base = ARCH[npc.arch] || ARCH.brawler;
+    const t = npc.tier || 0;
+    npc.A = {
+      ...base,
+      wind: base.wind * Math.max(0.72, 1 - 0.04 * t),
+      recover: base.recover * Math.max(0.7, 1 - 0.04 * t),
+      block: Math.min(0.6, base.block + (t >= 1 ? 0.05 * t : 0) + (npc.boss?.moves.has('block') ? 0.2 : 0)),
+      dodge: Math.min(0.35, base.dodge + 0.05 * Math.max(0, t - 1)),
+    };
   }
 
   setWeapon(npc, id) { npc.weapon = id; this._attachWeapon(npc); }
@@ -200,17 +251,130 @@ export class NPCManager {
   // ------------------------------------------------------------ damage
   _hitFeedback(npc, amount, opts, local) {
     const fx = this.ctx.fx;
-    npc.model.flash();
     const dir = opts.dir || null;
+    if (opts.blocked) {
+      if (local) fx.number(npc.pos.x, 2.1 * npc.scale, npc.pos.z, 'BLOCKED', 'block');
+      if (dir) { npc.kbx += dir.x * 1.5; npc.kbz += dir.z * 1.5; }
+      return;
+    }
+    npc.model.flash();
+    if (dir && npc.model.hitReact) {
+      // which side got hit (for the flinch lean)
+      const fx2 = Math.cos(npc.facing), fz2 = -Math.sin(npc.facing);
+      npc.model.hitReact(Math.sign(dir.x * fx2 + dir.z * fz2) || 0);
+    }
     const amt = clamp(amount / 20, 0.5, 2.5);
     fx.blood(npc.pos.x, npc.pos.z, amt, dir, 1.1 * npc.scale);
     if (opts.heavy && chance(0.35)) fx.tooth(npc.pos.x, 1.4 * npc.scale, npc.pos.z, dir);
-    if (local) fx.number(npc.pos.x, 2.1 * npc.scale, npc.pos.z, String(Math.round(amount)), amount >= 30 ? 'big' : '');
+    if (local) {
+      const cls = opts.crit ? 'crit' : amount >= 35 ? 'big' : amount >= 16 ? 'med' : '';
+      fx.number(npc.pos.x, 2.1 * npc.scale, npc.pos.z, String(Math.round(amount)), cls);
+    }
     if (dir) {
-      const kb = opts.kb ?? 4;
+      const kb = (opts.kb ?? 4) * (npc.boss ? 0.35 : npc.A?.poise ? 0.6 : 1);
       npc.kbx += dir.x * kb; npc.kbz += dir.z * kb;
     }
     if (chance(0.5)) fx.sfx.play('grunt', { pos: npc.pos, vol: 0.7 });
+  }
+
+  // ---- attacks & reactions -------------------------------------------------
+  _cancelAttack(npc) {
+    if (!npc.atk) return;
+    npc.atk = null;
+    npc.pendingHit = 0;
+    npc.model.cancelWindup?.();
+    this.ctx.fx.clearAlert(npc.group);
+  }
+
+  _setGuard(npc, t) {
+    npc.guard = t;
+    npc.model.setBlock?.(t > 0);
+  }
+
+  // Knock someone flat: they face the hit, get launched a little and fall away from it.
+  _knockDown(npc, dir, kb = 5, dur = 1.3) {
+    this._cancelAttack(npc);
+    if (npc.guard > 0) this._setGuard(npc, 0);
+    npc.knockdown = dur;
+    npc.stun = 0;
+    npc.dodge = null;
+    if (dir) { npc.facing = Math.atan2(-dir.x, -dir.z); npc.group.rotation.y = npc.facing; }
+    npc.model.setDead(true, { fall: true });
+    npc.airVy = clamp(1.6 + kb * 0.22, 2, 5.5);
+    this._settleBody(npc);
+  }
+
+  // A lying body extends ~1.9m behind the feet: turn / nudge it so it never pokes through a wall.
+  _settleBody(npc) {
+    const phys = this.game.physics;
+    const len = 1.9 * npc.scale;
+    const test = (ry) => phys.raycast(npc.pos.x, npc.pos.z, npc.pos.x - Math.sin(ry) * len, npc.pos.z - Math.cos(ry) * len, 0.25, 0);
+    const ry = npc.group.rotation.y;
+    let bf = test(ry);
+    if (bf >= 1) return;
+    let best = ry;
+    for (const off of [0.5, -0.5, 1.1, -1.1, Math.PI / 2, -Math.PI / 2, 2.2, -2.2, Math.PI]) {
+      const f = test(ry + off);
+      if (f > bf) { bf = f; best = ry + off; if (f >= 1) break; }
+    }
+    npc.facing = best;
+    npc.group.rotation.y = best;
+    if (bf < 1) {
+      const r = phys.resolveCircle(npc.pos.x + Math.sin(best) * (1 - bf) * len, npc.pos.z + Math.cos(best) * (1 - bf) * len, npc.radius);
+      npc.pos.x = r.x; npc.pos.z = r.z;
+    }
+  }
+
+  // Launch arc after a knockdown / kill. Returns true while airborne.
+  _air(npc, dt) {
+    if (npc.airVy == null) return false;
+    npc.pos.y += npc.airVy * dt;
+    npc.airVy -= 22 * dt;
+    if (npc.pos.y <= 0) { npc.pos.y = 0; npc.airVy = null; this._settleBody(npc); return false; }
+    return true;
+  }
+
+  // The player parried this NPC's swing: wide open for a riposte.
+  parried(npc) {
+    if (!npc || npc.dead) return;
+    if (npc.networked && !this.game.net.isAuthority) {
+      try { this.game.net.sendToHost({ t: 'npc:parried', id: npc.id }); } catch { /* ignore */ }
+      npc.riposteUntil = this.game.elapsed + 1.6;
+      return;
+    }
+    this._cancelAttack(npc);
+    this._setGuard(npc, 0);
+    npc.stun = npc.boss ? 0.9 : 1.4;
+    npc.riposteUntil = this.game.elapsed + 1.6;
+    npc.kbx -= Math.sin(npc.facing) * 3; npc.kbz -= Math.cos(npc.facing) * 3;
+    npc.model.hitReact?.(0);
+    this.ctx.fx.alert(npc.group, 'stun', npc.stun, 2.55 * npc.scale);
+    npc.cd = Math.max(npc.cd, npc.stun + 0.3);
+  }
+
+  // The local player started an attack from (x,z) toward (dx,dz): nearby fighters may guard or sidestep.
+  onPlayerAttack(x, z, dx, dz, kind = 'light') {
+    for (const n of this.near(x, z, 3.8)) {
+      if (n.replica || !n.hostile || n.knockdown > 0 || n.stun > 0.3 || n.state !== 'chase' || n.target?.type !== 'player') continue;
+      if (n.atk && n.atk.phase !== 'wind') continue;
+      const rx = n.pos.x - x, rz = n.pos.z - z, d = Math.hypot(rx, rz) || 1;
+      if ((rx * dx + rz * dz) / d < 0.2) continue; // not aimed at them
+      const facing = (-rx * Math.sin(n.facing) - rz * Math.cos(n.facing)) / d;
+      if (facing < 0.3) continue; // can't see it coming
+      const A = n.A || ARCH.brawler;
+      const big = kind === 'heavy' || kind === 'kick' || kind === 'charge';
+      if (big && A.dodge > 0 && n.dodgeCd <= 0 && chance(A.dodge * 1.6)) {
+        this._cancelAttack(n);
+        const side = chance(0.5) ? 1 : -1;
+        const bx = rx / d * 0.7 + (-rz / d) * side * 0.7, bz = rz / d * 0.7 + (rx / d) * side * 0.7;
+        const l = Math.hypot(bx, bz) || 1;
+        n.dodge = { x: bx / l, z: bz / l, t: 0.3 };
+        n.dodgeCd = 2.5;
+      } else if (!big && !n.atk && n.guard <= 0 && n.guardCd <= 0 && chance(A.block)) {
+        this._setGuard(n, rand(0.6, 1.0));
+        n.guardCd = rand(1.8, 3.2);
+      }
+    }
   }
 
   _applyDamage(npc, amount, attackerId, opts = {}) {
@@ -226,15 +390,48 @@ export class NPCManager {
     npc.predictedHp = undefined;
     npc.lastAttacker = attackerId;
     this._hitFeedback(npc, amount, opts, attackerId === 'local');
-    npc.stun = Math.max(npc.stun, opts.heavy ? 0.45 : 0.25);
-    npc.pendingHit = 0; // interrupt their swing — combos feel good
     if (npc.hp <= 0) {
       this._kill(npc, attackerId, opts);
       return { dealt: amount, killed: true };
     }
-    if (opts.heavy && amount >= 18 && chance(0.4)) {
-      npc.knockdown = 1.2;
-      npc.model.setDead(true);
+    const A = npc.A || ARCH.brawler;
+    const breaker = !!(opts.guardBreak || opts.power >= 0.5);
+    if (opts.blocked) {
+      // they ate it on the forearms: no stagger, and they'll counter quickly
+      npc.cd = Math.min(npc.cd, 0.35);
+    } else {
+      if (npc.guard > 0 && breaker) {
+        this._setGuard(npc, 0);
+        npc.stun = Math.max(npc.stun, 0.9);
+        this.ctx.fx.alert(npc.group, 'stun', 0.9, 2.55 * npc.scale);
+        if (attackerId === 'local') this.ctx.fx.number(npc.pos.x, 2.5 * npc.scale, npc.pos.z, 'GUARD BREAK', 'crit');
+      }
+      // combo pressure: after a quick string of hits, fighters stop flinching and respond
+      if (this.t - npc.chainT < 1.2) npc.hitChain++; else npc.hitChain = 1;
+      npc.chainT = this.t;
+      const poised = npc.poiseT > 0 || ((A.poise || npc.boss) && !breaker);
+      if (poised) {
+        npc.stun = Math.max(npc.stun, 0.06);
+      } else {
+        npc.stun = Math.max(npc.stun, opts.heavy || breaker ? 0.5 : 0.28);
+        this._cancelAttack(npc); // interrupt their swing — combos feel good
+      }
+      if (!npc.boss && npc.hitChain >= 3 + Math.min(2, Math.floor((npc.tier || 0) / 3)) && !breaker) {
+        npc.hitChain = 0;
+        if (A.block > 0 && npc.guardCd <= 0 && chance(A.block + 0.25)) { npc.stun = 0; this._setGuard(npc, 0.8); npc.guardCd = 2.5; }
+        else if (A.dodge > 0 && chance(0.6)) {
+          npc.stun = 0;
+          const d = opts.dir || { x: -Math.sin(npc.facing), z: -Math.cos(npc.facing) };
+          npc.dodge = { x: d.x, z: d.z, t: 0.32 };
+        } else if ((npc.tier || 0) >= 1 || chance(0.4)) { npc.poiseT = 0.9; npc.stun = 0; npc.cd = 0; }
+      }
+      // knockdowns: kicks, finishers, charged heavies, car hits
+      const kdWanted = opts.knockdown === true || (opts.knockdown === undefined && opts.heavy && amount >= 18 && chance(0.4));
+      if (kdWanted && npc.knockdown <= 0) {
+        const ok = npc.boss ? opts.power >= 0.85 : (A.poise ? (opts.power >= 0.7 || chance(0.35)) : true);
+        if (ok) this._knockDown(npc, opts.dir, opts.kb ?? 5, npc.boss ? 0.9 : 1.3);
+        else npc.stun = Math.max(npc.stun, 0.6);
+      }
     }
     if (npc.barkCd <= 0 && chance(0.4)) {
       fx.say(npc.group, pick(HURT), { ttl: 1.2, kind: 'angry' });
@@ -295,6 +492,8 @@ export class NPCManager {
   }
 
   _flee(npc, tgt) {
+    this._cancelAttack(npc);
+    if (npc.guard > 0) this._setGuard(npc, 0);
     npc.state = 'flee';
     npc.stateT = 0;
     npc.hostile = false;
@@ -312,8 +511,14 @@ export class NPCManager {
     npc.knockdown = 0;
     npc.wasHostile = npc.hostile;
     npc.hostile = false;
-    npc.model.setDead(true);
-    npc.group.rotation.y += rand(-0.6, 0.6);
+    this._cancelAttack(npc);
+    npc.guard = 0;
+    if (opts.dir) npc.facing = Math.atan2(-opts.dir.x, -opts.dir.z) + rand(-0.3, 0.3);
+    else npc.facing += rand(-0.6, 0.6);
+    npc.group.rotation.y = npc.facing;
+    npc.model.setDead(true, { fall: true });
+    npc.airVy = opts.dir ? clamp(1.5 + (opts.kb ?? 4) * 0.2, 1.8, 5) : null;
+    this._settleBody(npc);
     g.interact.remove('npc:' + npc.id);
     this.ctx.fx.blood(npc.pos.x, npc.pos.z, 2.2, opts.dir || null, 0.4);
     if (npc.ko) this.ctx.fx.say(npc.group, pick(['zzz...', '*snore*', 'mommy...', '...ok you win']), { ttl: 2.5, height: 0.9 });
@@ -398,6 +603,12 @@ export class NPCManager {
     const players = this._players();
     const active = this._active || (this._active = []);
     active.length = 0;
+    // who is currently swinging at whom (turn-taking)
+    const atk = this.attackers;
+    atk.clear();
+    for (const n of this.map.values()) {
+      if (n.atk && n.target && !n.dead && n.atk.kind !== 'taser') { const k = this._tkey(n.target); atk.set(k, (atk.get(k) || 0) + 1); }
+    }
 
     for (const npc of this.map.values()) {
       try {
@@ -479,18 +690,20 @@ export class NPCManager {
   _updateDead(npc, dt) {
     npc.deadT += dt;
     npc.speed = 0;
+    const flying = this._air(npc, dt);
     // sliding from the knockback
     if (Math.abs(npc.kbx) + Math.abs(npc.kbz) > 0.05) {
       const r = this.game.physics.resolveCircle(npc.pos.x + npc.kbx * dt, npc.pos.z + npc.kbz * dt, npc.radius);
       npc.pos.x = r.x; npc.pos.z = r.z;
-      const f = Math.exp(-6 * dt);
+      const f = Math.exp((flying ? -2 : -6) * dt);
       npc.kbx *= f; npc.kbz *= f;
+      if (Math.abs(npc.kbx) + Math.abs(npc.kbz) <= 0.05) this._settleBody(npc);
     }
     if (npc.ko && !npc.networked && npc.deadT > 9 && !npc.gotUp) {
       // KO'd brawlers/drunks peel themselves off the floor and limp away
       npc.gotUp = true;
       npc.dead = false; npc.hp = Math.max(5, npc.maxHp * 0.15);
-      npc.model.setDead(false);
+      npc.model.setDead(false, { fall: true });
       npc.hostile = false; npc.target = null; npc.brawlId = null;
       npc.state = 'flee'; npc.stateT = 0; npc.fleeFrom = { type: 'player' };
       npc.leaving = true;
@@ -500,7 +713,7 @@ export class NPCManager {
     if (npc.ko && npc.networked && npc.deadT > 9 && !npc.gotUp && this.game.net.isAuthority) {
       npc.gotUp = true;
       npc.dead = false; npc.hp = Math.max(5, npc.maxHp * 0.15);
-      npc.model.setDead(false);
+      npc.model.setDead(false, { fall: true });
       npc.hostile = false; npc.target = null; npc.brawlId = null;
       npc.state = 'flee'; npc.stateT = 0; npc.leaving = true;
       return;
@@ -517,11 +730,15 @@ export class NPCManager {
     if (npc.knockdown > 0) {
       npc.knockdown -= dt;
       npc.vx = npc.vz = 0;
-      if (npc.knockdown <= 0) npc.model.setDead(false);
+      this._air(npc, dt);
+      if (npc.knockdown <= 0) { npc.model.setDead(false, { fall: true }); npc.pos.y = 0; npc.airVy = null; npc.stun = 0.45; }
       return;
     }
     if (npc.stun > 0) { npc.stun -= dt; npc.vx *= 0.5; npc.vz *= 0.5; }
     npc.cd -= dt;
+    npc.guardCd -= dt; npc.dodgeCd -= dt; npc.taserCd -= dt; npc.poiseT -= dt;
+    if (npc.boss) { npc.boss.chargeCd -= dt; npc.boss.slamCd -= dt; }
+    if (npc.guard > 0) { npc.guard -= dt; if (npc.guard <= 0) { this._setGuard(npc, 0); if (chance(0.5)) npc.cd = Math.min(npc.cd, 0.1); } }
     if (npc.dodge) {
       // diving out of the way beats whatever else they were doing
       const d = npc.dodge;
@@ -533,10 +750,14 @@ export class NPCManager {
       return;
     }
 
-    // pending melee hit (wind-up finished?)
+    // pending melee hit (arm is extending)
     if (npc.pendingHit > 0) {
       npc.pendingHit -= dt;
       if (npc.pendingHit <= 0) this._resolveNpcMelee(npc);
+    }
+    if (npc.atk) {
+      if (npc.stun > 0 && npc.atk.phase === 'wind' && !(npc.A?.poise || npc.boss)) this._cancelAttack(npc);
+      else if (this._updateAttack(npc, dt)) return; // a charge is steering them
     }
 
     switch (npc.state) {
@@ -803,32 +1024,72 @@ export class NPCManager {
       const seen = d < shootRange && this._losCached(npc, tp);
       if (seen && d > 2.5) {
         npc.aiming = true;
-        // strafe a little while shooting
+        // strafe a little while shooting; back off if you get close
         const side = Math.sin(this.t * 0.9 + npc.punchSeq) > 0 ? 1 : -1;
-        const want = d < 6 ? -1 : d > 14 ? 0.6 : 0;
-        npc.vx = (ux * want + -uz * side * 0.5) * npc.walk * 1.2;
-        npc.vz = (uz * want + ux * side * 0.5) * npc.walk * 1.2;
+        const want = d < 7 ? -1.2 : d > 14 ? 0.6 : 0;
+        npc.vx = (ux * want + -uz * side * 0.5) * npc.walk * 1.3;
+        npc.vz = (uz * want + ux * side * 0.5) * npc.walk * 1.3;
+        // telegraph: a glint + "!" before the first shot of every volley
+        if (!npc.sightT) {
+          npc.sightT = this.t;
+          npc.cd = Math.max(npc.cd, 0.6);
+          this.ctx.fx.alert(npc.group, 'warn', 0.6, 2.55 * npc.scale);
+          npc.model.windup?.(0.6, 'taser', TELE.normal);
+        }
         if (npc.cd <= 0 && npc.stun <= 0 && !inCar) this._npcShoot(npc, tp, d);
         else if (npc.cd <= 0 && inCar && npc.kind === 'cop') this._npcShoot(npc, tp, d);
         return;
       }
+      npc.sightT = 0;
     }
-    const reach = def.kind === 'gun' ? 1.5 : def.range * 0.8 + 0.25;
-    if (d <= reach + 0.15) {
-      npc.vx *= 0.3; npc.vz *= 0.3;
-      if (npc.cd <= 0 && npc.stun <= 0 && npc.pendingHit <= 0 && !inCar) {
-        npc.model.punch(0.3);
-        npc.punchSeq++;
-        npc.pendingHit = 0.17;
-        npc.cd = (def.rate || 0.5) * 1.7 + rand(0.15, 0.6) + (npc.kind === 'drunk' ? 0.5 : 0);
+    const A = npc.A || ARCH.brawler;
+    const reach = (def.kind === 'gun' ? 1.5 : def.range * 0.8 + 0.25) * (A.reach || 1);
+    // mid-attack: hold still (wind-up tracks the target, a charge steers itself)
+    if (npc.atk) {
+      const a = npc.atk;
+      if (a.phase === 'wind' && d > reach * 0.9 && a.kind !== 'slam' && a.kind !== 'taser' && a.kind !== 'charge') {
+        const sp = npc.walk * (a.kind === 'lunge' ? 0.4 : 0.9);
+        npc.vx = ux * sp; npc.vz = uz * sp;
+      } else { npc.vx *= 0.3; npc.vz *= 0.3; }
+      return;
+    }
+    if (npc.guard > 0) {
+      // turtle up and shuffle in
+      const sp = d > reach ? npc.walk * 0.6 : 0;
+      npc.vx = ux * sp; npc.vz = uz * sp;
+      return;
+    }
+    const ready = npc.cd <= 0 && npc.stun <= 0 && npc.pendingHit <= 0 && !inCar;
+    // bosses: signature moves from range
+    if (npc.boss && ready && !this._bossMove(npc, d, tp)) { /* fall through to normal fighting */ }
+    if (npc.atk) return;
+    // cops: taser from a few metres out
+    if (A.taser && ready && npc.taserCd <= 0 && d > 2.8 && d < 8 && (this.ctx.police?._heatOf?.(npc.target) ?? 0) < 4 && this._losCached(npc, tp)) {
+      this._beginAttack(npc, 'taser');
+      return;
+    }
+    const tkey = this._tkey(npc.target);
+    const busy = this.attackers.get(tkey) || 0;
+    const myTurn = npc.boss || busy < this._maxAttackers(npc);
+    const startReach = Math.max(reach, A.startReach || 0);
+    if (d <= startReach + 0.15) {
+      if (ready && myTurn) {
+        const kind = A.lunge && d > reach * 0.9 ? 'lunge' : 'swing';
+        this._beginAttack(npc, kind);
+        this.attackers.set(tkey, busy + 1);
         if (chance(0.15) && npc.barkCd <= 0) {
           fx.say(npc.group, pick(npc.kind === 'cop' ? COP_YELL : TAUNTS), { ttl: 1.4, kind: npc.kind === 'cop' ? 'cop' : 'angry' });
           npc.barkCd = 4;
         }
+        return;
       }
+      if (!myTurn && npc.kind !== 'cop') { this._circle(npc, d, ux, uz, dt); return; }
+      npc.vx *= 0.3; npc.vz *= 0.3;
       // cops "cuff" you if you stand still next to them (handled by police)
       return;
     }
+    // waiting for a turn: circle at a respectful distance instead of piling on
+    if (!myTurn && npc.kind !== 'cop' && d < 4.2 && !inCar) { this._circle(npc, d, ux, uz, dt); return; }
     // close in with simple obstacle avoidance
     let mx = ux, mz = uz;
     if (npc.avoidT > 0) {
@@ -840,6 +1101,201 @@ export class NPCManager {
     const sp = (d < 3 ? npc.walk * 1.6 : npc.run) * (npc.stun > 0 ? 0.3 : 1);
     npc.vx = mx * sp; npc.vz = mz * sp;
     if (npc.stuckT > 0.35) { npc.avoidT = 0.7; npc.avoidSign = chance(0.5) ? 1 : -1; npc.stuckT = 0; }
+  }
+
+  _tkey(t) { return !t ? '-' : t.type === 'player' ? 'p' : t.type + ':' + t.id; }
+
+  // How many of a group may swing at the same target at once.
+  _maxAttackers(npc) {
+    const t = npc.tier || 0;
+    return t <= 1 ? 1 : t <= 4 ? 2 : 3;
+  }
+
+  // Waiting for a turn: strafe around the target at a ring distance, facing them.
+  _circle(npc, d, ux, uz, dt) {
+    npc.circleT -= dt;
+    if (npc.circleT <= 0 || npc.stuckT > 0.3) { npc.circleSide *= -1; npc.circleT = rand(1.5, 3.5); npc.stuckT = 0; }
+    const ring = 2.7 + (npc.punchSeq % 3) * 0.25;
+    const radial = clamp(d - ring, -1, 1);
+    const side = npc.circleSide * (d < ring + 1 ? 0.75 : 0.3);
+    const sp = npc.walk * 1.5;
+    npc.vx = (ux * radial + -uz * side) * sp;
+    npc.vz = (uz * radial + ux * side) * sp;
+    if (npc.barkCd <= 0 && npc.dist < 14 && chance(0.01)) { this.ctx.fx.say(npc.group, pick(TAUNTS), { ttl: 1.6, kind: 'angry' }); npc.barkCd = 6; }
+  }
+
+  // Start a telegraphed attack. kind: 'swing' | 'lunge' | 'combo' | 'charge' | 'slam' | 'taser'
+  _beginAttack(npc, kind) {
+    const A = npc.A || ARCH.brawler;
+    const fx = this.ctx.fx;
+    const enr = npc.boss?.enraged ? 0.8 : 1;
+    let wind = A.wind * enr;
+    let style = A.style || (npc.wdef?.swing === 'overhead' ? 'overhead' : null);
+    if (style === 'heavy' && npc.wdef?.swing === 'overhead') style = 'overhead';
+    let color = A.heavy ? TELE.heavy : TELE.normal;
+    let alert = A.heavy ? 'danger' : 'warn';
+    if (kind === 'charge') { wind = 0.85 * enr; style = 'charge'; color = TELE.heavy; alert = 'danger'; }
+    else if (kind === 'slam') { wind = 0.95 * enr; style = 'slam'; color = TELE.heavy; alert = 'danger'; fx.dangerRing(npc.pos.x, npc.pos.z, 3.1, wind, 0xff3a12, npc.group); }
+    else if (kind === 'combo') { wind = A.wind * 0.9 * enr; }
+    else if (kind === 'taser') { wind = 0.65; style = 'taser'; color = TELE.taser; alert = 'warn'; }
+    else if (kind === 'lunge') { style = 'slash'; }
+    npc.atk = { kind, phase: 'wind', t: wind, style, hits: kind === 'combo' ? 3 : 1, hit: false };
+    npc.windSeq++;
+    npc.model.windup?.(wind, style, color);
+    fx.alert(npc.group, alert, wind, 2.55 * npc.scale);
+    if (npc.dist < 18) fx.sfx.play('tell', { pos: npc.pos, vol: kind === 'charge' || kind === 'slam' ? 1 : 0.6 });
+    if (kind === 'charge' && npc.dist < 30) fx.say(npc.group, pick(['RAAAAH!', 'HERE I COME!', 'TIMBERRR!', 'OUTTA MY WAY!']), { ttl: 1.2, kind: 'angry' });
+  }
+
+  // Boss signature moves. Returns true if one started.
+  _bossMove(npc, d, tp) {
+    const B = npc.boss;
+    if (B.moves.has('summon') && !B.summoned && npc.hp < npc.maxHp * 0.55) {
+      B.summoned = true;
+      try { this.ctx.combat?._summon?.(npc); } catch (e) { console.error('[npc] summon failed', e); }
+      this.ctx.fx.say(npc.group, pick(['BOYS! GET IN HERE!', 'Somebody HELP me hit this guy!', 'Backup! BACKUP!']), { ttl: 2, kind: 'angry' });
+    }
+    if (!B.enraged && npc.hp < npc.maxHp * 0.4) {
+      B.enraged = true;
+      npc.run *= 1.15; npc.walk *= 1.15;
+      npc.model.windup?.(0.01, null, TELE.heavy);
+      this.ctx.fx.say(npc.group, pick(['NOW I\'M MAD.', 'You made me spill my dignity!', 'THAT\'S IT!', 'No more Mr. Nice Goon!']), { ttl: 2, kind: 'angry' });
+      this.ctx.fx.sfx.play('bell', { vol: 0.5 });
+    }
+    if (B.moves.has('charge') && B.chargeCd <= 0 && d > 4.5 && d < 18 && this._losCached(npc, tp)) {
+      B.chargeCd = rand(6, 9) * (B.enraged ? 0.7 : 1);
+      this._beginAttack(npc, 'charge');
+      return true;
+    }
+    if (B.moves.has('slam') && B.slamCd <= 0 && d < 3.2 && chance(0.5)) {
+      B.slamCd = rand(6.5, 9.5) * (B.enraged ? 0.75 : 1);
+      this._beginAttack(npc, 'slam');
+      return true;
+    }
+    const reach = (npc.wdef.range * 0.8 + 0.25) * (npc.A?.reach || 1);
+    if (d <= reach + 0.15) {
+      this._beginAttack(npc, B.moves.has('combo') && chance(0.45) ? 'combo' : 'swing');
+      return true;
+    }
+    return false;
+  }
+
+  // Advance an attack. Returns true when it controls movement this tick (charging).
+  _updateAttack(npc, dt) {
+    const a = npc.atk;
+    const A = npc.A || ARCH.brawler;
+    a.t -= dt;
+    const tp = this._targetPos(npc.target);
+    if (!tp && a.phase === 'wind') { this._cancelAttack(npc); return false; }
+    if (a.phase === 'wind') {
+      if (tp && a.kind !== 'charge') npc.faceTo = Math.atan2(tp.x - npc.pos.x, tp.z - npc.pos.z);
+      if (tp && a.kind === 'charge') { a.dir = { x: tp.x - npc.pos.x, z: tp.z - npc.pos.z }; npc.faceTo = Math.atan2(a.dir.x, a.dir.z); }
+      if (a.t <= 0) this._strike(npc, a, tp);
+      return false;
+    }
+    if (a.phase === 'strike') {
+      if (a.kind === 'charge') return this._chargeStep(npc, a, tp, dt);
+      if (a.kind === 'slam' && !a.hit && a.t < 0.25) { a.hit = true; this._slamHit(npc); }
+      if (a.t <= 0) {
+        if (a.hits > 1 && npc.stun <= 0) {
+          a.hits--;
+          a.t = 0.3;
+          npc.model.punch(0.24, a.hits === 1 ? 'uppercut' : (a.hits % 2 ? 'jab' : 'cross'));
+          npc.punchSeq++;
+          npc.pendingHit = 0.08;
+          if (tp) npc.faceTo = Math.atan2(tp.x - npc.pos.x, tp.z - npc.pos.z);
+        } else { a.phase = 'recover'; a.t = A.recover; }
+      }
+      return false;
+    }
+    if (a.t <= 0) {
+      npc.atk = null;
+      npc.cd = (npc.wdef?.rate || 0.5) * 1.1 + rand(0.25, 0.8) + (npc.kind === 'drunk' ? 0.5 : 0) + (npc.boss ? -0.2 : 0);
+    }
+    return false;
+  }
+
+  _strike(npc, a, tp) {
+    const fx = this.ctx.fx;
+    a.phase = 'strike';
+    fx.clearAlert(npc.group);
+    if (a.kind === 'taser') {
+      npc.taserCd = rand(7, 10);
+      a.phase = 'recover'; a.t = 0.7;
+      npc.model.cancelWindup?.();
+      if (!tp) return;
+      const m = this.muzzlePos(npc);
+      const d = Math.hypot(tp.x - npc.pos.x, tp.z - npc.pos.z);
+      fx.sfx.play('taser', { pos: npc.pos });
+      const hit = d < 9.5 && this.los(npc.pos.x, npc.pos.z, tp.x, tp.z);
+      fx.tracer(m.x, m.y, m.z, tp.x + (hit ? 0 : rand(-1, 1)), 1.1, tp.z + (hit ? 0 : rand(-1, 1)));
+      if (hit) this.ctx.combat?.hurtTarget(npc, npc.target, 3, { dir: { x: (tp.x - npc.pos.x) / (d || 1), z: (tp.z - npc.pos.z) / (d || 1) }, taser: true });
+      return;
+    }
+    if (a.kind === 'charge') {
+      const l = Math.hypot(a.dir?.x || 0, a.dir?.z || 0) || 1;
+      a.dir = { x: (a.dir?.x || Math.sin(npc.facing)) / l, z: (a.dir?.z || Math.cos(npc.facing)) / l };
+      a.t = 1.0;
+      fx.sfx.play('whoosh', { pos: npc.pos, vol: 1 });
+      return;
+    }
+    if (a.kind === 'slam') {
+      npc.model.punch(0.4, 'slam');
+      npc.punchSeq++;
+      a.t = 0.4;
+      return;
+    }
+    npc.model.punch(a.kind === 'combo' ? 0.24 : 0.28, a.style || null);
+    npc.punchSeq++;
+    npc.pendingHit = 0.09;
+    a.t = a.kind === 'combo' ? 0.3 : 0.22;
+    if (a.kind === 'lunge' && tp) {
+      const dx = tp.x - npc.pos.x, dz = tp.z - npc.pos.z, d = Math.hypot(dx, dz) || 1;
+      const L = Math.min(npc.A?.lunge || 6, d * 3.2);
+      npc.kbx += dx / d * L; npc.kbz += dz / d * L;
+    }
+  }
+
+  // Bull rush: straight line, unblockable, knocks you flat. Smacks into walls and gets dazed.
+  _chargeStep(npc, a, tp, dt) {
+    const sp = 13 * (npc.boss?.enraged ? 1.1 : 1);
+    npc.vx = a.dir.x * sp; npc.vz = a.dir.z * sp;
+    npc.faceTo = Math.atan2(a.dir.x, a.dir.z);
+    if (!a.hit && tp && Math.hypot(tp.x - npc.pos.x, tp.z - npc.pos.z) < 1.25 + npc.radius) {
+      a.hit = true;
+      const def = npc.wdef;
+      const dmg = Math.max(4, Math.round(def.damage * npc.dmgMult * 1.7 * (npc.tierMult || 1)));
+      this.ctx.fx.sfx.play('heavy', { pos: npc.pos });
+      this.ctx.combat?.hurtTarget(npc, npc.target, dmg, { dir: { x: a.dir.x, z: a.dir.z }, melee: true, unblockable: true, knockdown: true, heavyHit: true });
+      a.phase = 'recover'; a.t = 0.9; npc.vx = npc.vz = 0;
+      return false;
+    }
+    if (a.t < 0.85 && npc.stuckT > 0.04) {
+      // wall!
+      npc.atk = null; npc.vx = npc.vz = 0;
+      npc.stun = 1.8;
+      npc.cd = 2;
+      npc.kbx = -a.dir.x * 3; npc.kbz = -a.dir.z * 3;
+      this.ctx.fx.sfx.play('smack', { pos: npc.pos });
+      this.ctx.fx.alert(npc.group, 'stun', 1.8, 2.55 * npc.scale);
+      if (npc.dist < 30) { this.ctx.fx.say(npc.group, pick(['ow. my everything.', '*sees birds*', 'Who put a WALL there?!']), { ttl: 1.8 }); this.game.cameraRig?.shake?.(0.2, 0.2); }
+      return true;
+    }
+    if (a.t <= 0) { a.phase = 'recover'; a.t = 0.6; }
+    return true;
+  }
+
+  _slamHit(npc) {
+    const fx = this.ctx.fx;
+    fx.sfx.play('slam', { pos: npc.pos });
+    for (let k = 0; k < 10; k++) fx._gib(npc.pos.x + rand(-1.5, 1.5), 0.1, npc.pos.z + rand(-1.5, 1.5), null, 0x6a6258, 0.9);
+    if (npc.dist < 14) this.game.cameraRig?.shake?.(0.35, 0.3);
+    const tp = this._targetPos(npc.target);
+    if (!tp) return;
+    const dx = tp.x - npc.pos.x, dz = tp.z - npc.pos.z, d = Math.hypot(dx, dz);
+    if (d > 3.1 || this._targetInVehicle(npc.target)) return;
+    const dmg = Math.max(4, Math.round(npc.wdef.damage * npc.dmgMult * 1.5 * (npc.tierMult || 1)));
+    this.ctx.combat?.hurtTarget(npc, npc.target, dmg, { dir: { x: dx / (d || 1), z: dz / (d || 1) }, melee: true, heavyHit: true, knockdown: true });
   }
 
   _copSearch(npc, lk, dt) {
@@ -885,12 +1341,14 @@ export class NPCManager {
     const dx = tp.x - npc.pos.x, dz = tp.z - npc.pos.z;
     const d = Math.hypot(dx, dz);
     const def = npc.wdef;
-    if (d > def.range * 0.8 + 0.8) { this.ctx.fx.sfx.play('whoosh', { pos: npc.pos, vol: 0.5 }); return; }
+    if (d > (def.range * 0.8 + 0.8) * ((npc.A?.reach) || 1)) { this.ctx.fx.sfx.play('whoosh', { pos: npc.pos, vol: 0.5 }); return; }
     if (this._targetInVehicle(npc.target)) return;
-    const dmg = Math.max(2, Math.round(def.damage * npc.dmgMult * rand(0.8, 1.2) * (npc.tierMult || 1)));
+    const A = npc.A || ARCH.brawler;
+    const last = npc.atk?.kind === 'combo' && npc.atk.hits <= 1;
+    const dmg = Math.max(2, Math.round(def.damage * npc.dmgMult * (A.dmg || 1) * (last ? 1.3 : 1) * rand(0.85, 1.15) * (npc.tierMult || 1)));
     const sfx = def.swing === 'overhead' || npc.weapon === 'bat' || npc.weapon === 'baton' ? 'smack' : (npc.weapon === 'knife' || npc.weapon === 'machete' || npc.weapon === 'bottle') ? 'slash' : 'punch';
     this.ctx.fx.sfx.play(sfx, { pos: npc.pos });
-    this.ctx.combat?.hurtTarget(npc, npc.target, dmg, { dir: { x: dx / (d || 1), z: dz / (d || 1) }, melee: true });
+    this.ctx.combat?.hurtTarget(npc, npc.target, dmg, { dir: { x: dx / (d || 1), z: dz / (d || 1) }, melee: true, heavyHit: !!A.heavy || last });
   }
 
   _npcShoot(npc, tp, d) {
@@ -970,12 +1428,13 @@ export class NPCManager {
     const n = [];
     for (const npc of this.map.values()) {
       if (!npc.networked || npc.replica) continue;
-      const flags = (npc.dead ? 1 : 0) | (npc.hostile ? 2 : 0) | (npc.aiming ? 4 : 0) | (npc.ko ? 8 : 0) | (npc.knockdown > 0 ? 16 : 0);
+      const flags = (npc.dead ? 1 : 0) | (npc.hostile ? 2 : 0) | (npc.aiming ? 4 : 0) | (npc.ko ? 8 : 0) | (npc.knockdown > 0 ? 16 : 0)
+        | (npc.atk?.phase === 'wind' ? 32 : 0) | (npc.guard > 0 ? 64 : 0) | (npc.boss?.enraged ? 128 : 0);
       const rec = [npc.id, Math.round(npc.pos.x * 50) / 50, Math.round(npc.pos.z * 50) / 50, Math.round(npc.facing * 100) / 100,
         Math.round(npc.hp), flags, npc.punchSeq, npc.shotSeq];
       if (meta || !npc.metaSent) {
         npc.metaSent = true;
-        rec.push({ k: npc.kind, r: npc.role, nm: npc.name, c: npc.color, h: npc.hat, hc: npc.hatColor, s: npc.scale, w: npc.weapon, m: npc.maxHp, f: npc.faction, b: npc.brawlId });
+        rec.push({ k: npc.kind, r: npc.role, nm: npc.name, c: npc.color, h: npc.hat, hc: npc.hatColor, s: npc.scale, w: npc.weapon, m: npc.maxHp, f: npc.faction, b: npc.brawlId, bo: npc.boss?.name || undefined, ar: npc.arch, ti: npc.tier || 0 });
       }
       n.push(rec);
     }
@@ -992,7 +1451,8 @@ export class NPCManager {
       if (!npc) {
         if (!meta) continue;
         npc = this.spawn({ id, kind: meta.k, role: meta.r, name: meta.nm, color: meta.c, hat: meta.h ?? null, hatColor: meta.hc, scale: meta.s,
-          weapon: meta.w, hp, maxHp: meta.m, faction: meta.f, networked: true, _replica: true, x, z, facing: f, brawlId: meta.b });
+          weapon: meta.w, hp, maxHp: meta.m, faction: meta.f, networked: true, _replica: true, x, z, facing: f, brawlId: meta.b,
+          bossName: meta.bo || null, arch: meta.ar, tier: meta.ti });
         if (!npc) continue;
         npc.punchSeq = ps; npc.shotSeq = ss;
       } else if (meta && meta.w !== npc.weapon) this.setWeapon(npc, meta.w);
@@ -1009,13 +1469,23 @@ export class NPCManager {
       if (dead !== npc.dead) {
         npc.dead = dead;
         npc.ko = !!(flags & 8);
-        npc.model.setDead(dead);
+        npc.model.setDead(dead, { fall: true });
         if (dead) { npc.deadT = 0; this.ctx.fx.blood(npc.pos.x, npc.pos.z, 2, null, 0.4); this.ctx.combat?.onReplicaDown?.(npc); }
       } else if (!dead && kd !== !!npc.kdShown) {
         npc.kdShown = kd;
-        npc.model.setDead(kd);
+        npc.model.setDead(kd, { fall: true });
       }
-      if (ps !== npc.punchSeq) { npc.punchSeq = ps; npc.model.punch(0.3); }
+      // telegraphs & guard on replicas
+      const wind = !!(flags & 32), guard = !!(flags & 64);
+      npc.enragedRep = !!(flags & 128);
+      if (wind && !npc.windRep && !dead) {
+        const A = ARCH[npc.arch] || ARCH.brawler;
+        npc.model.windup?.(A.wind, A.style, A.heavy ? TELE.heavy : TELE.normal);
+        this.ctx.fx.alert(npc.group, A.heavy ? 'danger' : 'warn', A.wind, 2.55 * npc.scale);
+      }
+      npc.windRep = wind;
+      if (guard !== !!npc.guardRep) { npc.guardRep = guard; npc.model.setBlock?.(guard); }
+      if (ps !== npc.punchSeq) { npc.punchSeq = ps; npc.model.punch(0.3, (ARCH[npc.arch] || ARCH.brawler).style); }
       if (ss !== npc.shotSeq) {
         npc.shotSeq = ss;
         const m = this.muzzlePos(npc);

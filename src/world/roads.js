@@ -326,7 +326,9 @@ function edgeProps(C, e, nodes, ei) {
         if (rng() > p * 0.35) continue;
         if (used[side].some(([a, b]) => Math.abs(a - s) < b + 3.5)) continue;
         const [x, z] = at(s, e.park * side);
+        C.ctx = 'parked';
         P.wreck(C, x, z, Math.atan2(dx * side, dz * side), { burnt: slum && rng() < 0.2, blocks: slum && rng() < 0.15 });
+        C.ctx = 'street';
         s += 6;
       }
     }

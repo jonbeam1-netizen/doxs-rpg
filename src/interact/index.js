@@ -124,7 +124,7 @@ export async function installInteract(game) {
             game.bus.emit('interact:use', { kind: o.kind, id: o.id });
             const r = o.use(g);
             // prompts are cached by the core until the target changes; force a refresh after state changes
-            const refresh = () => { if (game.interact.current?.id === 'ix:' + o.id) game.interact.current = null; };
+            const refresh = () => { if (game.interact.current?.id === 'ix:' + o.id) game.interact.refresh(); };
             refresh(); Promise.resolve(r).finally(refresh);
             return r;
           },
@@ -243,7 +243,7 @@ export async function installInteract(game) {
   // ---------------------------------------------------------------- character sheet
   game.ui.sheetSections.push(() => {
     const s = S();
-    const rows = I.hooks.sheet.map((fn) => { try { return fn(s); } catch { return ''; } }).filter(Boolean).join(' · ');
+    const rows = I.hooks.sheet.map((fn) => { try { return fn(s); } catch { return ''; } }).filter(Boolean).join('<br>');
     return `<div class="ui-section">Street Life</div><div class="ix-sheet">${rows}</div>`;
   });
 

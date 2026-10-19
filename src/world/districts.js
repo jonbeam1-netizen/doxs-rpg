@@ -18,12 +18,10 @@ export function buildOverpass(C) {
   for (let x = x0; x < x1; x += 60) {
     const xe = Math.min(x1, x + 60), cx = (x + xe) / 2, L = xe - x;
     g.frame(cx, z, PI / 2);
-    g.box('f_concrete', 0, y + 0.8, 0, W, 1.6, L, { faces: 'all', uvScale: [12, 14], color: '#8a867c' });
+    g.box('w_concrete', 0, y + 0.8, 0, W, 1.6, L, { faces: 'all', uvScale: [12, 14], color: '#8a867c' });
     g.box('asphalt', 0, y + 1.62, 0, W - 1, 0.02, L, { faces: 't', uv: 'world', uvScale: 14, color: '#a8a49c' });
-    for (const s of [-1, 1]) {
-      g.box('f_concrete', s * (W / 2 - 0.3), y + 2.3, 0, 0.6, 1.2, L, { uvScale: [12, 14], color: '#9a968c' });
-      for (let k = -L / 2 + 6; k < L / 2; k += 20) { g.push(); g.translate(s * (W / 2 + 0.06), y - 0.2, k); g.rotY(s * PI / 2); P.graffitiAt(C, 4, 0, 0.0); g.pop(); }
-    }
+    for (const s of [-1, 1]) g.box('w_concrete', s * (W / 2 - 0.3), y + 2.3, 0, 0.6, 1.2, L, { uvScale: [12, 14], color: '#9a968c' });
+    if (((x - x0) / 60) % 2 === 1) { g.push(); g.translate(W / 2 + 0.03, y, 0); g.rotY(PI / 2); P.graffitiAt(C, 1.5, 0.05, 0.0); g.pop(); }
     g.box('marking', 0, y + 1.66, 0, 0.2, 0.02, L, { color: '#a08a3a' });
   }
   // pillars (single row on the centerline, midblock)
@@ -31,13 +29,13 @@ export function buildOverpass(C) {
     const px = x + 40 > 380 ? null : x + 40;
     if (px == null) continue;
     g.frame(px, z, 0);
-    g.box('f_concrete', 0, y / 2, 0, 2.4, y, 2.4, { uvScale: [12, 14], color: '#8a867c' });
-    g.box('f_concrete', 0, y - 0.6, 0, 3.4, 1.2, W - 4, { uvScale: [12, 14], color: '#7a766c' });
+    g.box('w_concrete', 0, y / 2, 0, 2.4, y, 2.4, { uvScale: [12, 14], color: '#8a867c' });
+    g.box('w_concrete', 0, y - 0.6, 0, 3.4, 1.2, W - 4, { uvScale: [12, 14], color: '#7a766c' });
     g.push(); g.translate(0, 0, 1.25); P.graffitiAt(C, 2.2, 0.8); g.pop();
     C.solid(px - 1.3, z - 1.3, px + 1.3, z + 1.3, y);
   }
   // also pillars at the far ends
-  for (const px of [-400, 400]) { g.frame(px, z, 0); g.box('f_concrete', 0, y / 2, 0, 2.4, y, 2.4, { uvScale: [12, 14], color: '#8a867c' }); C.solid(px - 1.3, z - 1.3, px + 1.3, z + 1.3, y); }
+  for (const px of [-400, 400]) { g.frame(px, z, 0); g.box('w_concrete', 0, y / 2, 0, 2.4, y, 2.4, { uvScale: [12, 14], color: '#8a867c' }); C.solid(px - 1.3, z - 1.3, px + 1.3, z + 1.3, y); }
   // broken ends with rebar
   for (const s of [-1, 1]) {
     const ex = s * x1;
@@ -47,7 +45,7 @@ export function buildOverpass(C) {
       g.box('metal', 0, 1.2, 0, 0.06, 2.4 + C.rng() * 2, 0.06, { color: '#5a3a2a' });
       g.pop();
     }
-    for (let i = 0; i < 6; i++) { const rx = ex + s * (2 + C.rng() * 8), rz = z + (C.rng() - 0.5) * 18; g.frame(rx, rz, C.rng() * 6); g.rotX((C.rng() - 0.5) * 0.5); g.box('f_concrete', 0, 0.6, 0, 3 + C.rng() * 3, 1.2 + C.rng(), 2 + C.rng() * 3, { uvScale: [12, 14], color: '#7a766c' }); C.solid(rx - 2, rz - 2, rx + 2, rz + 2, 1.6); }
+    for (let i = 0; i < 6; i++) { const rx = ex + s * (2 + C.rng() * 8), rz = z + (C.rng() - 0.5) * 18; g.frame(rx, rz, C.rng() * 6); g.rotX((C.rng() - 0.5) * 0.5); g.box('w_concrete', 0, 0.6, 0, 3 + C.rng() * 3, 1.2 + C.rng(), 2 + C.rng() * 3, { uvScale: [12, 14], color: '#7a766c' }); C.solid(rx - 2, rz - 2, rx + 2, rz + 2, 1.6); }
   }
   // dead lamps on the deck
   for (let x = x0 + 20; x < x1; x += 50) { g.frame(x, z - W / 2 + 0.8, 0); g.cyl('metal', 0, y + 1.6 + 3, 0, 0.1, 0.14, 6, 6, { color: '#3a3a36' }); g.box('metal', 0, y + 7.6, 1.2, 0.12, 0.12, 2.4, { color: '#3a3a36' }); }
@@ -139,7 +137,7 @@ export function buildDragStrip(C) {
   for (let k = 0; k < 18; k++) g.box('props', -10.2 + k * 1.2, 6.6, 0.06, 0.6, 0.6, 0.02, { color: '#111' });
   // booth (location door) on the south side
   g.frame(start - 15, 277, PI);
-  g.box('f_wood', 0, 1.7, 0, 6, 3.4, 4, { faces: 'fbrl', uvScale: [12, 14], color: '#b8a888' });
+  g.box('w_wood', 0, 1.7, 0, 6, 3.4, 4, { faces: 'fbrl', uvScale: [12, 14], color: '#b8a888' });
   g.box('corr', 0, 3.5, 0.4, 6.6, 0.12, 5, { color: '#8a7a6a', uvScale: 3 });
   g.box('lamp', 0, 3.4, 2.6, 2, 0.04, 0.6, { color: '#ffd080', faces: 'u' });
   g.push(); g.translate(0, 0, 2); P.doorway(C, 1.2, 1.1, 2.3, 2, { lamp: false }); g.pop();
@@ -170,7 +168,7 @@ export function buildEdges(C, scene) {
   // Route 9 barricade at the west edge
   for (let k = -6; k <= 6; k += 3) P.jersey(C, -684, k, 0, 3);
   g.frame(-686, 0, PI / 2);
-  locSign(C, { cx: -686, cz: 0, rot: PI / 2, w: 0, d: 0 }, 'route9', "ROAD CLOSED · IT'S WORSE OUT THERE", { w: 10, h: 1.8, y: 2.6, z: 0, bg: '#e8a020', fg: '#1a1a1a', double: true, gain: 0.5 });
+  locSign(C, { cx: -686, cz: 0, rot: PI / 2, w: 0, d: 0 }, 'route9', "ROAD CLOSED Â· IT'S WORSE OUT THERE", { w: 10, h: 1.8, y: 2.6, z: 0, bg: '#e8a020', fg: '#1a1a1a', double: true, gain: 0.5 });
   g.frame(-686, 0, PI / 2); for (const s of [-4.5, 4.5]) g.box('metal', s, 1.2, 0, 0.2, 2.4, 0.2, { color: '#333' });
 
   // far terrain ring (single mesh, softer fog so it reads as a silhouette)

@@ -41,6 +41,7 @@ export class WorldGeo {
     this.e = this.m.elements;
     this.stack = [];
     this.chunkAt = null; // forced chunk index for the current object
+    this.minY = Infinity; // lowest vertex emitted since the last reset (world audit)
   }
 
   chunkOf(x, z) {
@@ -87,6 +88,8 @@ export class WorldGeo {
       W[k * 3 + 1] = e[1] * p[0] + e[5] * p[1] + e[9] * p[2] + e[13];
       W[k * 3 + 2] = e[2] * p[0] + e[6] * p[1] + e[10] * p[2] + e[14];
     }
+    const my = Math.min(W[1], W[4], W[7], W[10]);
+    if (my < this.minY) this.minY = my;
     // normal from world positions
     const ux = W[3] - W[0], uy = W[4] - W[1], uz = W[5] - W[2];
     const vx = W[6] - W[0], vy = W[7] - W[1], vz = W[8] - W[2];

@@ -360,7 +360,7 @@ export function installStreet(game, I) {
   const sprayGeo = new THREE.BufferGeometry();
   const SPN = 120;
   sprayGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(SPN * 3), 3));
-  const sprayMat = new THREE.PointsMaterial({ color: 0xcfe6ff, size: 0.2, map: softDot(), transparent: true, opacity: 0.8, depthWrite: false });
+  const sprayMat = new THREE.PointsMaterial({ color: 0xa8d0f4, size: 0.14, map: softDot(), transparent: true, opacity: 0.75, depthWrite: false });
   function openHydrant(o, until, local) {
     o.until = until;
     if (!o.spray) {

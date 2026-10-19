@@ -15,6 +15,8 @@ import { MapSystem } from './minimap.js';
 import { hashStr } from './textures.js';
 import { buildIsland, buildIslandLot, coastPolygon } from './island.js';
 import { ISLE_MAX_X, MAP_EXT, SPOTS as ISLE_SPOTS, TOLL_X, LAND_X, BRIDGE, ISLE, isLand } from './island-layout.js';
+import { buildSignals, createSignals } from './signals.js';
+import { runAudit } from './audit.js';
 
 // The city of Rotwell. See DESIGN.md "World" for the public API (game.world).
 
@@ -40,15 +42,27 @@ export async function installWorld(game) {
   phys.setBounds(-BOUND, -BOUND, ISLE_MAX_X, BOUND);
 
   const lights = [], emitters = [];
+  // every collider is recorded with its build phase/owner for the dev audit
+  const auditRecs = [];
+  let streetN = 0;
+  const rec = (b) => {
+    const y = geo.minY; geo.minY = Infinity;
+    const own = C.ctx === 'street' || C.ctx === 'parked' || C.ctx === 'scatter' ? C.ctx + '#' + (streetN++) : C.ctx;
+    auditRecs.push({ b, ctx: C.ctx, own, y, elevated: C.elevated });
+    return b;
+  };
   const C = {
     game, geo, mats, layout, lights, emitters,
+    ctx: 'ground', elevated: false,
     rng: mulberry32(WORLD_SEED ^ 0x5eed),
-    solid(x0, z0, x1, z1, h = 6, tag = 'solid') { return phys.addBox(x0, z0, x1, z1, { height: h, tag }); },
+    solid(x0, z0, x1, z1, h = 6, tag = 'solid') { return rec(phys.addBox(x0, z0, x1, z1, { height: h, tag })); },
     obb(cx, cz, rot, w, d, h = 6, tag = 'solid') {
       const c = Math.abs(Math.cos(rot)), s = Math.abs(Math.sin(rot));
       const hx = c * w / 2 + s * d / 2, hz = s * w / 2 + c * d / 2;
-      return phys.addBox(cx - hx, cz - hz, cx + hx, cz + hz, { height: h, tag });
+      return rec(phys.addBox(cx - hx, cz - hz, cx + hx, cz + hz, { height: h, tag }));
     },
+    // is a circle of radius r at (x, z) clear of every collider placed so far?
+    free(x, z, r) { for (const b of phys.query(x - r, z - r, x + r, z + r)) { const qx = Math.max(b.minX, Math.min(x, b.maxX)), qz = Math.max(b.minZ, Math.min(z, b.maxZ)); if ((qx - x) ** 2 + (qz - z) ** 2 < r * r) return false; } return true; },
     obbLocal(lot, lx, lz, w, d, h = 6) {
       const cs = Math.cos(lot.rot), sn = Math.sin(lot.rot);
       return this.obb(lot.cx + lx * cs + lz * sn, lot.cz - lx * sn + lz * cs, lot.rot, w, d, h, 'building');
@@ -61,14 +75,20 @@ export async function installWorld(game) {
   // ---- build
   buildGround(C);
   buildRoads(C);
+  C.ctx = 'signals';
+  const signalData = buildSignals(C);
+  C.ctx = 'street';
   buildStreetProps(C);
 
   // locations
   const placedLocs = [];
   let spawn = { x: 0, z: 330, facing: 0 };
+  C.ctx = 'overpass';
   const overpassDoor = buildOverpass(C);
+  C.ctx = 'drag';
   const dragDoor = buildDragStrip(C);
   // Blackwater Isle (own RNG; hand-placed island locations come back as doors)
+  C.ctx = 'isle';
   const isle = buildIsland(C);
   for (const L of LOCATIONS) {
     let doorX, doorZ, x, z, facing = 0;
@@ -80,6 +100,7 @@ export async function installWorld(game) {
     else if (lot && LANDMARKS[L.id]) {
       const prev = C.rng;
       C.rng = mulberry32(hashStr(L.id) ^ WORLD_SEED);
+      C.ctx = 'loc:' + L.id;
       geo.reset(); geo.lock(lot.cx, lot.cz);
       let res = null;
       try { res = LANDMARKS[L.id](C, lot, L); } catch (e) { console.error('[world] landmark failed', L.id, e); }
@@ -108,9 +129,12 @@ export async function installWorld(game) {
   }
 
   // generic lots
-  for (const lot of layout.lots) (lot.district === 'blackwater' ? buildIslandLot : buildLot)(C, lot);
+  layout.lots.forEach((lot, i) => { C.ctx = 'lot' + i + ':' + lot.type; (lot.district === 'blackwater' ? buildIslandLot : buildLot)(C, lot); });
+  C.ctx = 'docks';
   buildDocks(C);
+  C.ctx = 'scatter';
   buildScatter(C);
+  C.ctx = 'edges';
   buildEdges(C, game.scene);
 
   const { chunks, verts } = geo.finalize(mats.M);
@@ -268,6 +292,14 @@ export async function installWorld(game) {
   };
   game.world = world;
   world.seats = C.seats; // [{x, z, facing, kind: 'bench'|'busstop', width}]
+  // working traffic lights (see signals.js for the API contract)
+  world.signals = createSignals(game, signalData);
+  // dev-only collider audit
+  try {
+    if (/[?&]dev\b/.test(location.search)) {
+      window.__worldAudit = (opts) => { const res = runAudit(auditRecs, layout, opts); console.table(res.counts); return res; };
+    }
+  } catch { /* no window/location */ }
 
   // ---- wall spots: sampled along building fronts (generic lots + location buildings)
   const wallGrid = new Map();
