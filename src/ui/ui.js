@@ -304,7 +304,7 @@ export class UI {
       ['<kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd>', 'Move (camera-relative) / drive'],
       ['<kbd>Shift</kbd>', 'Run'],
       ['<kbd>Space</kbd>', 'Jump / handbrake'],
-      ['<kbd>Mouse</kbd>', 'Look (click to lock the mouse, or hold right-click and drag)'],
+      ['<kbd>Mouse</kbd>', 'Look (click to lock the mouse, or hold middle or right mouse button and drag)'],
       ['<kbd>←</kbd><kbd>→</kbd>', 'Turn the camera'],
       ['<kbd>Wheel</kbd>', 'Zoom'],
       ['<kbd>LMB</kbd>', 'Attack / shoot'],

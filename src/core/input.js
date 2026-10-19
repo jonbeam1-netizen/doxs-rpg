@@ -23,6 +23,7 @@ export class Input {
 
     canvas.addEventListener('mousedown', (e) => {
       this.mouse.buttons.add(e.button);
+      if (e.button === 1) e.preventDefault(); // no browser autoscroll; middle-drag turns the camera
       if (game.controlsLocked) return;
       this.mouse.clicked.add(e.button);
       if (!this.locked && this.pointerLockEnabled && e.button === 0) {
@@ -32,7 +33,7 @@ export class Input {
     addEventListener('mouseup', (e) => this.mouse.buttons.delete(e.button));
     addEventListener('mousemove', (e) => {
       this.mouse.x = e.clientX; this.mouse.y = e.clientY;
-      if (this.locked || this.mouse.buttons.has(2)) {
+      if (this.locked || this.mouse.buttons.has(2) || this.mouse.buttons.has(1)) {
         this.mouse.dx += e.movementX;
         this.mouse.dy += e.movementY;
       }
