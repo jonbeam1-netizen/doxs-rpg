@@ -174,7 +174,10 @@ export class NPCManager {
     if (npc.networked && !net.isAuthority) {
       // Show feedback now, let the host decide the outcome.
       this._hitFeedback(npc, amount, opts, attackerId === 'local');
-      try { net.sendToHost({ t: 'npc:damage', id: npc.id, dmg: Math.round(amount), kx: opts.dir?.x ?? 0, kz: opts.dir?.z ?? 0, heavy: !!opts.heavy, kb: opts.kb ?? 0 }); } catch { /* ignore */ }
+      try {
+        net.sendToHost({ t: 'npc:damage', id: npc.id, dmg: Math.round(amount), kx: opts.dir?.x ?? 0, kz: opts.dir?.z ?? 0, heavy: !!opts.heavy, kb: opts.kb ?? 0,
+          kd: opts.knockdown === true ? 1 : opts.knockdown === false ? 0 : undefined, gb: opts.guardBreak ? 1 : 0, pw: opts.power || 0, bl: opts.blocked ? 1 : 0 });
+      } catch { /* ignore */ }
       npc.predictedHp = (npc.predictedHp ?? npc.hp) - amount;
       return { dealt: amount, killed: npc.predictedHp <= 0 };
     }
@@ -300,7 +303,7 @@ export class NPCManager {
     npc.dodge = null;
     if (dir) { npc.facing = Math.atan2(-dir.x, -dir.z); npc.group.rotation.y = npc.facing; }
     npc.model.setDead(true, { fall: true });
-    npc.airVy = clamp(1.6 + kb * 0.22, 2, 5.5);
+    npc.airVy = clamp(1.6 + kb * 0.18, 2, 4.6);
     this._settleBody(npc);
   }
 
@@ -493,6 +496,7 @@ export class NPCManager {
 
   _flee(npc, tgt) {
     this._cancelAttack(npc);
+    npc.cross = null;
     if (npc.guard > 0) this._setGuard(npc, 0);
     npc.state = 'flee';
     npc.stateT = 0;
@@ -804,6 +808,8 @@ export class NPCManager {
     }
     const w = g.world;
     const civilian = !npc.hostile && npc.state !== 'flee';
+    // now and then cross the street properly: walk to a signalized corner, wait for WALK, cross
+    if (civilian && w?.signals?.list?.length && chance(npc.data?.purpose ? 0.35 : 0.2)) { const c = this._planCrossing(npc); if (c) return c; }
     if (civilian && npc.data?.purpose) { const p = this._purposeGoal(npc); if (p) return p; }
     // civilians stick to sidewalks; crossing the road straight across is fine now and then
     if (civilian && typeof w?.sidewalkPointNear === 'function') {
@@ -812,7 +818,7 @@ export class NPCManager {
         try { p = w.sidewalkPointNear(npc.pos.x, npc.pos.z, 4, 30); } catch { p = null; }
         if (!p || !this.los(npc.pos.x, npc.pos.z, p.x, p.z)) continue;
         const mx = (p.x + npc.pos.x) / 2, mz = (p.z + npc.pos.z) / 2;
-        if (!this.walkable(mx, mz) && !chance(0.05)) continue; // jaywalk rarely
+        if (!this.walkable(mx, mz) && (w.signals?.list?.length || !chance(0.05))) continue; // cross at crosswalks, not mid-block
         if (this._crowded(p.x, p.z, npc)) continue;
         return p;
       }
@@ -876,8 +882,92 @@ export class NPCManager {
     return false;
   }
 
+  // Pick a crosswalk at a nearby signalized junction: returns the corner to walk to (and sets npc.cross).
+  // Route: corner (wait) -> curb at the zebra -> across -> far curb -> far corner. The zebra sits
+  // between the junction box and the stop line, so waiting cars never block it.
+  _planCrossing(npc) {
+    const w = this.game.world, sig = w.signals, roads = w.roads;
+    let best = null, bd = 60 * 60;
+    for (const j of sig.list) {
+      const d = (j.x - npc.pos.x) ** 2 + (j.z - npc.pos.z) ** 2;
+      if (d < bd) { bd = d; best = j; }
+    }
+    if (!best) return null;
+    const N = roads?.nodes?.[best.node];
+    if (!N) return null;
+    const opts = [];
+    for (const ax of best.axes) for (const h of [ax, ax + Math.PI]) {
+      let sl = null;
+      try { sl = sig.stopLine(best.node, h); } catch { sl = null; }
+      if (!sl) continue;
+      const e = roads.info?.[sl.edge];
+      const road = e?.lanes?.length ? Math.max(...e.lanes) + 1.6 : (e?.hw ?? 8) - 1.5;
+      const ux = -Math.sin(h), uz = -Math.cos(h); // from the node out along the approach
+      const rx = uz, rz = -ux;
+      const P = (along, lat) => ({ x: N.x + ux * along + rx * lat, z: N.z + uz * along + rz * lat });
+      // a corner spot that's sidewalk on BOTH sides of this road
+      let wait = null;
+      for (const da of [0.5, 1.3, 2.2, 3.2, 4.5]) {
+        for (const dl of [0.6, 1.2, 2, 3, 4]) {
+          const a = P(sl.dist + da, road + dl), b = P(sl.dist + da, -(road + dl));
+          if (this.walkable(a.x, a.z) && this.walkable(b.x, b.z) && !this.game.physics.pointBlocked(a.x, a.z) && !this.game.physics.pointBlocked(b.x, b.z)) { wait = { da, dl }; break; }
+        }
+        if (wait) break;
+      }
+      if (!wait) continue;
+      const zebra = Math.max(2, sl.dist - 2);
+      const side = ((npc.pos.x - N.x) * rx + (npc.pos.z - N.z) * rz) >= 0 ? 1 : -1;
+      const pts = [P(sl.dist + wait.da, side * (road + wait.dl)), P(zebra, side * (road + 0.4)), P(zebra, -side * (road + 0.4)), P(sl.dist + wait.da, -side * (road + wait.dl))];
+      opts.push({ pts, d: Math.hypot(pts[0].x - npc.pos.x, pts[0].z - npc.pos.z) });
+    }
+    opts.sort((p, q) => p.d - q.d);
+    for (const o of opts.slice(0, 2)) {
+      if (!this.los(npc.pos.x, npc.pos.z, o.pts[0].x, o.pts[0].z)) continue;
+      const h = Math.atan2(o.pts[2].x - o.pts[1].x, o.pts[2].z - o.pts[1].z);
+      npc.cross = { node: best.node, pts: o.pts, i: 0, h, phase: 'approach', t: 0, react: rand(0.2, 0.9) };
+      return { x: o.pts[0].x, z: o.pts[0].z };
+    }
+    return null;
+  }
+
+  // Crosswalk routine. Returns true while it's steering the NPC.
+  _crossStep(npc, dt) {
+    const c = npc.cross;
+    const sig = this.game.world?.signals;
+    if (!sig) { npc.cross = null; return false; }
+    c.t += dt;
+    const go = (pt, sp) => {
+      const dx = pt.x - npc.pos.x, dz = pt.z - npc.pos.z, d = Math.hypot(dx, dz) || 1;
+      npc.vx = (dx / d) * sp; npc.vz = (dz / d) * sp;
+      return d;
+    };
+    if (c.phase === 'approach') {
+      if (go(c.pts[0], npc.walk) < 0.7) { c.phase = 'wait'; c.t = 0; npc.vx = npc.vz = 0; return true; }
+      if (c.t > 40 || npc.stuckT > 1.5) { npc.cross = null; npc.goal = null; return false; }
+      return true;
+    }
+    if (c.phase === 'wait') {
+      npc.vx = npc.vz = 0;
+      npc.faceTo = c.h;
+      let walk = true;
+      try { walk = sig.walkAt(c.node, c.h); } catch { walk = true; }
+      c.green = walk ? (c.green || 0) + dt : 0;
+      if (c.green > c.react) { c.phase = 'cross'; c.t = 0; c.i = 1; }
+      else if (c.t > 45) { npc.cross = null; npc.goal = null; return false; }
+      return true;
+    }
+    // crossing: brisk walk over the zebra, then step up onto the far corner
+    if (go(c.pts[c.i], npc.walk * 1.35) < 0.6) {
+      c.i++;
+      if (c.i >= c.pts.length) { npc.cross = null; npc.goal = null; npc.stateT = 0; npc.vx = npc.vz = 0; return false; }
+    }
+    if (c.t > 25) { npc.cross = null; npc.goal = null; return false; }
+    return true;
+  }
+
   _sWander(npc, dt, players) {
-    if (npc.hostile) { npc.state = 'hunt'; return; }
+    if (npc.hostile) { npc.state = 'hunt'; npc.cross = null; return; }
+    if (npc.cross) { if (this._crossStep(npc, dt)) { npc.onRoad = false; return; } }
     if (!npc.goal) {
       npc.goal = this._pickGoal(npc);
       if (!npc.goal) { npc.state = 'idle'; npc.stateT = 0; npc.idleFor = rand(1, 3); return; }

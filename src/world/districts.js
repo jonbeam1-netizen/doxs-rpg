@@ -26,16 +26,15 @@ export function buildOverpass(C) {
   }
   // pillars (single row on the centerline, midblock)
   for (let x = -360; x <= 360; x += 80) {
-    const px = x + 40 > 380 ? null : x + 40;
-    if (px == null) continue;
+    const px = x; // midblock: never in a north-south street
     g.frame(px, z, 0);
     g.box('w_concrete', 0, y / 2, 0, 2.4, y, 2.4, { uvScale: [12, 14], color: '#8a867c' });
     g.box('w_concrete', 0, y - 0.6, 0, 3.4, 1.2, W - 4, { uvScale: [12, 14], color: '#7a766c' });
-    g.push(); g.translate(0, 0, 1.25); P.graffitiAt(C, 2.2, 0.8); g.pop();
+    if (((x + 360) / 80) % 3 === 1) { g.push(); g.translate(0, 0, 1.25); P.graffitiAt(C, 2.2, 0.8); g.pop(); }
     C.solid(px - 1.3, z - 1.3, px + 1.3, z + 1.3, y);
   }
   // also pillars at the far ends
-  for (const px of [-400, 400]) { g.frame(px, z, 0); g.box('w_concrete', 0, y / 2, 0, 2.4, y, 2.4, { uvScale: [12, 14], color: '#8a867c' }); C.solid(px - 1.3, z - 1.3, px + 1.3, z + 1.3, y); }
+  for (const px of [-412, 412]) { g.frame(px, z, 0); g.box('w_concrete', 0, y / 2, 0, 2.4, y, 2.4, { uvScale: [12, 14], color: '#8a867c' }); C.solid(px - 1.3, z - 1.3, px + 1.3, z + 1.3, y); }
   // broken ends with rebar
   for (const s of [-1, 1]) {
     const ex = s * x1;
@@ -45,7 +44,7 @@ export function buildOverpass(C) {
       g.box('metal', 0, 1.2, 0, 0.06, 2.4 + C.rng() * 2, 0.06, { color: '#5a3a2a' });
       g.pop();
     }
-    for (let i = 0; i < 6; i++) { const rx = ex + s * (2 + C.rng() * 8), rz = z + (C.rng() - 0.5) * 18; g.frame(rx, rz, C.rng() * 6); g.rotX((C.rng() - 0.5) * 0.5); g.box('w_concrete', 0, 0.6, 0, 3 + C.rng() * 3, 1.2 + C.rng(), 2 + C.rng() * 3, { uvScale: [12, 14], color: '#7a766c' }); C.solid(rx - 2, rz - 2, rx + 2, rz + 2, 1.6); }
+    for (let i = 0; i < 6; i++) { const rx = ex + s * (2 + C.rng() * 8), rz = z + (C.rng() - 0.5) * 18, ry = C.rng() * 6; C.rng(); const sw = 3 + C.rng() * 3, sh = 1.2 + C.rng(), sd = 2 + C.rng() * 3; if (!C.free(rx, rz, 3)) continue; g.frame(rx, rz, ry); g.box('w_concrete', 0, sh / 2, 0, sw, sh, sd, { uvScale: [12, 14], color: '#7a766c' }); C.obb(rx, rz, ry, sw, sd, sh); }
   }
   // dead lamps on the deck
   for (let x = x0 + 20; x < x1; x += 50) { g.frame(x, z - W / 2 + 0.8, 0); g.cyl('metal', 0, y + 1.6 + 3, 0, 0.1, 0.14, 6, 6, { color: '#3a3a36' }); g.box('metal', 0, y + 7.6, 1.2, 0.12, 0.12, 2.4, { color: '#3a3a36' }); }
@@ -166,9 +165,11 @@ export function buildEdges(C, scene) {
     }
   }
   // Route 9 barricade at the west edge
+  C.ctx = 'barricade';
   for (let k = -6; k <= 6; k += 3) P.jersey(C, -684, k, 0, 3);
+  C.ctx = 'edges';
   g.frame(-686, 0, PI / 2);
-  locSign(C, { cx: -686, cz: 0, rot: PI / 2, w: 0, d: 0 }, 'route9', "ROAD CLOSED Â· IT'S WORSE OUT THERE", { w: 10, h: 1.8, y: 2.6, z: 0, bg: '#e8a020', fg: '#1a1a1a', double: true, gain: 0.5 });
+  locSign(C, { cx: -686, cz: 0, rot: PI / 2, w: 0, d: 0 }, 'route9', "ROAD CLOSED · IT'S WORSE OUT THERE", { w: 10, h: 1.8, y: 2.6, z: 0, bg: '#e8a020', fg: '#1a1a1a', double: true, gain: 0.5 });
   g.frame(-686, 0, PI / 2); for (const s of [-4.5, 4.5]) g.box('metal', s, 1.2, 0, 0.2, 2.4, 0.2, { color: '#333' });
 
   // far terrain ring (single mesh, softer fog so it reads as a silhouette)
@@ -223,7 +224,8 @@ export function buildEdges(C, scene) {
 // ----------------------------------------------------------------- open-ground scatter + billboards
 export function buildScatter(C) {
   const L = C.layout, r = C.rng;
-  const tries = { dustbowl: 900, hilltop: 380, gutterside: 420, rustyards: 360, downtown: 160 };
+  // open-ground dressing, kept sparse: a few deliberate pieces read better than a carpet of junk
+  const tries = { dustbowl: 520, hilltop: 160, gutterside: 70, rustyards: 90, downtown: 0 };
   const total = Object.values(tries).reduce((a, b) => a + b, 0);
   for (let i = 0; i < total * 2.2; i++) {
     const x = (r() * 2 - 1) * (BOUND - 6), z = (r() * 2 - 1) * (BOUND - 6);
@@ -231,62 +233,49 @@ export function buildScatter(C) {
     const d = districtAt(x, z);
     if (tries[d] <= 0) continue;
     if (!L.isFree(x, z, 2.2)) continue;
-    tries[d]--;
     const k = r();
+    const need = d === 'rustyards' && k >= 0.4 && k < 0.55 ? 7 : 2.4; // containers need room
+    if (!C.free(x, z, need)) continue;
+    tries[d]--;
     switch (d) {
       case 'dustbowl':
-        if (k < 0.42) P.cactus(C, x, z, 0.8 + r() * 0.7);
-        else if (k < 0.75) P.rock(C, x, z, 0.4 + r() * 1.6);
-        else if (k < 0.8) P.tires(C, x, z, 1 + (r() * 3 | 0));
-        else if (k < 0.84) P.junkPile(C, x, z, 0.7);
-        else if (k < 0.87) P.wreck(C, x, z, r() * 6, { burnt: r() < 0.5, blocks: r() < 0.5 });
-        else if (k < 0.9) P.deadTree(C, x, z, 0.7);
-        else P.litter(C, x, z, 2, 3);
+        if (k < 0.45) P.cactus(C, x, z, 0.8 + r() * 0.7);
+        else if (k < 0.85) P.rock(C, x, z, 0.4 + r() * 1.6);
+        else if (k < 0.9) P.tires(C, x, z, 1 + (r() * 3 | 0));
+        else if (k < 0.94) P.wreck(C, x, z, r() * 6, { burnt: r() < 0.5, blocks: true });
+        else P.deadTree(C, x, z, 0.7);
         break;
       case 'hilltop':
-        if (k < 0.55) P.deadTree(C, x, z, 0.9 + r() * 0.6);
-        else if (k < 0.75) P.rock(C, x, z, 0.4 + r() * 0.8);
-        else if (k < 0.85) P.hedge(C, x, z, 3 + r() * 4, 1.2, 1.2 + r() * 0.6, r() < 0.5 ? 0 : PI / 2);
-        else P.litter(C, x, z, 2, 3);
+        if (k < 0.7) P.deadTree(C, x, z, 0.9 + r() * 0.6);
+        else P.rock(C, x, z, 0.4 + r() * 0.8);
         break;
       case 'gutterside':
-        if (k < 0.3) P.trashPile(C, x, z, 3 + (r() * 5 | 0));
-        else if (k < 0.42) P.wreck(C, x, z, r() * 6, { burnt: r() < 0.4, blocks: r() < 0.5 });
-        else if (k < 0.5) P.fireBarrel(C, x, z);
-        else if (k < 0.6) P.mattress(C, x, z, r() * 6);
-        else if (k < 0.68) P.shoppingCart(C, x, z, r() * 6);
-        else if (k < 0.76) P.tires(C, x, z, 2 + (r() * 3 | 0));
-        else if (k < 0.84) P.puddle(C, x, z, 1 + r() * 2, r() * 6);
-        else if (k < 0.9) P.deadTree(C, x, z, 0.8);
-        else P.litter(C, x, z, 3, 8);
+        if (k < 0.25) P.wreck(C, x, z, r() * 6, { burnt: r() < 0.4, blocks: true });
+        else if (k < 0.4) P.fireBarrel(C, x, z);
+        else if (k < 0.6) P.tires(C, x, z, 2 + (r() * 3 | 0));
+        else if (k < 0.8) P.deadTree(C, x, z, 0.8);
+        else P.trashPile(C, x, z, 3);
         break;
       case 'rustyards':
-        if (k < 0.25) P.oilDrums(C, x, z, 2 + (r() * 4 | 0));
-        else if (k < 0.45) P.pallets(C, x, z, r() * 6, 1 + (r() * 3 | 0));
+        if (k < 0.25) P.oilDrums(C, x, z, 3);
+        else if (k < 0.4) P.pallets(C, x, z, r() * 6, 2);
         else if (k < 0.55) P.container(C, x, 0, z, r() < 0.5 ? 0 : PI / 2, ['#8a2a1a', '#2a4a6a', '#5a6a3a', '#a06a1a'][(r() * 4) | 0]);
-        else if (k < 0.65) P.tires(C, x, z, 3);
-        else if (k < 0.78) P.puddle(C, x, z, 1 + r() * 2.5, r() * 6);
-        else if (k < 0.84) P.fireBarrel(C, x, z);
-        else if (k < 0.9) P.junkPile(C, x, z, 0.8);
-        else P.litter(C, x, z, 3, 6);
-        break;
-      case 'downtown':
-        if (k < 0.4) P.trashPile(C, x, z, 3);
-        else if (k < 0.7) P.puddle(C, x, z, 1 + r() * 1.5, r() * 6);
-        else P.litter(C, x, z, 3, 6);
+        else if (k < 0.75) P.tires(C, x, z, 3);
+        else if (k < 0.85) P.fireBarrel(C, x, z);
+        else P.junkPile(C, x, z, 0.8);
         break;
     }
   }
   // billboards facing the big roads
   const big = L.edgeInfo.filter((e) => ['ring', 'diag', 'main'].includes(e.kind) && e.len > 40);
   let placed = 0;
-  for (let i = 0; i < 400 && placed < 34; i++) {
+  for (let i = 0; i < 400 && placed < 16; i++) {
     const e = big[(r() * big.length) | 0];
     const A = L.nodes[e.a];
     const s = 15 + r() * (e.len - 30), side = r() < 0.5 ? 1 : -1;
     const off = e.hw + e.sw + 4 + r() * 6;
     const x = A.x + e.dx * s - e.dz * off * side, z = A.z + e.dz * s + e.dx * off * side;
-    if (!L.isFree(x, z, 5)) continue;
+    if (!L.isFree(x, z, 5) || !C.free(x, z, 7)) continue;
     const rot = Math.atan2(e.dz * side, -e.dx * side) + (r() - 0.5) * 0.6;
     P.billboard(C, x, z, rot, { h: 8 + r() * 6, w: 12 + r() * 4 });
     L.occupied.add({ x0: x - 5, z0: z - 5, x1: x + 5, z1: z + 5 });

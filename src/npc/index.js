@@ -3,9 +3,11 @@
 //   game.combat -> player combat, brawls, death/KO, police helpers
 // Net message types (all { t, ... }):
 //   npc:snap            host -> all     networked NPC snapshot (~10Hz)
-//   npc:damage          client -> host  { id, dmg, kx, kz, heavy, kb }
+//   npc:damage          client -> host  { id, dmg, kx, kz, heavy, kb, kd?, gb, pw, bl }  (knockdown, guard break, heavy power, was blocked)
+//   npc:parried         client -> host  { id }  the client parried that NPC's swing (stagger it)
 //   npc:kill            host -> killer  { info }  rewards/loot for the client who landed the final blow
-//   combat:hitPlayer    host -> client  { dmg, lethal, cop, dx, dz, src, b, gun }
+//   combat:hitPlayer    host -> client  { dmg, lethal, cop, dx, dz, src, b, gun, from, m, hv, ub, kd, tz }
+//                       (melee, heavy hit, unblockable, knocks down, taser) — block/parry/dodge resolve on the client
 //   combat:down         client -> host  { ko | died }  (ends brawls aimed at that client)
 //   combat:brawl        client -> host  { id, spec }
 //   combat:brawlResult  host -> client  { id, won }
@@ -21,6 +23,7 @@ import { Ambient } from './ambient.js';
 import { Talk } from './talk.js';
 import { FX } from './fx.js';
 import { WEAPONS } from '../data/weapons.js';
+import { clamp } from '../core/util.js';
 
 export async function installNPCs(game) {
   const ctx = {};
@@ -56,6 +59,10 @@ export async function installNPCs(game) {
     get isDown() { return combat.isDown; },
     get brawls() { return combat.brawls; },
     fx, sfx: (name, opts) => fx.sfx.play(name, opts),
+    hitStop: (sec) => fx.hitStop(sec),
+    slowMo: (scale, sec) => fx.slowMo(scale, sec),
+    get blocking() { return combat.blocking; },
+    get lockTarget() { return combat.lock; },
     blood: (x, z, amt) => fx.blood(x, z, amt),
     dropCash: (x, z, amount) => fx.dropPickup(x, z, { kind: 'cash', amount }),
     _ctx: ctx,
@@ -108,14 +115,20 @@ export async function installNPCs(game) {
     if (!n || n.dead) return;
     const len = Math.hypot(msg.kx || 0, msg.kz || 0);
     const dir = len > 0 ? { x: msg.kx / len, z: msg.kz / len } : null;
-    npcs._applyDamage(n, Math.max(0, Math.min(500, Number(msg.dmg) || 0)), from, { dir, heavy: !!msg.heavy, kb: msg.kb || 3 });
+    npcs._applyDamage(n, Math.max(0, Math.min(500, Number(msg.dmg) || 0)), from, {
+      dir, heavy: !!msg.heavy, kb: clamp(Number(msg.kb) || 3, 0, 30),
+      knockdown: msg.kd === 1 ? true : msg.kd === 0 ? false : undefined, guardBreak: !!msg.gb, power: clamp(Number(msg.pw) || 0, 0, 1), blocked: !!msg.bl,
+    });
   });
+  net.on('npc:parried', (msg) => { if (net.isAuthority) { const n = npcs.get(msg.id); if (n && !n.dead && !n.replica) npcs.parried(n); } });
   net.on('npc:kill', (msg) => { if (msg.info) combat.reward(msg.info); });
   net.on('combat:hitPlayer', (msg) => {
     const len = Math.hypot(msg.dx || 0, msg.dz || 0);
     combat.hurtPlayer(Math.max(0, Math.min(300, Number(msg.dmg) || 0)), {
       lethal: msg.lethal !== false, cop: !!msg.cop, gun: !!msg.gun, source: String(msg.src || 'a goon').slice(0, 40),
       dir: len > 0 ? { x: msg.dx / len, z: msg.dz / len } : null,
+      npc: msg.from != null ? npcs.get(msg.from) : null,
+      melee: !!msg.m, heavyHit: !!msg.hv, unblockable: !!msg.ub, knockdown: !!msg.kd, taser: !!msg.tz,
     });
   });
   net.on('combat:down', (msg, from) => { if (net.isAuthority) combat.onRemoteDown(from); });

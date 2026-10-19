@@ -69,7 +69,7 @@ export function runAudit(recs, layout, { near = null, limit = 80 } = {}) {
     for (let x = Math.floor(walk.minX / CELL); x <= Math.floor(walk.maxX / CELL); x++) for (let z = Math.floor(walk.minZ / CELL); z <= Math.floor(walk.maxZ / CELL); z++) for (const j of grid.get(x + ',' + z) ?? []) cand.add(j);
     for (const j of cand) {
       const r = list[j];
-      if (r.ctx === 'parked') continue;
+      if (r.ctx === 'parked' || r.ctx === 'barricade' || r.ctx === 'drag') continue; // meant to sit on the road
       if (area(r.b, road) > 0.05) add(r.kind === 'building' ? 'building-on-road' : 'on-road', r, { edge: e.name });
       else if (r.kind === 'building' && area(r.b, walk) > 0.3) add('building-on-sidewalk', r, { edge: e.name });
     }

@@ -149,7 +149,7 @@ export const Y = { walk: 0.03, road: 0.05, patch: 0.056, decal: 0.066, mark: 0.0
 
 export function manhole(C, x, z, steam = false, y = Y.decal) {
   const g = C.geo; g.frame(x, z, 0);
-  g.disc('decal_dark', 0, y, 0, 0.6, 10, { color: '#2a2622' });
+  g.disc('marking', 0, y, 0, 0.6, 10, { color: '#2a2622' });
   if (steam) C.emit(x, 0.1, z, 'steam');
 }
 

@@ -228,7 +228,7 @@ function edgeProps(C, e, nodes, ei) {
   const dist = e.district;
   if (e.kind === 'bridge') {
     for (let s = c0 + 8, k = 0; s < c1; s += e.light, k++) for (const side of [1, -1]) {
-      const [x, z] = at(s, (e.hw + 0.7) * side);
+      const [x, z] = at(s, (e.hw + 0.3) * side);
       P.streetlight(C, x, z, Math.atan2(-px * side, -pz * side), { flicker: (k + (side > 0 ? 1 : 0)) % 5 === 0, color: '#ffb060', arm: 2.2, h: 7.6 });
     }
     return;
@@ -246,12 +246,16 @@ function edgeProps(C, e, nodes, ei) {
   const sp = e.light;
   const n = Math.max(1, Math.floor((c1 - c0) / sp) + 1);
   const off0 = c0 + ((c1 - c0) - (n - 1) * sp) / 2;
+  // location entrances on this edge (lot centres): keep lamp posts out of their way
+  const locFronts = L.placed.filter((r) => r.edge === e).map((r) => ({ s: (r.cx - A.x) * dx + (r.cz - A.z) * dz, side: Math.sign((r.cx - A.x) * px + (r.cz - A.z) * pz) }));
   for (let k = 0; k < n; k++) {
-    const s = off0 + k * sp;
+    const s0 = off0 + k * sp;
     const sides = (e.kind === 'ring' || e.kind === 'main') ? [1, -1] : [k % 2 ? 1 : -1];
     for (const side of sides) {
+      const lf = locFronts.find((f) => f.side === side && Math.abs(f.s - s0) < 3);
+      const s = lf ? (s0 < lf.s ? lf.s - 3.5 : lf.s + 3.5) : s0;
       if (desert) {
-        if (side === 1 && k % 2 === 0) { const [x, z] = at(s, (e.hw + 3) * side); P.woodPole(C, x, z, Math.atan2(-px * side, -pz * side), { lamp: true }); }
+        if (side === 1 && k % 2 === 0) { const [x, z] = at(s, (e.hw + 2.2) * side); P.woodPole(C, x, z, Math.atan2(-px * side, -pz * side), { lamp: true }); }
         continue;
       }
       const [x, z] = at(s, (e.hw + 0.6) * side);
@@ -263,8 +267,10 @@ function edgeProps(C, e, nodes, ei) {
   // --- power lines (one side, near the building line)
   if ((slum || dist === 'rustyards' || dist === 'dustbowl' || dist === 'blackwater') && e.kind !== 'drag') {
     let prev = null;
-    const off = desert ? -(e.hw + 4.5) : -(e.hw + e.sw - 0.5);
-    for (let s = c0 + 8; s < c1; s += 38) {
+    const off = desert ? -(e.hw + 2.2) : -(e.hw + e.sw - 0.5);
+    for (let s0 = c0 + 8; s0 < c1; s0 += 38) {
+      const lf = locFronts.find((f) => f.side === -1 && Math.abs(f.s - s0) < 4);
+      const s = lf ? (s0 < lf.s ? lf.s - 4.5 : lf.s + 4.5) : s0;
       const [x, z] = at(s, off);
       if (!desert && nearLoc(x, z, 0.8)) { prev = null; continue; }
       const pts = P.woodPole(C, x, z, Math.atan2(dx, dz) + Math.PI / 2, {});
@@ -286,7 +292,7 @@ function edgeProps(C, e, nodes, ei) {
     for (const f of [0.3, 0.5, 0.7]) {
       const s = c0 + (c1 - c0) * f;
       const [x, z] = at(s, (e.hw + e.sw - 1.0) * side);
-      if (!ok(side, s, 2.4) || nearLoc(x, z, 1.5)) continue;
+      if (!ok(side, s, 2.4) || nearLoc(x, z, 4)) continue;
       P.busStop(C, x, z, Math.atan2(-px * side, -pz * side)); take(side, s, 2.4);
       if (dist === 'downtown' && ok(side, s + 3.4, 0.9)) { const [nx, nz] = at(s + 3.4, (e.hw + e.sw - 0.6) * side); if (!nearLoc(nx, nz, 1.2)) { P.newsBoxes(C, nx, nz, Math.atan2(-px * side, -pz * side)); take(side, s + 3.4, 0.9); } }
       break;
@@ -335,5 +341,5 @@ function edgeProps(C, e, nodes, ei) {
   }
   // --- one manhole, one puddle in the gutter
   if (c1 - c0 > 30) { const [x, z] = at((c0 + c1) / 2, (ei % 3 - 1) * e.hw * 0.35); P.manhole(C, x, z, (dist === 'downtown' || slum) && ei % 4 === 0); }
-  if (rng() < 0.5) { const side = rng() < 0.5 ? 1 : -1, s = c0 + (c1 - c0) * (0.2 + rng() * 0.6); const [x, z] = at(s, (e.hw - 1.4) * side); P.puddle(C, x, z, 0.8 + rng() * 1.2, rng() * 6); }
+  if (rng() < 0.5 && (slum || dist === 'rustyards')) { const side = rng() < 0.5 ? 1 : -1, s = c0 + (c1 - c0) * (0.2 + rng() * 0.6); const [x, z] = at(s, (e.hw - 1.4) * side); P.puddle(C, x, z, 0.8 + rng() * 1.2, rng() * 6); }
 }

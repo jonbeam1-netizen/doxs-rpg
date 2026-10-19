@@ -249,6 +249,7 @@ export class Traffic {
           if (dot < -0.5) desired = Math.min(desired, 3); // U-turn at a dead end
         }
       }
+      desired = this.obeySignal(car, ai, ux, uz, desired);
     } else {
       // No road graph: drive straight along a lane heading, turn at walls.
       if (ai.dir == null) ai.dir = car.heading;
@@ -284,7 +285,8 @@ export class Traffic {
       ai.honkT = 2.5 + Math.random() * 3;
       this.honk(car, ai.wait > 5);
     }
-    if (ai.wait > 4 && ai.obstType !== 'player') { ai.ignoreT = 2.2; ai.wait = 0; }
+    // stuck behind something that isn't moving? nudge past it — unless we're all waiting at a red light
+    if (ai.wait > 4 && ai.obstType !== 'player' && !ai.lightHold) { ai.ignoreT = 2.2; ai.wait = 0; }
 
     const v = car.vf;
     if (v < desired - 0.6) { inp.throttle = clamp((desired - v) / 4, 0.25, 1); inp.reverse = 0; }
@@ -298,6 +300,31 @@ export class Traffic {
       ai.backT -= dt;
       inp.throttle = 0; inp.reverse = 1; inp.noReverse = false; inp.steer = -inp.steer; inp.handbrake = false;
     }
+  }
+
+  // Traffic lights (game.world.signals): brake smoothly to the stop line on red, and on yellow
+  // unless we're too close to stop comfortably; go on green. Cars behind queue via sense().
+  // Police cruisers drive themselves (src/vehicles/police.js) and ignore lights.
+  obeySignal(car, ai, ux, uz, desired) {
+    ai.lightHold = false;
+    const sig = this.game.world?.signals;
+    if (!sig?.stateAt || ai.to == null || car.sirenOn) return desired;
+    const heading = Math.atan2(ux, uz);
+    let st;
+    try { st = sig.stateAt(ai.to, heading); } catch { return desired; }
+    if (st === 'green') { if (ai.runLight === ai.to) ai.runLight = null; return desired; }
+    if (ai.runLight === ai.to) return desired; // committed through the yellow
+    let sl = null;
+    try { sl = sig.stopLine(ai.to, heading); } catch { sl = null; }
+    if (!sl) return desired;
+    const p = car.group.position;
+    const sd = (sl.x - p.x) * ux + (sl.z - p.z) * uz - car.dims.L / 2; // front bumper -> stop line
+    if (sd < -0.6 || sd > 70) return desired; // already in the box / far away
+    const v = Math.max(0, car.vf);
+    if (st === 'yellow' && sd < (v * v) / (2 * 5.5) + 1) { ai.runLight = ai.to; return desired; }
+    ai.lightHold = true;
+    const vStop = Math.sqrt(2 * 3.6 * Math.max(0, sd - 0.4));
+    return Math.min(desired, vStop < 0.9 ? 0 : vStop);
   }
 
   // Distance to the nearest thing in this car's lane ahead.

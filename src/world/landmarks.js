@@ -140,17 +140,19 @@ export const LANDMARKS = {
     const g = C.geo, H = helpers(C, lot), W = lot.w, D = lot.d;
     const fb = fitBays(W); // 12 bays of 3 m: rooms = door bay + window bay
     const FH = 3.7, Hh = 2 * FH;
-    const rooms = Math.floor(fb.n / 2);
+    const rooms = Math.floor((fb.n - 2) / 2); // east end bays hold the stairs
     const roomX = (i) => -W / 2 + (2 * i + 0.5) * fb.w;
     const doors = [];
     for (let i = 0; i < rooms; i++) for (const fl of [0, 1]) doors.push({ x: roomX(i), w: 1.1, h: 2.3, y: fl * FH });
     H.f();
     const top = mass(C, { W, D, H: Hh, facade: 'stucco_pink', tint: '#c8b0a0', parapet: 0.6, doors });
-    // walkway + railing for the 2nd floor, posts down to the ground
-    g.box('props', 0, FH - 0.12, D / 2 + 0.9, W, 0.24, 1.8, { color: '#6a625a', faces: 'fblrtu' });
-    g.box('metal', 0, FH + 1.0, D / 2 + 1.75, W, 0.08, 0.08, { color: '#2a2a2a' });
-    for (let x = -W / 2 + 0.3; x <= W / 2; x += 0.6) g.box('metal', x, FH + 0.5, D / 2 + 1.75, 0.04, 1.0, 0.04, { color: '#2a2a2a' });
-    for (let x = -W / 2 + 0.3; x <= W / 2; x += 6) g.box('metal', x, (FH - 0.24) / 2, D / 2 + 1.7, 0.15, FH - 0.24, 0.15, { color: '#3a3a3a' });
+    // walkway + railing for the 2nd floor (stops short of the east end, where the stairs come down)
+    const WL = W - 5.5, wx0 = -W / 2 + WL / 2;
+    g.box('props', wx0, FH - 0.12, D / 2 + 0.9, WL, 0.24, 1.8, { color: '#6a625a', faces: 'fblrtu' });
+    g.box('metal', wx0, FH + 1.0, D / 2 + 1.75, WL, 0.08, 0.08, { color: '#2a2a2a' });
+    for (let x = -W / 2 + 0.3; x <= -W / 2 + WL; x += 0.6) g.box('metal', x, FH + 0.5, D / 2 + 1.75, 0.04, 1.0, 0.04, { color: '#2a2a2a' });
+    const posts = []; for (let x = -W / 2 + 0.3; x <= -W / 2 + WL - 0.1; x += 6) posts.push(x); posts.push(-W / 2 + WL - 0.1);
+    for (const x of posts) g.box('metal', x, (FH - 0.24) / 2, D / 2 + 1.7, 0.15, FH - 0.24, 0.15, { color: '#3a3a3a' });
     // room doors on both floors (room 6 = ground floor, third room: the player's place)
     let door6 = null;
     for (let i = 0; i < rooms; i++) for (const fl of [0, 1]) {
@@ -160,17 +162,19 @@ export const LANDMARKS = {
       P.doorway(C, roomX(i), 1.1, 2.3, num % 4 === 0 ? 5 : 0, { lamp: (i + fl) % 2 === 0, lampColor: '#ffb070' });
     }
     H.f(); C.obbLocal(lot, 0, 0, W, D, top);
-    for (let x = -W / 2 + 0.3; x <= W / 2; x += 6) C.obbLocal(lot, x, D / 2 + 1.7, 0.3, 0.3, FH);
-    // stairs at the east end
-    H.f(); g.push(); g.translate(W / 2 + 0.9, FH / 2, D / 2 - 2); g.rotX(-Math.atan2(FH, 5)); g.box('metal', 0, 0, 0, 1.4, 0.15, Math.hypot(FH, 5), { color: '#3a3a3a' }); g.pop();
-    C.obbLocal(lot, W / 2 + 0.9, D / 2 - 2, 1.5, 5, FH);
+    for (const x of posts) C.obbLocal(lot, x, D / 2 + 1.7, 0.3, 0.3, FH);
+    // stairs continue the walkway line down to the ground at the east end
+    const run = W / 2 - 0.4 - (-W / 2 + WL);
+    H.f(); g.push(); g.translate(-W / 2 + WL + run / 2, FH / 2 - 0.1, D / 2 + 0.9); g.rotZ(-Math.atan2(FH, run)); g.box('metal', 0, 0, 0, Math.hypot(FH, run), 0.15, 1.4, { color: '#3a3a3a' }); g.pop();
+    C.obbLocal(lot, -W / 2 + WL + run * 0.75, D / 2 + 0.9, run / 2, 1.4, 1.5);
     // pole sign: ROACH MOTEL + VACANCY-ish
-    H.f(); g.translate(-W / 2 - 2.5, 0, D / 2 - 1);
+    const psx = -W / 2 + 0.6, psz = D / 2 + 1.5; // pole sign in the front setback corner
+    H.f(); g.translate(psx, 0, psz);
     g.box('metal', 0, 4.4, 0, 0.5, 8.8, 0.5, { color: '#2a2622' });
-    C.obbLocal(lot, -W / 2 - 2.5, D / 2 - 1, 0.6, 0.6, 10);
-    H.f(); g.translate(-W / 2 - 2.5, 0, D / 2 - 1); g.rotY(PI / 2);
+    C.obbLocal(lot, psx, psz, 0.6, 0.6, 10);
+    H.f(); g.translate(psx, 0, psz); g.rotY(PI / 2);
     locSign(C, { ...lot, d: 0 }, 'roach_motel', 'ROACH MOTEL', { w: 7, h: 2.4, y: 9.2, z: -0.1, bg: '#3a1020', fg: '#ff5a8a', neon: '#ff3a6a', double: true, gain: 2.4 });
-    H.f(); g.translate(-W / 2 - 2.5, 0, D / 2 - 1); g.rotY(PI / 2);
+    H.f(); g.translate(psx, 0, psz); g.rotY(PI / 2);
     locSign(C, { ...lot, d: 0 }, 'roach_vac', 'VACANCY-ish', { w: 4.6, h: 1.1, y: 7.0, z: -0.1, bg: '#101410', fg: '#7aff6a', neon: null, double: true, gain: 2.8, font: 'Barlow Condensed' });
     // giant roach on the roof
     H.f(); g.translate(W / 4, top, -1);
@@ -179,12 +183,11 @@ export const LANDMARKS = {
     g.sphere('props', 0, 0.9, 2.4, 0.9, 8, 5, { color: rc, sy: 0.6 });
     for (const s of [-1, 1]) for (const t of [-1.2, 0, 1.2]) { g.push(); g.translate(s * 1.8, 0.6, t); g.rotZ(s * 0.9); g.box('props', 0, 0, 0, 0.12, 2.2, 0.12, { color: rc }); g.pop(); }
     for (const s of [-1, 1]) { g.push(); g.translate(s * 0.4, 1.3, 3); g.rotX(-1.0); g.rotZ(s * 0.3); g.box('props', 0, 1.6, 0, 0.06, 3.4, 0.06, { color: rc }); g.pop(); }
-    // ice machine + vending machine under the walkway, between room doors
-    const vx = roomX(rooms - 1) + 1.75;
-    H.f(); g.box('metal', vx + 0.6, 0.9, D / 2 + 0.45, 0.9, 1.8, 0.8, { color: '#a0a8b0' });
-    g.box('metal', vx - 0.45, 1.0, D / 2 + 0.45, 0.95, 2.0, 0.8, { color: '#5a1a14' });
-    g.box('lamp', vx - 0.45, 1.25, D / 2 + 0.86, 0.75, 1.3, 0.02, { color: '#ff6a4a', faces: 'f' });
-    C.obbLocal(lot, vx, D / 2 + 0.45, 2.2, 0.9, 2);
+    // vending machine tucked under the high end of the stairs
+    const vx = -W / 2 + WL + 1.0;
+    H.f(); g.box('metal', vx, 1.0, D / 2 + 0.45, 0.95, 2.0, 0.8, { color: '#5a1a14' });
+    g.box('lamp', vx, 1.25, D / 2 + 0.86, 0.75, 1.3, 0.02, { color: '#ff6a4a', faces: 'f' });
+    C.obbLocal(lot, vx, D / 2 + 0.45, 1.0, 0.9, 2);
     return { door: door6 };
   },
 
@@ -225,7 +228,7 @@ export const LANDMARKS = {
 
   rats_clubhouse(C, lot, loc) {
     const g = C.geo, H = helpers(C, lot);
-    const r = shop(C, lot, loc, { floors: 2, facade: 'tenement', tint: '#9a8a7a', shopTint: '#2a2a2a', door: 1, signText: 'GUTTER RATS', bg: '#0a0a0a', fg: '#a8ff30', neon: null, signW: 10, lampColor: '#a8ff60', display: SHOP_CELL.dark });
+    const r = shop(C, lot, loc, { floors: 2, facade: 'tenement', tint: '#9a8a7a', shopTint: '#5a5a50', door: 1, signText: 'GUTTER RATS', bg: '#0a0a0a', fg: '#a8ff30', neon: '#60ff30', signW: 10, lampColor: '#a8ff60', display: SHOP_CELL.goods });
     // rat head on the roof
     H.f(); g.translate(0, r.top, 0);
     g.sphere('props', 0, 1.5, 0, 2.6, 8, 6, { color: '#5a5450', sy: 0.8 });
@@ -658,24 +661,28 @@ export const LANDMARKS = {
   dirty_spur(C, lot, loc) {
     const g = C.geo, H = helpers(C, lot), W = lot.w, D = lot.d;
     H.f();
-    const top = mass(C, { W, D, H: 5, facade: 'wood', tint: '#c8a888', parapet: 0, doors: [{ x: 0, w: 2, h: 2.6 }] });
+    // saloon sits back on its lot so the porch and the bikes stay off the sidewalk
+    const BD = D - 5, fz = D / 2 - 5;
+    H.f(); g.translate(0, 0, -2.5);
+    const top = mass(C, { W, D: BD, H: 5, facade: 'wood', tint: '#c8a888', parapet: 0, doors: [{ x: 0, w: 2, h: 2.6 }] });
+    H.f();
     // false front (plain boards) carrying the sign
-    g.box('w_wood', 0, 6, D / 2 + 0.2, W, 3, 0.4, { uvScale: [12, 14], color: '#b89878' });
-    g.box('wood', 0, 3.2, D / 2 + 1.6, W, 0.15, 3.2, { color: '#6a5440' }); // porch roof
-    for (let x = -W / 2 + 0.3; x <= W / 2; x += W / 4) { g.box('wood', x, 1.6, D / 2 + 3.0, 0.25, 3.2, 0.25, { color: '#5a4430' }); C.obbLocal(lot, x, D / 2 + 3.0, 0.3, 0.3, 3.2); }
-    g.box('wood', 0, 0.06, D / 2 + 1.6, W, 0.12, 3.2, { color: '#6a5440' });
-    const door = entrance(C, lot, 0, { w: 2, h: 2.6, door: 0, color: '#ffa040' });
-    H.f(); locSign(C, lot, loc.id, 'THE DIRTY SPUR', { w: 12, h: 2.0, y: 6.1, z: D / 2 + 0.4, bg: '#2a1a0a', fg: '#ffb040', neon: '#ff9020', gain: 2.2 });
+    g.box('w_wood', 0, 6, fz + 0.2, W, 3, 0.4, { uvScale: [12, 14], color: '#b89878' });
+    g.box('wood', 0, 3.2, fz + 1.6, W, 0.15, 3.2, { color: '#6a5440' }); // porch roof
+    for (let x = -W / 2 + 0.3; x <= W / 2; x += W / 4) { g.box('wood', x, 1.6, fz + 3.0, 0.25, 3.2, 0.25, { color: '#5a4430' }); C.obbLocal(lot, x, fz + 3.0, 0.3, 0.3, 3.2); }
+    g.box('wood', 0, 0.06, fz + 1.6, W, 0.12, 3.2, { color: '#6a5440' });
+    const door = entrance(C, lot, 0, { z: fz, w: 2, h: 2.6, door: 0, color: '#ffa040' });
+    H.f(); locSign(C, lot, loc.id, 'THE DIRTY SPUR', { w: 12, h: 2.0, y: 6.1, z: fz + 0.4, bg: '#2a1a0a', fg: '#ffb040', neon: '#ff9020', gain: 2.2 });
     // hitch rail with motorcycles
     for (let i = 0; i < 3; i++) {
-      const [x, z] = H.wp(-W / 2 + 3 + i * 2, D / 2 + 5);
+      const [x, z] = H.wp(-W / 2 + 3 + i * 2, D / 2 - 0.9);
       g.frame(x, z, lot.rot + PI / 2);
       g.box('metal', 0, 0.6, 0, 0.3, 0.5, 1.6, { color: ['#1a1a1a', '#5a1a1a', '#2a2a3a'][i] });
       for (const t of [-0.8, 0.8]) { g.push(); g.translate(0, 0.35, t); g.rotZ(PI / 2); g.cyl('props', 0, 0, 0, 0.35, 0.35, 0.12, 8, { color: '#111' }); g.pop(); }
       g.box('metal', 0, 1.0, 0.7, 0.8, 0.05, 0.05, { color: '#aaa' });
       C.solid(x - 0.9, z - 0.9, x + 0.9, z + 0.9, 1.2);
     }
-    C.obbLocal(lot, 0, 0, W, D, top + 2.5);
+    C.obbLocal(lot, 0, -2.5, W, BD, top + 2.5);
     return { door };
   },
 

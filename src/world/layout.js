@@ -209,7 +209,7 @@ class RectIndex {
 // ------------------------------------------------------------------ location specs
 // w = frontage, d = depth, anchor = where we'd like it, setback = gap to sidewalk
 export const LOC_SPECS = {
-  roach_motel: { w: 36, d: 16, ax: 30, az: 330, setback: 0.6 },
+  roach_motel: { w: 36, d: 16, ax: 30, az: 330, setback: 2.4 },
   greasy_spoon: { w: 21, d: 14, ax: -40, az: 330 },
   gutter_liquor: { w: 15, d: 14, ax: 120, az: 400 },
   ink_stinks: { w: 12, d: 14, ax: -120, az: 400 },

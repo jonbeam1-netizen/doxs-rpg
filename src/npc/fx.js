@@ -830,7 +830,7 @@ export class FX {
       if (u.follow) g.position.set(u.follow.position.x, 0.035, u.follow.position.z);
       const k = Math.min(1, u.t / u.ttl);
       u.fill.scale.setScalar(Math.max(0.01, u.r * k));
-      u.fill.material.opacity = 0.18 + 0.2 * k;
+      u.fill.material.opacity = 0.12 + 0.16 * k;
       u.edge.material.opacity = 0.5 + 0.4 * Math.sin(u.t * 20) * k;
       if (u.t > u.ttl + 0.08) { g.visible = false; u.follow = null; }
     }

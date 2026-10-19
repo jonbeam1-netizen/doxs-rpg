@@ -135,7 +135,7 @@ export function createStickman({ color = 0x141414, scale = 1, hat = null, hatCol
       // attack telegraph: pulsing glow that speeds up as the hit gets close
       st.tele -= dt;
       const pulse = 0.55 + 0.45 * Math.sin(st.tele * 38);
-      setEmissive(_c.copy(st.teleCol).multiplyScalar(st.tele > 0 ? 0.9 * pulse : 0));
+      setEmissive(_c.copy(st.teleCol).multiplyScalar(st.tele > 0 ? 0.6 * pulse : 0));
     }
     // animated knockdown / get-up (only when asked for with setDead(on, { fall: true }))
     if (st.fall) {
@@ -320,6 +320,8 @@ export function createStickman({ color = 0x141414, scale = 1, hat = null, hatCol
     st.wind = duration; st.windDur = Math.max(0.05, duration); st.windStyle = style;
     if (color != null) { st.teleCol.set(color); st.tele = duration; }
   }
+  // keep holding a wind-up that's already playing (charged attacks)
+  function extendWindup(sec = 0.3) { if (st.wind > 0) st.wind = Math.max(st.wind, Math.min(sec, st.windDur * 0.35)); }
   function cancelWindup() { st.wind = 0; st.tele = 0; st.windStyle = null; if (st.flash <= 0) setEmissive(baseEmissive); }
   function setBlock(on) { st.block = !!on; }
   function roll(duration = 0.4) { st.roll = duration; st.rollDur = duration; }
@@ -357,7 +359,7 @@ export function createStickman({ color = 0x141414, scale = 1, hat = null, hatCol
     parts: { hips, torso, neck, head, armL, armR, legL, legR },
     rightHand: armR.end, leftHand: armL.end,
     animate, punch, flash, setDead, setColor, dispose,
-    windup, cancelWindup, setBlock, roll, hitReact,
+    windup, extendWindup, cancelWindup, setBlock, roll, hitReact,
     get dead() { return st.dead; },
     get rolling() { return st.roll > 0; },
   };

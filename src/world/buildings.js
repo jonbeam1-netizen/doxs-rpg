@@ -136,7 +136,14 @@ function storefront(C, { x, z, W, D, nb, bayW, store, wallTint, doorBay }) {
   let plan = null;
   let cells = o.cells;
   if (!cells) {
-    if (o.shops) { plan = planShops(r, nb, { closedP: o.closedP ?? 0.2 }); cells = plan.cells; }
+    if (o.shops) {
+      plan = planShops(r, nb, { closedP: o.closedP ?? 0.2 }); cells = plan.cells;
+      if (o.lobby) { // tower lobby: a glass door in the middle bay, its shop gets no sign
+        const mid = Math.floor(nb / 2);
+        cells[mid] = SHOP_CELL.door;
+        plan.shops = plan.shops.filter((s) => mid < s.b0 || mid > s.b1);
+      }
+    }
     else cells = new Array(nb).fill(o.display ?? SHOP_CELL.warm);
   }
   const blocked = (b) => doorBay[b];
@@ -241,11 +248,7 @@ const LOT = {
         const podium = facade.startsWith('glass') ? pick(r, ['concrete', 'stone']) : facade;
         g.frame(lot.cx, lot.cz, lot.rot);
         const baseH = STORE + FLOOR * (2 + Math.floor(r() * 3));
-        const lobby = fitBays(W);
-        const cells = planShops(r, lobby.n, { closedP: 0.1 }).cells;
-        const mid = Math.floor(lobby.n / 2);
-        cells[mid] = SHOP_CELL.door;
-        mass(C, { W, D, H: baseH, facade: podium, store: { cells, district: 'downtown', tint: '#c8c0b0' }, tint: '#ddd8d0', cornice: true, parapet: 0.6 });
+        mass(C, { W, D, H: baseH, facade: podium, store: { shops: true, lobby: true, district: 'downtown', closedP: 0.1 }, tint: '#ddd8d0', cornice: true, parapet: 0.6 });
         let w = W - 3 - Math.floor(r() * 2) * 1.5, d = D - 3 - Math.floor(r() * 2) * 1.5, y = baseH;
         let h = H - baseH;
         const tiers = r() < 0.5 ? 2 : 1;
@@ -265,12 +268,13 @@ const LOT = {
       }
       const floors = 2 + Math.floor(r() * 5 * (0.4 + c));
       const H = STORE + floors * FLOOR;
-      const facade = pick(r, ['brick_red', 'brick_dirty', 'concrete', 'brownstone', 'brick_red', 'stone']);
+      const facade = pick(r, ['brick_red', 'brick_red', 'brownstone', 'stone']);
       const tint = pick(r, ['#ffffff', '#e8dcd0', '#d8d0c8', '#f0e8e0']);
       g.frame(lot.cx, lot.cz, lot.rot);
       const shops = r() < 0.85;
-      const top = mass(C, { W, D, H, facade, store: shops ? { shops: true, district: 'downtown', closedP: 0.12 } : { residential: true }, tint, cornice: facade !== 'concrete' && r() < 0.75, parapet: 0.8 });
-      if (!shops) { const fb = fitBays(W); g.frame(lot.cx, lot.cz, lot.rot); g.translate(0, 0, D / 2); P.doorway(C, (Math.floor(fb.n / 2) + 0.5) * fb.w - W / 2, 2.2, 2.8, 4, { lamp: true, awning: '#2a2a30' }); }
+      const fbw = fitBays(W), ddx = (Math.floor(fbw.n / 2) + 0.5) * fbw.w - W / 2;
+      const top = mass(C, { W, D, H, facade, store: shops ? { shops: true, district: 'downtown', closedP: 0.12 } : null, doors: shops ? null : [{ x: ddx, w: 2.0, h: 2.8 }], tint, cornice: facade !== 'concrete' && r() < 0.75, parapet: 0.8 });
+      if (!shops) { g.frame(lot.cx, lot.cz, lot.rot); g.translate(0, 0, D / 2); P.doorway(C, ddx, 2.0, 2.8, 4, { lamp: true, awning: '#2a2a30' }); }
       if (shops && facade.startsWith('brick') && floors >= 3 && W >= 12 && r() < 0.25) {
         const bw = fitBays(W).w; g.frame(lot.cx, lot.cz, lot.rot);
         fireEscape(C, { cx: (r() < 0.5 ? -1 : 1) * (W / 2 - bw), D, H, w: bw * 2 - 0.4 });
@@ -284,11 +288,11 @@ const LOT = {
       const floors = 1 + Math.floor(r() * 4);
       const shops = r() < 0.55;
       const H = STORE + floors * FLOOR;
-      const facade = pick(r, ['tenement', 'tenement', 'brick_dirty', 'brick_red', 'wood', 'industrial']);
+      const facade = pick(r, ['tenement', 'tenement', 'brick_dirty', 'wood']);
       const tint = pick(r, ['#ffffff', '#d8ccbc', '#c8bca8', '#e0d0c0']);
       const fb = fitBays(W), dx = (Math.floor(fb.n / 2) + 0.5) * fb.w - W / 2;
       g.frame(lot.cx, lot.cz, lot.rot);
-      const top = mass(C, { W, D, H, facade, store: shops ? { shops: true, district: 'gutterside', closedP: 0.4 } : { residential: true }, tint, cornice: facade !== 'wood' && r() < 0.35, parapet: 0.7 });
+      const top = mass(C, { W, D, H, facade, store: shops ? { shops: true, district: 'gutterside', closedP: 0.4 } : null, doors: shops ? null : [{ x: dx, w: 1.3, h: 2.5 }], tint, cornice: facade !== 'wood' && r() < 0.35, parapet: 0.7 });
       if (!shops) { g.frame(lot.cx, lot.cz, lot.rot); g.translate(0, 0, D / 2); P.doorway(C, dx, 1.3, 2.5, pick(r, [0, 1, 1, 5]), { lamp: r() < 0.6 }); }
       if (shops && facade !== 'wood' && H - STORE >= 2 * FLOOR && W >= 12 && r() < 0.55) {
         const bw = fitBays(W).w; g.frame(lot.cx, lot.cz, lot.rot);
@@ -402,14 +406,14 @@ const LOT = {
     for (let i = 0; i < 2; i++) { const [x, z] = wp((i ? 1 : -1) * W * 0.2, D / 2 - 2.2); P.bench(C, x, z, lot.rot + Math.PI); }
   },
 
-  mansion(C, lot) { mansion(C, lot, {}); },
+  mansion(C, lot) { if (lot.d < 30 || lot.w < 34) LOT.park(C, lot); else mansion(C, lot, {}); },
 
   apartments(C, lot) {
     const r = C.rng, g = C.geo;
     const W = lot.w - 6, D = Math.min(lot.d - 6, 28);
     const floors = 4 + Math.floor(r() * 6);
     const H = STORE + floors * FLOOR;
-    const facade = pick(r, ['stucco', 'brownstone', 'stucco_pink', 'stone']);
+    const facade = pick(r, ['stucco', 'stucco', 'stone']);
     const zc = lot.d / 2 - D / 2 - 3;
     g.frame(lot.cx, lot.cz, lot.rot); g.translate(0, 0, zc);
     mass(C, { W, D, H, facade, store: { residential: true }, cornice: true });
@@ -538,7 +542,7 @@ function backClutter(C, lot, W, D) {
     const s = r() < 0.5 ? 1 : -1;
     const wp = wpOf(lot);
     const [x, z] = wp(s * (W / 2 + 1.6), -D / 2 + 3);
-    if (C.layout.isFree(x, z, 1.6)) P.dumpster(C, x, z, lot.rot + Math.PI / 2 * s);
+    if (C.layout.isFree(x, z, 1.6) && C.free(x, z, 1.8)) P.dumpster(C, x, z, lot.rot + Math.PI / 2 * s);
   }
 }
 
@@ -549,7 +553,7 @@ export function shopFront() { /* storefronts are part of mass() now */ }
 export function mansion(C, lot, { facade = null, house = null, gateDoor = 7 } = {}) {
   const r = C.rng, g = C.geo, W = lot.w, D = lot.d;
   const wp = wpOf(lot);
-  const fac = facade ?? pick(r, ['stucco', 'stucco_pink', 'brownstone', 'stone']);
+  const fac = facade ?? pick(r, ['stucco', 'stone']);
   // perimeter wall with gate gap (front center)
   const gate = 6;
   const corners = [wp(-W / 2 + 0.25, D / 2 - 0.25), wp(-gate / 2 - 1.05, D / 2 - 0.25), wp(gate / 2 + 1.05, D / 2 - 0.25), wp(W / 2 - 0.25, D / 2 - 0.25), wp(W / 2 - 0.25, -D / 2 + 0.25), wp(-W / 2 + 0.25, -D / 2 + 0.25)];
@@ -562,12 +566,12 @@ export function mansion(C, lot, { facade = null, house = null, gateDoor = 7 } = 
   // gate pillars + lamps + iron gate half-open
   g.frame(lot.cx, lot.cz, lot.rot);
   for (const s of [-1, 1]) {
-    g.box('w_stone', s * (gate / 2 + 0.55), 1.6, D / 2 - 0.25, 1.1, 3.2, 1.1, { uvScale: [12, 14], color: '#c8c0b0' });
-    g.box('lamp', s * (gate / 2 + 0.55), 3.45, D / 2 - 0.25, 0.45, 0.5, 0.45, { color: '#ffd090' });
-    g.box('metal', s * (gate / 2 + 0.55), 3.75, D / 2 - 0.25, 0.6, 0.1, 0.6, { color: '#111' });
+    g.box('w_stone', s * (gate / 2 + 0.55), 1.6, D / 2 - 0.6, 1.1, 3.2, 1.1, { uvScale: [12, 14], color: '#c8c0b0' });
+    g.box('lamp', s * (gate / 2 + 0.55), 3.45, D / 2 - 0.6, 0.45, 0.5, 0.45, { color: '#ffd090' });
+    g.box('metal', s * (gate / 2 + 0.55), 3.75, D / 2 - 0.6, 0.6, 0.1, 0.6, { color: '#111' });
     const [lx, lz] = wp(s * (gate / 2 + 0.55), D / 2 + 0.3);
     C.light(lx, 3.6, lz, '#ffc070', 'door');
-    C.obbLocal(lot, s * (gate / 2 + 0.55), D / 2 - 0.25, 1.1, 1.1, 3.2);
+    C.obbLocal(lot, s * (gate / 2 + 0.55), D / 2 - 0.6, 1.1, 1.1, 3.2);
   }
   g.push(); g.translate(-gate / 2, 0, D / 2 - 0.25); g.rotY(-0.9);
   for (let i = 0; i <= 8; i++) g.box('metal', 0, 1.2, i * 0.32, 0.05, 2.4, 0.05, { color: '#151515' });
@@ -654,9 +658,9 @@ export function warehouse(C, lot, { facade = null, doors = true, sign = null } =
 
 export function trailer(C, lot, { color = null, door = 0 } = {}) {
   const r = C.rng, g = C.geo;
-  const TW = 14, TD = 4.6, TH = 3.0;
+  const TW = Math.min(14, lot.w - 6), TD = 4.6, TH = 3.0;
   const z = Math.min(lot.d / 2 - TD / 2 - 4, 4);
-  const along = (r() - 0.5) * Math.max(0, lot.w - TW - 8);
+  const along = (r() - 0.5) * Math.max(0, lot.w - TW - 6);
   g.frame(lot.cx, lot.cz, lot.rot); g.translate(along, 0, z);
   const col = color ?? pick(r, ['#ffffff', '#d8d0b8', '#c8d0d8', '#e0c8b0', '#b8c8b0']);
   g.box('props', 0, 0.3, 0, TW - 0.4, 0.6, TD - 0.4, { color: '#5a5650' }); // skirt
@@ -672,7 +676,7 @@ export function trailer(C, lot, { color = null, door = 0 } = {}) {
   g.push(); g.translate(TW / 2 + 1.0, 0.5, 0); g.rotZ(Math.PI / 2); g.cyl('props', 0, 0, 0, 0.5, 0.5, 1.6, 8, { color: '#d8d0c0' }); g.pop();
   // two lawn chairs on the porch side
   for (let i = 0; i < 2; i++) { g.push(); g.translate(-TW / 4 + 2.6 + i * 1.1, 0, TD / 2 + 3.5); g.rotY(i ? 0.3 : -0.2); g.box('props_d', 0, 0.45, 0, 0.6, 0.05, 0.6, { color: '#2a6a5a' }); g.box('props_d', 0, 0.75, -0.3, 0.6, 0.6, 0.05, { color: '#2a6a5a' }); g.pop(); }
-  C.obbLocal(lot, along, z, TW + 2.4, TD, TH + 0.6);
+  C.obbLocal(lot, along, z, TW, TD, TH + 0.6); C.obbLocal(lot, along + TW / 2 + 1.0, z, 1.0, 1.0, 1.1);
   const wp = wpOf(lot);
   const [px, pz] = wp(along - TW / 4, z + TD / 2 + 1.6);
   if (r() < 0.5) { const [x, z2] = wp(along + TW / 2 + 4, z + 1); if (C.free(x, z2, 2.4)) P.wreck(C, x, z2, lot.rot + Math.PI / 2, { blocks: true }); }

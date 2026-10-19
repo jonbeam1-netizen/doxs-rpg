@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { Y } from './props.js';
 import { junctions } from './roads.js';
 import { hashStr } from './textures.js';
+import { pointSegDist } from './layout.js';
 
 // Working traffic signals at city intersections.
 //
@@ -77,6 +78,19 @@ export function buildSignals(C) {
       const px = N.x + ux * along + rx * lat, pz = N.z + uz * along + rz * lat;
       const rot = Math.atan2(ux, uz); // local +Z faces approaching traffic, local +X = right
       const armL = lat - laneMid;
+      const sl = mark + 0.5;
+      const ax = N.x + ux * sl, az = N.z + uz * sl;
+      sig.approaches.push({ edge: p.ei, ux, uz, axis: p.axis, stop: { x: ax + rx * e.lanes[0], z: az + rz * e.lanes[0], dist: sl, edge: p.ei } });
+      // stop line across the approach lanes
+      g.identity();
+      g.strip('marking', ax + rx * 0.35, az + rz * 0.35, ax + rx * (e.hw - 0.35), az + rz * (e.hw - 0.35), 0.45, Y.mark + 0.001, { color: '#c8c4b8' });
+      // no pole where the corner is another road (skewed junctions)
+      let blocked = false;
+      for (const k of L.nearEdges({ x0: px - 1, z0: pz - 1, x1: px + 1, z1: pz + 1 })) {
+        const f = edgeInfo[k], A = nodes[f.a], B = nodes[f.b];
+        if (pointSegDist(px, pz, A.x, A.z, B.x, B.z) < f.hw + 0.4) { blocked = true; break; }
+      }
+      if (blocked) continue;
       g.frame(px, pz, rot);
       g.cyl('metal', 0, 0.25, 0, 0.2, 0.24, 0.5, 6, { color: '#262624' });
       g.cyl('metal', 0, 3.1, 0, 0.09, 0.12, 6.2, 6, { color: '#2e2e2c', capTop: true });
@@ -97,12 +111,6 @@ export function buildSignals(C) {
       }
       pushLamp(si, p.axis, 'stop', px, pz, rot, -0.388, 2.5, 0, -Math.PI / 2, 0.8);
       pushLamp(si, p.axis, 'walk', px, pz, rot, -0.388, 2.2, 0, -Math.PI / 2, 0.8);
-      // stop line across the approach lanes
-      const sl = mark + 0.5;
-      g.identity();
-      const ax = N.x + ux * sl, az = N.z + uz * sl;
-      g.strip('marking', ax + rx * 0.35, az + rz * 0.35, ax + rx * (e.hw - 0.35), az + rz * (e.hw - 0.35), 0.45, Y.mark + 0.001, { color: '#c8c4b8' });
-      sig.approaches.push({ edge: p.ei, ux, uz, axis: p.axis, stop: { x: ax + rx * e.lanes[0], z: az + rz * e.lanes[0], dist: sl, edge: p.ei } });
     }
     list.push(sig); byNode.set(j.i, si);
   }
@@ -185,18 +193,24 @@ export function createSignals(game, data) {
   };
   if (!lamps.length) return api;
 
-  // ---- lamps: one instanced mesh, per-instance colour updated only on phase changes
-  const geo = new THREE.CircleGeometry(0.135, 12);
+  // ---- lamps: one instanced mesh holding only the junctions near the camera
+  // (re-packed when the camera moves), colours rewritten only on phase changes.
+  const geo = new THREE.CircleGeometry(0.135, 10);
   const mat = new THREE.MeshBasicMaterial({ color: 0xffffff });
-  const mesh = new THREE.InstancedMesh(geo, mat, lamps.length);
-  mesh.name = 'signals';
-  mesh.frustumCulled = false; mesh.castShadow = false; mesh.receiveShadow = false;
-  const mm = new THREE.Matrix4(), c = new THREE.Color();
-  lamps.forEach((l, i) => { mm.fromArray(l.matrix); mesh.setMatrixAt(i, mm); mesh.setColorAt(i, c.setRGB(...COL[l.kind][1])); });
-  mesh.instanceMatrix.needsUpdate = true;
   const bySig = list.map(() => []);
   lamps.forEach((l, i) => bySig[l.sig].push(i));
+  const maxSig = Math.max(...bySig.map((a) => a.length));
+  const NEAR = 260, CAP = Math.min(lamps.length, maxSig * 48);
+  const mesh = new THREE.InstancedMesh(geo, mat, CAP);
+  mesh.name = 'signals';
+  mesh.frustumCulled = false; mesh.castShadow = false; mesh.receiveShadow = false;
+  mesh.count = 0;
+  const mm = new THREE.Matrix4(), c = new THREE.Color();
+  mesh.setColorAt(0, c.setRGB(0, 0, 0));
+  const slot = new Int32Array(lamps.length).fill(-1); // lamp -> instance index
+  const active = [];
   const lastKey = new Array(list.length).fill('');
+  let packX = Infinity, packZ = Infinity;
   game.scene.add(mesh);
   api.mesh = mesh;
 
@@ -210,22 +224,45 @@ export function createSignals(game, data) {
     }
     return false;
   }
+  function paint(si, s0, s1) {
+    for (const i of bySig[si]) {
+      const k = slot[i]; if (k < 0) continue;
+      const l = lamps[i];
+      const mine = l.axis === 0 ? s0 : s1, other = l.axis === 0 ? s1 : s0;
+      mesh.setColorAt(k, c.setRGB(...COL[l.kind][lampOn(l.kind, mine, other) ? 0 : 1]));
+    }
+  }
+  function pack(px, pz) {
+    packX = px; packZ = pz;
+    for (const si of active) for (const i of bySig[si]) slot[i] = -1;
+    active.length = 0;
+    const near = [];
+    for (let si = 0; si < list.length; si++) { const d = Math.hypot(list[si].x - px, list[si].z - pz); if (d < NEAR) near.push([d, si]); }
+    near.sort((a, b) => a[0] - b[0]);
+    let n = 0;
+    for (const [, si] of near) {
+      if (n + bySig[si].length > CAP) break;
+      active.push(si);
+      for (const i of bySig[si]) { mm.fromArray(lamps[i].matrix); mesh.setMatrixAt(n, mm); slot[i] = n++; }
+      lastKey[si] = '';
+    }
+    mesh.count = n;
+    mesh.instanceMatrix.needsUpdate = true;
+  }
   function update() {
+    const cam = game.camera.position;
+    if (Math.hypot(cam.x - packX, cam.z - packZ) > 30) pack(cam.x, cam.z);
     const t = clock();
     let dirty = false;
-    for (let si = 0; si < list.length; si++) {
+    for (const si of active) {
       const tt = sigT(si, t);
       const s0 = axisState(tt, 0), s1 = axisState(tt, 1);
       const key = s0 + s1;
       if (key === lastKey[si]) continue;
       lastKey[si] = key; dirty = true;
-      for (const i of bySig[si]) {
-        const l = lamps[i];
-        const mine = l.axis === 0 ? s0 : s1, other = l.axis === 0 ? s1 : s0;
-        mesh.setColorAt(i, c.setRGB(...COL[l.kind][lampOn(l.kind, mine, other) ? 0 : 1]));
-      }
+      paint(si, s0, s1);
     }
-    if (dirty) mesh.instanceColor.needsUpdate = true;
+    if (dirty && mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
   }
   update();
   game.addSystem({ name: 'signals', update() { try { update(); } catch (e) { if (!update._e) { console.error('[world] signals', e); update._e = true; } } } });

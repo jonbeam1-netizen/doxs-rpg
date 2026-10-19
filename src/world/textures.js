@@ -484,7 +484,7 @@ export function storefrontAtlas() {
       if (i === 4) {
         glassGrad(x, bx + 37, 56, 54, 14); glassGrad(x, bx + 38, 76, 52, 104);
         x.fillStyle = '#9a9a92'; x.fillRect(bx + 80, 124, 6, 16);
-        e.fillStyle = '#ffd890'; e.fillRect(bx + 37, 56, 54, 14); e.globalAlpha = 0.8; e.fillRect(bx + 38, 76, 52, 104); e.globalAlpha = 1;
+        e.fillStyle = '#ffd890'; e.globalAlpha = 0.6; e.fillRect(bx + 37, 56, 54, 14); e.globalAlpha = 0.45; e.fillRect(bx + 38, 76, 52, 104); e.globalAlpha = 1;
       } else {
         x.fillStyle = '#5a5e5c'; x.fillRect(bx + 36, 54, 56, H - 59);
         x.fillStyle = 'rgba(0,0,0,0.3)'; x.fillRect(bx + 40, 60, 48, 2); x.fillRect(bx + 40, 120, 48, 2);
@@ -515,9 +515,10 @@ export function cleanSignCanvas(text, { width = 1024, height = 256, bg = '#1a161
   const lw = Math.max(6, height * 0.07);
   x.strokeStyle = border; x.lineWidth = lw; x.strokeRect(lw / 2, lw / 2, width - lw, height - lw);
   let size = height * 0.62;
-  const fam = font === 'Barlow Condensed' ? `bold ${FONT2}` : FONT;
-  x.font = `${size}px ${fam}`;
-  while (x.measureText(text).width > width * 0.88 && size > 10) { size -= 2; x.font = `${size}px ${fam}`; }
+  const bold = font === 'Barlow Condensed' ? 'bold ' : '';
+  const fam = font === 'Barlow Condensed' ? FONT2 : FONT;
+  x.font = `${bold}${size}px ${fam}`;
+  while (x.measureText(text).width > width * 0.88 && size > 10) { size -= 2; x.font = `${bold}${size}px ${fam}`; }
   x.textAlign = 'center'; x.textBaseline = 'middle';
   x.fillStyle = fg; x.fillText(text, width / 2, height / 2 + size * 0.04);
   // a whisper of weathering at the bottom edge only

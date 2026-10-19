@@ -211,7 +211,7 @@ export function createMaterials() {
       m.envMapIntensity = 0.12 + wet * 0.9;
     }
     puddle.envMapIntensity = 0.25 + wet * 0.5 + night * 0.2;
-    puddle.opacity = 0.75 + wet * 0.2;
+    puddle.opacity = 0.18 + wet * 0.67; // barely there when dry, glossy when it rains
     water.envMapIntensity = 0.5 + daylight * 0.3;
     gold.envMapIntensity = 0.7;
   }

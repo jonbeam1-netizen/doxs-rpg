@@ -11,7 +11,7 @@ const C3 = (h) => new THREE.Color(h);
 const PAL = {
   night: { top: C3('#03050a'), hor: C3('#10141c'), fog: C3('#0c0f15'), sun: C3('#6a7cb0'), sunI: 0.6, sky: C3('#3a4866'), gnd: C3('#121216'), hemiI: 1.05, cloud: C3('#0c0e14') },
   dusk: { top: C3('#2a2834'), hor: C3('#b4643a'), fog: C3('#6e4c38'), sun: C3('#ff8a40'), sunI: 1.8, sky: C3('#9a7a64'), gnd: C3('#3a2c20'), hemiI: 1.0, cloud: C3('#5a3a30') },
-  day: { top: C3('#6a6e70'), hor: C3('#b2a586'), fog: C3('#958b74'), sun: C3('#ffe0b0'), sunI: 3.2, sky: C3('#c4bca4'), gnd: C3('#5a4e3e'), hemiI: 1.7, cloud: C3('#8a8474') },
+  day: { top: C3('#6a6e70'), hor: C3('#b2a586'), fog: C3('#958b74'), sun: C3('#ffe0b0'), sunI: 3.2, sky: C3('#c4bca4'), gnd: C3('#5a4e3e'), hemiI: 2.0, cloud: C3('#8a8474') },
 };
 const WEATHER = {
   clear: { cloud: 0.25, sunK: 1.0, fogNear: 70, fogFar: 640, tint: null, rain: 0, haze: 0.5 },
