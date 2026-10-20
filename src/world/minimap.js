@@ -18,6 +18,16 @@ const TYPE_ICON = {
   isle_arcade: ['A', '#ff70d0'], isle_seafood: ['F', '#60c0ff'], isle_pier: ['J', '#80d0ff'], isle_lighthouse: ['¡', '#fff0a0'],
   isle_cove: ['$', '#c0a060'], isle_prison: ['#', '#c0c0c0'],
 };
+const TYPE_LABEL = {
+  home: 'Home', bar: 'Bar', gym: 'Gym', bank: 'Bank', hospital: 'Hospital', police: 'Police', store: 'Store', pizza: 'Pizza',
+  car_dealer: 'Car dealer', gun_shop: 'Gun shop', clothing: 'Clothes', library: 'Library', city_hall: 'City Hall', university: 'University',
+  casino: 'Casino', nightclub: 'Nightclub', office: 'Office', church: 'Church', gang_hq: 'Gang HQ', factory: 'Factory', chop_shop: 'Chop shop',
+  fight_club: 'Fight club', warehouse: 'Warehouse', gas: 'Gas station', junkyard: 'Junkyard', race: 'Drag strip', bunker: 'Bunker', diner: 'Diner',
+  liquor: 'Liquor', tattoo: 'Tattoo', fortune: 'Fortune teller', pawn: 'Pawn shop', hobo_camp: 'Hobo camp', dealer: 'Dealer',
+  isle_arcade: 'Arcade', isle_seafood: 'Seafood', isle_pier: 'Pier', isle_lighthouse: 'Lighthouse', isle_cove: 'Smugglers cove', isle_prison: 'Prison',
+};
+const LABEL_TRIES = [[0, 0]];
+for (let r = 12; r <= 60; r += 12) for (let a = 0; a < 8; a++) LABEL_TRIES.push([Math.round(Math.cos(a * Math.PI / 4) * r * 1.6), Math.round(Math.sin(a * Math.PI / 4) * r)]);
 const DIST_LABEL_POS = { downtown: [0, -15], hilltop: [0, -520], rustyards: [470, 0], gutterside: [0, 600], dustbowl: [-500, 40], blackwater: [1060, -245] };
 
 export class MapSystem {
@@ -252,84 +262,326 @@ export class MapSystem {
     x.beginPath(); x.arc(R, R, R - 1.5, 0, Math.PI * 2); x.strokeStyle = 'rgba(0,0,0,0.6)'; x.lineWidth = 3; x.stroke();
   }
 
-  // ---------------- full map
+  // ---------------- full map (M)
+  // Fills the viewport. Drag / wheel / pinch to pan and zoom, click or tap to drop a waypoint, right-click to
+  // clear it. The static layer (ground, roads, blocks, district names) is cached per view; icons, markers,
+  // friends and the player are redrawn on top at a constant screen size.
   openFull() {
     const g = this.game;
     if (this.panel && !this.panel.closed) { this.panel.close(); return; }
-    const asp = this.mw / this.mh;
-    const cw = Math.round(Math.max(300, Math.min(innerWidth - 80, (innerHeight - 150) * asp, 1240)));
-    const ch = Math.round(cw / asp);
-    const size = cw;
     const wrap = document.createElement('div');
-    wrap.innerHTML = `<canvas width="${cw * 2}" height="${ch * 2}" style="width:${cw}px;height:${ch}px;display:block;margin:0 auto;cursor:crosshair;border:2px solid #3b342b;background:#0d0c0b"></canvas>
-      <div style="text-align:center;margin-top:6px;font-size:14px;opacity:.75">Click to set a waypoint · right-click to clear · M / Esc to close</div>`;
+    wrap.className = 'map-full';
+    wrap.innerHTML = `<div class="map-view"><canvas></canvas>
+        <div class="map-ctrls">
+          <button class="map-btn" data-act="in" title="Zoom in">+</button>
+          <button class="map-btn" data-act="out" title="Zoom out">−</button>
+          <button class="map-btn" data-act="me" title="Center on me">◎</button>
+          <button class="map-btn" data-act="fit" title="Whole city">⤢</button>
+          <button class="map-btn wide" data-act="legend" title="Legend">Legend</button>
+        </div>
+        <div class="map-legend${this.legendOn ? '' : ' hidden'}"></div>
+      </div>
+      <div class="map-hint">Click to set a waypoint · right-click clears · drag to pan · wheel or pinch to zoom · M / Esc closes</div>`;
+    const view = wrap.querySelector('.map-view');
     const cv = wrap.querySelector('canvas');
-    this.fullCanvas = cv; this.fullSize = cw * 2; this.fullH = ch * 2; this.fullCss = cw;
-    this.panel = g.ui.openPanel({ title: `${CITY_NAME} — City Map`, body: wrap, width: size + 60, onClose: () => { this.panel = null; } });
-    const E = this.ext;
-    const toWorld = (ev) => { const r = cv.getBoundingClientRect(); return [((ev.clientX - r.left) / r.width) * this.mw + E.minX, ((ev.clientY - r.top) / r.height) * this.mh + E.minZ]; };
-    cv.addEventListener('click', (ev) => {
-      const [wx, wz] = toWorld(ev);
-      g.world.markers.set('waypoint', { x: wx, z: wz, color: '#ffd040', label: 'Waypoint', icon: '✚' });
-      this.drawFull();
+    const legend = wrap.querySelector('.map-legend');
+    legend.innerHTML = this._legendHtml();
+    this.fullCanvas = cv; this.fullView = view;
+    this.mv = null; // view: { cx, cz, k (css px per meter), W, H, dpr }
+    this.panel = g.ui.openPanel({
+      title: `${CITY_NAME} — City Map`, body: wrap, width: 4000, className: 'map-modal',
+      onClose: () => { this.panel = null; this.fullCanvas = null; this.fullView = null; this._mapResize = null; this._ro?.disconnect(); this._ro = null; },
     });
+
+    const fit = () => {
+      const V = this.mv; if (!V) return;
+      V.k = this._fitK(); V.cx = this.ext.minX + this.mw / 2; V.cz = this.ext.minZ + this.mh / 2; V.fitted = true;
+    };
+    const resize = () => {
+      const r = view.getBoundingClientRect();
+      const W = Math.max(50, Math.round(r.width)), H = Math.max(50, Math.round(r.height));
+      const dpr = Math.min(2, devicePixelRatio || 1);
+      const first = !this.mv;
+      this.mv = { ...(this.mv ?? {}), W, H, dpr };
+      cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr);
+      if (first || this.mv.fitted) fit(); else this._clampView();
+      this._statKey = null;
+      this.drawFull();
+    };
+    this._mapResize = resize;
+    this._ro?.disconnect();
+    this._ro = new ResizeObserver(() => resize());
+    this._ro.observe(view);
+    resize();
+
+    const toWorld = (cx, cy) => { const r = cv.getBoundingClientRect(), V = this.mv; return [V.cx + (cx - r.left - V.W / 2) / V.k, V.cz + (cy - r.top - V.H / 2) / V.k]; };
+    const zoomAt = (f, sx, sy) => {
+      const V = this.mv; if (!V) return;
+      const [wx, wz] = sx == null ? [V.cx, V.cz] : toWorld(sx, sy);
+      const k0 = V.k;
+      V.k = Math.max(this._fitK() * 0.85, Math.min(7, V.k * f)); V.fitted = false;
+      const s = k0 / V.k; V.cx = wx + (V.cx - wx) * s; V.cz = wz + (V.cz - wz) * s;
+      this._clampView(); this.drawFull();
+    };
+    const center = () => { const f = this.focus(); const V = this.mv; if (!f || !V) return; V.k = Math.max(V.k, 1.6); V.fitted = false; V.cx = f.x; V.cz = f.z; this._clampView(); this.drawFull(); };
+    wrap.querySelector('.map-ctrls').addEventListener('click', (ev) => {
+      const act = ev.target.closest('[data-act]')?.dataset.act;
+      if (act === 'in') zoomAt(1.5); else if (act === 'out') zoomAt(1 / 1.5);
+      else if (act === 'fit') { fit(); this.drawFull(); } else if (act === 'me') center();
+      else if (act === 'legend') { this.legendOn = !this.legendOn; legend.classList.toggle('hidden', !this.legendOn); this.drawFull(); }
+    });
+
+    // pointers: one = pan (or a tap = waypoint), two = pinch zoom
+    const pts = new Map();
+    let drag = null, pinch = null;
+    cv.addEventListener('pointerdown', (ev) => {
+      if (ev.pointerType === 'mouse' && ev.button !== 0) return;
+      cv.setPointerCapture?.(ev.pointerId);
+      pts.set(ev.pointerId, [ev.clientX, ev.clientY]);
+      if (pts.size === 1) drag = { x: ev.clientX, y: ev.clientY, moved: false, cx: this.mv.cx, cz: this.mv.cz };
+      else if (pts.size === 2) {
+        const [a, b] = [...pts.values()];
+        pinch = { d: Math.hypot(a[0] - b[0], a[1] - b[1]) || 1, k: this.mv.k };
+        if (drag) drag.moved = true;
+      }
+    });
+    cv.addEventListener('pointermove', (ev) => {
+      if (!pts.has(ev.pointerId)) return;
+      pts.set(ev.pointerId, [ev.clientX, ev.clientY]);
+      const V = this.mv;
+      if (pinch && pts.size >= 2) {
+        const [a, b] = [...pts.values()];
+        const d = Math.hypot(a[0] - b[0], a[1] - b[1]) || 1;
+        zoomAt((pinch.k * d / pinch.d) / V.k, (a[0] + b[0]) / 2, (a[1] + b[1]) / 2);
+        return;
+      }
+      if (!drag) return;
+      const dx = ev.clientX - drag.x, dy = ev.clientY - drag.y;
+      if (!drag.moved && Math.hypot(dx, dy) > 5) drag.moved = true;
+      if (drag.moved) { V.cx = drag.cx - dx / V.k; V.cz = drag.cz - dy / V.k; V.fitted = false; this._clampView(); this.drawFull(); }
+    });
+    const up = (ev) => {
+      if (!pts.has(ev.pointerId)) return;
+      pts.delete(ev.pointerId);
+      if (pts.size < 2) pinch = null;
+      if (pts.size === 0) {
+        if (drag && !drag.moved && ev.type === 'pointerup') {
+          const [wx, wz] = toWorld(ev.clientX, ev.clientY);
+          g.world.markers.set('waypoint', { x: wx, z: wz, color: '#ffd040', label: 'Waypoint', icon: '✚' });
+          this.drawFull();
+        }
+        drag = null;
+      } else if (pts.size === 1) {
+        const [p] = [...pts.values()];
+        drag = { x: p[0], y: p[1], moved: true, cx: this.mv.cx, cz: this.mv.cz };
+      }
+    };
+    cv.addEventListener('pointerup', up);
+    cv.addEventListener('pointercancel', up);
+    cv.addEventListener('wheel', (ev) => { ev.preventDefault(); zoomAt(Math.exp(-Math.max(-120, Math.min(120, ev.deltaY * (ev.deltaMode === 1 ? 33 : 1))) * 0.0032), ev.clientX, ev.clientY); }, { passive: false });
     cv.addEventListener('contextmenu', (ev) => { ev.preventDefault(); g.world.markers.delete('waypoint'); this.drawFull(); });
-    this.drawFull();
+  }
+
+  // District name spots: near each district's anchor, but in the emptiest nearby patch (away from the
+  // place pins) so the big names never sit under a cluster of icons and labels.
+  _distLabels() {
+    if (this._dl) return this._dl;
+    const locs = this.game.locations.list.map((l) => [l.doorX ?? l.x, l.doorZ ?? l.z]);
+    const out = {};
+    for (const [id, [ax, az]] of Object.entries(DIST_LABEL_POS)) {
+      let best = [ax, az], bs = -Infinity;
+      for (let gx = -200; gx <= 200; gx += 10) for (let gz = -160; gz <= 160; gz += 10) {
+        const x = ax + gx, z = az + gz;
+        if (id !== 'blackwater' && (x >= WATER_X - 20 || districtAt(x, z) !== id)) continue;
+        if (x < this.ext.minX + 120 || x > this.ext.maxX - 120 || z < this.ext.minZ + 40 || z > this.ext.maxZ - 40) continue;
+        let md = 400;
+        for (const [lx, lz] of locs) md = Math.min(md, Math.hypot((lx - x) / 2.2, (lz - z) * 1.0));
+        const sc = Math.min(md, 46) - Math.hypot(gx, gz) * 0.06;
+        if (sc > bs) { bs = sc; best = [x, z]; }
+      }
+      out[id] = best;
+    }
+    return (this._dl = out);
+  }
+
+  _fitK() { const V = this.mv; return V ? Math.min(V.W / this.mw, V.H / this.mh) * 0.97 : 0.5; }
+
+  _clampView() {
+    const V = this.mv, E = this.ext;
+    // keep the city on screen: the view centre can't leave the map, and at fit zoom it stays centred
+    const hw = V.W / 2 / V.k, hh = V.H / 2 / V.k;
+    const clampAx = (c, lo, hi, half) => (hi - lo <= half * 2 ? (lo + hi) / 2 : Math.max(lo + half, Math.min(hi - half, c)));
+    V.cx = clampAx(V.cx, E.minX, E.maxX, hw);
+    V.cz = clampAx(V.cz, E.minZ, E.maxZ, hh);
+  }
+
+  _legendHtml() {
+    const types = [...new Set(this.game.locations.list.map((l) => l.type))].filter((t) => TYPE_ICON[t]);
+    types.sort((a, b) => (TYPE_LABEL[a] ?? a).localeCompare(TYPE_LABEL[b] ?? b));
+    const row = (ch, col, label, shape = 'pin') => `<div class="ml-row"><span class="ml-ico ${shape}" style="--c:${col}">${ch}</span>${esc(label)}</div>`;
+    return `<div class="ml-sec">Places</div>${types.map((t) => row(TYPE_ICON[t][0], TYPE_ICON[t][1], TYPE_LABEL[t] ?? t.replace(/_/g, ' '))).join('')}
+      <div class="ml-sec">Markers</div>
+      ${row('➤', '#f0e8d0', 'You', 'me')}${row('', '#40e0ff', 'Friend', 'dot')}${row('✚', '#ffd040', 'Waypoint', 'dia')}
+      ${row('★', '#ffd040', 'Main quest', 'dia')}${row('!', '#e8dcc0', 'Side quest / lead', 'dia')}`;
+  }
+
+  // Static layer for the current view (cached until the view or size changes).
+  _drawStatic() {
+    const V = this.mv, E = this.ext, L = this.layout;
+    const key = `${V.cx.toFixed(2)}|${V.cz.toFixed(2)}|${V.k.toFixed(4)}|${V.W}|${V.H}|${V.dpr}`;
+    if (this._statKey === key && this._stat) return this._stat;
+    this._statKey = key;
+    const c = this._stat ??= document.createElement('canvas');
+    const PW = Math.round(V.W * V.dpr), PH = Math.round(V.H * V.dpr);
+    if (c.width !== PW || c.height !== PH) { c.width = PW; c.height = PH; }
+    const x = c.getContext('2d');
+    x.setTransform(1, 0, 0, 1, 0, 0);
+    x.fillStyle = '#0c1214'; x.fillRect(0, 0, PW, PH);
+    const k = V.k * V.dpr;
+    // world -> device px
+    const ox = PW / 2 - (V.cx - E.minX) * k, oy = PH / 2 - (V.cz - E.minZ) * k;
+    x.imageSmoothingEnabled = true;
+    x.drawImage(this.base, ox, oy, this.mw * k, this.mh * k);
+    // zoomed past the raster's resolution: redraw roads and blocks as crisp vectors on top
+    if (k > this.S * 1.15) {
+      x.setTransform(k, 0, 0, k, ox - E.minX * k, oy - E.minZ * k);
+      const vx0 = V.cx - V.W / 2 / V.k - 40, vx1 = V.cx + V.W / 2 / V.k + 40, vz0 = V.cz - V.H / 2 / V.k - 40, vz1 = V.cz + V.H / 2 / V.k + 40;
+      x.lineCap = 'butt';
+      for (const pass of [0, 1]) for (const e of L.edgeInfo) {
+        const A = L.nodes[e.a], B = L.nodes[e.b];
+        if (Math.max(A.x, B.x) < vx0 || Math.min(A.x, B.x) > vx1 || Math.max(A.z, B.z) < vz0 || Math.min(A.z, B.z) > vz1) continue;
+        x.strokeStyle = pass ? (e.kind === 'ring' || e.kind === 'main' || e.kind === 'diag' ? '#8a857a' : e.kind === 'desert' || e.kind === 'drag' ? '#6a5e4a' : '#6e6a62') : '#3e3b36';
+        x.lineWidth = pass ? e.hw * 2 : (e.hw + e.sw) * 2;
+        x.beginPath(); x.moveTo(A.x, A.z); x.lineTo(B.x, B.z); x.stroke();
+      }
+      x.lineWidth = 1 / k;
+      for (const l of L.lots) {
+        if (l.x1 < vx0 || l.x0 > vx1 || l.z1 < vz0 || l.z0 > vz1) continue;
+        x.fillStyle = ['parking', 'plaza', 'park', 'vacant', 'empty', 'junk'].includes(l.type) ? (l.type === 'parking' ? '#36342f' : 'rgba(40,36,30,0.6)') : '#262320';
+        x.fillRect(l.x0, l.z0, l.x1 - l.x0, l.z1 - l.z0);
+        x.strokeStyle = 'rgba(0,0,0,0.5)'; x.strokeRect(l.x0, l.z0, l.x1 - l.x0, l.z1 - l.z0);
+      }
+      x.lineWidth = 1.5 / k;
+      for (const l of L.placed) {
+        if (l.x1 < vx0 || l.x0 > vx1 || l.z1 < vz0 || l.z0 > vz1) continue;
+        x.fillStyle = '#4a3a24'; x.fillRect(l.x0, l.z0, l.x1 - l.x0, l.z1 - l.z0);
+        x.strokeStyle = '#c9a227'; x.strokeRect(l.x0, l.z0, l.x1 - l.x0, l.z1 - l.z0);
+      }
+      x.setTransform(1, 0, 0, 1, 0, 0);
+    }
+    // soft vignette so the edge of the panel doesn't look cut
+    const vg = x.createRadialGradient(PW / 2, PH / 2, Math.min(PW, PH) * 0.35, PW / 2, PH / 2, Math.hypot(PW, PH) * 0.55);
+    vg.addColorStop(0, 'rgba(0,0,0,0)'); vg.addColorStop(1, 'rgba(0,0,0,0.45)');
+    x.fillStyle = vg; x.fillRect(0, 0, PW, PH);
+    return c;
   }
 
   drawFull() {
-    const cv = this.fullCanvas; if (!cv) return;
-    const g = this.game, x = cv.getContext('2d'), N = this.fullSize, NH = this.fullH, k = N / this.mw, E = this.ext;
-    const P = (wx, wz) => [(wx - E.minX) * k, (wz - E.minZ) * k];
-    x.clearRect(0, 0, N, NH);
-    x.drawImage(this.base, 0, 0, N, NH);
-    // grime vignette
-    const vg = x.createRadialGradient(N / 2, NH / 2, NH * 0.3, N / 2, NH / 2, N * 0.6); vg.addColorStop(0, 'rgba(0,0,0,0)'); vg.addColorStop(1, 'rgba(0,0,0,0.55)');
-    x.fillStyle = vg; x.fillRect(0, 0, N, NH);
-    // districts
+    const cv = this.fullCanvas, V = this.mv; if (!cv || !V) return;
+    // the panel was resized (window resize / rotation) and the observer hasn't caught up yet
+    const vr = this.fullView?.getBoundingClientRect();
+    if (vr && vr.width > 0 && (Math.round(vr.width) !== V.W || Math.round(vr.height) !== V.H) && !this._resizing) { this._resizing = true; try { this._mapResize?.(); } finally { this._resizing = false; } return; }
+    const g = this.game, x = cv.getContext('2d');
+    x.setTransform(1, 0, 0, 1, 0, 0);
+    x.drawImage(this._drawStatic(), 0, 0);
+    x.setTransform(V.dpr, 0, 0, V.dpr, 0, 0); // CSS px from here on
+    const P = (wx, wz) => [V.W / 2 + (wx - V.cx) * V.k, V.H / 2 + (wz - V.cz) * V.k];
+    const onScreen = (sx, sy, m = 20) => sx > -m && sx < V.W + m && sy > -m && sy < V.H + m;
     x.textAlign = 'center'; x.textBaseline = 'middle';
-    for (const [id, [wx, wz]] of Object.entries(DIST_LABEL_POS)) {
-      const D = DISTRICTS[id]; const [sx, sy] = P(wx, wz);
-      if (!D) continue;
-      x.font = `${Math.round(NH / 30)}px "Special Elite", monospace`;
-      x.lineWidth = 6; x.strokeStyle = 'rgba(0,0,0,0.5)'; x.strokeText(D.name.toUpperCase(), sx, sy);
-      // a quiet watermark under the pins, so the names never fight the icons for attention
-      x.globalAlpha = 0.5; x.fillStyle = D.palette.accent; x.fillText(D.name.toUpperCase(), sx, sy); x.globalAlpha = 1;
+    const taken = []; // label boxes already drawn (labels never pile on top of each other)
+    const free = (b) => !taken.some((t) => b[0] < t[2] && b[2] > t[0] && b[1] < t[3] && b[3] > t[1]);
+    const label = (text, sx, sy, col, font, h = 14, dry = false) => {
+      x.font = font;
+      const w = x.measureText(text).width;
+      const b = [sx - w / 2 - 3, sy - h / 2, sx + w / 2 + 3, sy + h / 2];
+      if (b[0] < 2 || b[2] > V.W - 2 || b[1] < 2 || b[3] > V.H - 2 || !free(b)) return false;
+      if (dry) return true;
+      taken.push(b);
+      x.lineWidth = 3.5; x.strokeStyle = 'rgba(0,0,0,0.9)'; x.strokeText(text, sx, sy);
+      x.fillStyle = col; x.fillText(text, sx, sy);
+      return true;
+    };
+    // keep labels out from under the map buttons and the legend
+    for (const el of this.fullView?.querySelectorAll('.map-ctrls, .map-legend:not(.hidden)') ?? []) {
+      const r = el.getBoundingClientRect(), o = cv.getBoundingClientRect();
+      taken.push([r.left - o.left - 4, r.top - o.top - 4, r.right - o.left + 4, r.bottom - o.top + 4]);
     }
-    // locations
-    const names = (this.fullCss ?? 999) >= 560;
-    const fs = Math.round(Math.max(NH / 72, names ? 20 : 13)); // canvas is 2x: names never below ~10 CSS px
-    for (const l of g.locations.list) {
-      const [sx, sy] = P(l.doorX ?? l.x, l.doorZ ?? l.z);
+    // player first so nothing labels over it
+    const f = this.focus();
+    let me = null;
+    if (f) { me = P(f.x, f.z); taken.push([me[0] - 14, me[1] - 14, me[0] + 14, me[1] + 14]); }
+    // location pins
+    const R = 8.5;
+    const locs = g.locations.list.map((l) => ({ l, p: P(l.doorX ?? l.x, l.doorZ ?? l.z) })).filter((o) => onScreen(o.p[0], o.p[1]));
+    for (const { p: [sx, sy] } of locs) taken.push([sx - R, sy - R, sx + R, sy + R]);
+    // markers (quests, heists, waypoint) and friends come before place names
+    const marks = [...(g.world.markers ?? [])].filter(([, m]) => m && Number.isFinite(m.x));
+    marks.sort((a, b) => (a[0] === 'waypoint' ? 1 : 0) - (b[0] === 'waypoint' ? 1 : 0) || (a[1].tracked ? 1 : 0) - (b[1].tracked ? 1 : 0));
+    // district names: small caps in the district's colour, nudged into the nearest gap between the pins
+    {
+      const fs = Math.round(Math.max(13, Math.min(20, 11 + V.k * 5)));
+      const font = `${fs}px "Special Elite", monospace`;
+      x.save();
+      try { x.letterSpacing = '2px'; } catch { /* older canvas */ }
+      for (const [id, [wx, wz]] of Object.entries(this._distLabels())) {
+        const D = DISTRICTS[id]; if (!D) continue;
+        const [ax, ay] = P(wx, wz);
+        if (!onScreen(ax, ay, 80)) continue;
+        const t = D.name.toUpperCase();
+        const spot = LABEL_TRIES.find(([dx, dy]) => label(t, ax + dx, ay + dy, '', font, fs + 4, true));
+        if (!spot) continue; // too crowded at this zoom: the HUD already names the district; zoom in to see it
+        x.globalAlpha = 0.9;
+        label(t, ax + spot[0], ay + spot[1], D.palette.accent, font, fs + 4);
+        x.globalAlpha = 1;
+      }
+      x.restore();
+    }
+    for (const { l, p: [sx, sy] } of locs) {
       const [ch, col] = TYPE_ICON[l.type] ?? ['•', '#ccc'];
-      x.fillStyle = 'rgba(0,0,0,0.85)'; x.beginPath(); x.arc(sx, sy, fs * 0.85, 0, 7); x.fill();
-      x.strokeStyle = col; x.lineWidth = 2; x.stroke();
-      x.font = `bold ${fs}px "Barlow Condensed", sans-serif`; x.fillStyle = col; x.fillText(ch, sx, sy + 1);
-      x.font = `${Math.round(fs * 0.95)}px "Barlow Condensed", sans-serif`;
-      if (!names) continue; // phone-sized map: icons only (the names would pile into an unreadable heap)
-      x.lineWidth = 4; x.strokeStyle = 'rgba(0,0,0,0.9)'; x.strokeText(l.name, sx, sy + fs * 1.6);
-      x.fillStyle = '#e8dcc0'; x.fillText(l.name, sx, sy + fs * 1.6);
+      x.fillStyle = 'rgba(0,0,0,0.85)'; x.beginPath(); x.arc(sx, sy, R, 0, 7); x.fill();
+      x.strokeStyle = col; x.lineWidth = 1.5; x.stroke();
+      x.font = 'bold 11px "Barlow Condensed", sans-serif'; x.fillStyle = col; x.fillText(ch, sx, sy + 0.5);
     }
-    // markers
-    for (const [id, m] of g.world.markers ?? []) {
-      if (m == null || !Number.isFinite(m.x)) continue;
-      const [sx, sy] = P(m.x, m.z);
-      drawMarker(x, sx, sy, m, id === 'waypoint', false, 1.8);
-      if (m.label) { x.font = `${Math.round(fs * 0.9)}px "Barlow Condensed", sans-serif`; x.lineWidth = 4; x.strokeStyle = '#000'; x.strokeText(m.label, sx, sy - fs * 1.8); x.fillStyle = m.color ?? '#fff'; x.fillText(m.label, sx, sy - fs * 1.8); }
+    const pinsDrawn = [];
+    for (const [id, m] of marks) {
+      let [sx, sy] = P(m.x, m.z);
+      const off = !onScreen(sx, sy, -12);
+      if (off) { sx = Math.max(14, Math.min(V.W - 14, sx)); sy = Math.max(14, Math.min(V.H - 14, sy)); }
+      drawMarker(x, sx, sy, m, id === 'waypoint', off, 1.5);
+      taken.push([sx - 10, sy - 10, sx + 10, sy + 10]);
+      pinsDrawn.push([id, m, sx, sy, off]);
     }
     for (const rp of g.net?.remotePlayers?.values?.() ?? []) {
       if (!rp?.pos) continue;
-      const [sx, sy] = P(rp.pos.x, rp.pos.z);
-      x.fillStyle = '#40e0ff'; x.beginPath(); x.arc(sx, sy, fs * 0.6, 0, 7); x.fill(); x.strokeStyle = '#000'; x.lineWidth = 2; x.stroke();
-      if (rp.name) { x.font = `${fs}px "Barlow Condensed", sans-serif`; x.fillStyle = '#40e0ff'; x.fillText(rp.name, sx, sy - fs * 1.4); }
+      let [sx, sy] = P(rp.pos.x, rp.pos.z);
+      const off = !onScreen(sx, sy, -10);
+      if (off) { sx = Math.max(10, Math.min(V.W - 10, sx)); sy = Math.max(10, Math.min(V.H - 10, sy)); }
+      x.fillStyle = '#40e0ff'; x.strokeStyle = '#000'; x.lineWidth = 2;
+      x.beginPath(); x.arc(sx, sy, 6, 0, 7); x.fill(); x.stroke();
+      taken.push([sx - 7, sy - 7, sx + 7, sy + 7]);
+      if (rp.name) label(String(rp.name), sx, sy - 15, '#40e0ff', 'bold 14px "Barlow Condensed", sans-serif');
     }
-    const f = this.focus();
-    if (f) {
-      const [sx, sy] = P(f.x, f.z);
+    // marker labels (tracked / waypoint first), then place names where they fit
+    for (const [id, m, sx, sy, off] of pinsDrawn.reverse()) {
+      if (!m.label || off) continue;
+      if (id !== 'waypoint' && !m.tracked && V.k < 0.9) continue;
+      label(String(m.label), sx, sy - 18, m.color ?? '#fff', '14px "Barlow Condensed", sans-serif');
+    }
+    const nameFont = `${V.k >= 1.2 ? 15 : 13}px "Barlow Condensed", sans-serif`;
+    for (const { l, p: [sx, sy] } of locs) label(l.name, sx, sy + R + 9, '#e8dcc0', nameFont);
+    // the player: arrow with a halo; pinned to the edge (dimmed) when panned off-screen
+    if (me) {
+      let [sx, sy] = me;
+      const off = !onScreen(sx, sy, -14);
+      if (off) { sx = Math.max(16, Math.min(V.W - 16, sx)); sy = Math.max(16, Math.min(V.H - 16, sy)); }
       const fac = g.player.vehicle ? (g.player.vehicle.group?.rotation?.y ?? g.player.facing) : g.player.facing;
-      x.save(); x.translate(sx, sy); x.rotate(Math.atan2(Math.cos(fac), Math.sin(fac)));
-      x.fillStyle = '#f0e8d0'; x.strokeStyle = '#000'; x.lineWidth = 3;
-      const s = fs * 1.1;
+      x.save(); x.translate(sx, sy);
+      x.globalAlpha = off ? 0.6 : 1;
+      x.fillStyle = 'rgba(240,232,208,0.16)'; x.beginPath(); x.arc(0, 0, 15, 0, 7); x.fill();
+      x.strokeStyle = 'rgba(240,232,208,0.55)'; x.lineWidth = 1.5; x.stroke();
+      x.rotate(Math.atan2(Math.cos(fac), Math.sin(fac)));
+      x.fillStyle = '#f0e8d0'; x.strokeStyle = '#000'; x.lineWidth = 2.2;
+      const s = 10;
       x.beginPath(); x.moveTo(s, 0); x.lineTo(-s * 0.7, s * 0.7); x.lineTo(-s * 0.3, 0); x.lineTo(-s * 0.7, -s * 0.7); x.closePath(); x.stroke(); x.fill();
       x.restore();
     }

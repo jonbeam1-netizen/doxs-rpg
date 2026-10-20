@@ -21,7 +21,8 @@ export function createMaterials() {
 
   // ---- ground / roads
   const groundC = T.groundCanvas();
-  reg('ground', new THREE.MeshStandardMaterial({ map: T.toTex(groundC), normalMap: T.toTex(T.normalFromCanvas(groundC, 1.5), { srgb: false }), vertexColors: true, roughness: 1, metalness: 0 }));
+  const groundM = reg('ground', new THREE.MeshStandardMaterial({ map: T.toTex(groundC), normalMap: T.toTex(T.normalFromCanvas(groundC, 1.5), { srgb: false }), vertexColors: true, roughness: 1, metalness: 0 }));
+  groundM.userData.baseRough = 1; groundM.userData.wetMin = 0.6; groundM.userData.wetDark = 0.3; A.wet.push(groundM); // dirt soaks dark, never glossy
   const asC = T.asphaltCanvas();
   const asphalt = reg('asphalt', new THREE.MeshStandardMaterial({ map: T.toTex(asC), normalMap: T.toTex(T.normalFromCanvas(asC, 2.2), { srgb: false }), vertexColors: true, roughness: 0.92, metalness: 0.0, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -4 }));
   asphalt.userData.baseRough = 0.92; A.wet.push(asphalt); A.env.push(asphalt);
@@ -116,13 +117,18 @@ export function createMaterials() {
   const glow = reg('glow', new THREE.MeshBasicMaterial({ map: glowTex, color: 0xffa860, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false, fog: false, vertexColors: true, polygonOffset: true, polygonOffsetFactor: -5, polygonOffsetUnits: -10 }), { recv: false, order: 2 });
   const beam = reg('beam', new THREE.MeshBasicMaterial({ map: T.toTex(T.beamCanvas(), { repeat: false }), color: 0xffb070, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, fog: false, vertexColors: true }), { recv: false, order: 3, detail: true });
   // Light cones fade out close to the camera so a lamp right next to you never
-  // paints a big flat wedge across the screen.
-  beam.onBeforeCompile = (sh) => {
+  // paints a big flat wedge across the screen. Cones and light pools (fog-free additive glows) also fade
+  // out before the fog swallows their lamp post, so nothing glows on its own in a pea-soup fog.
+  const fadeFar = { value: 150 };
+  const fadeIn = (sh, near) => {
+    sh.uniforms.uFadeFar = fadeFar;
     sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying float vCamD;')
       .replace('#include <project_vertex>', '#include <project_vertex>\nvCamD = -mvPosition.z;');
-    sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying float vCamD;')
-      .replace('#include <opaque_fragment>', '#include <opaque_fragment>\ngl_FragColor.rgb *= smoothstep(5.0, 16.0, vCamD) * (1.0 - smoothstep(70.0, 150.0, vCamD));');
+    sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying float vCamD; uniform float uFadeFar;')
+      .replace('#include <opaque_fragment>', `#include <opaque_fragment>\ngl_FragColor.rgb *= ${near} * (1.0 - smoothstep(uFadeFar * 0.47, uFadeFar, vCamD));`);
   };
+  beam.onBeforeCompile = (sh) => fadeIn(sh, 'smoothstep(5.0, 16.0, vCamD)');
+  glow.onBeforeCompile = (sh) => fadeIn(sh, '1.0');
   const bulbTex = T.toTex(T.bulbCanvas());
   const chase = reg('chase', new THREE.MeshBasicMaterial({ map: bulbTex, vertexColors: true }));
   chase.userData.lo = 0.7; chase.userData.hi = 1.5; A.neon.push(chase);
@@ -186,7 +192,7 @@ export function createMaterials() {
   }
 
   let envMap = null;
-  const state = { night: 0, wet: 0 };
+  const state = { night: 0, wet: 0, flk: 1 };
   function setEnv(tex) {
     // Only the first assignment changes the shader (envMap on/off); later refreshes are the same kind of
     // PMREM texture, so swapping the uniform is enough (no program re-validation hitch every 6 s).
@@ -195,8 +201,11 @@ export function createMaterials() {
     for (const m of A.env) { m.envMap = tex; if (first) m.needsUpdate = true; }
   }
 
-  function update(t, night, wet, daylight) {
+  // night: how far street lamps / windows / neon are switched on (0..1, atmosphere `lamps`);
+  // scatter: fog/rain thickness (lamp cones and pools read stronger); fogFar: current fog range.
+  function update(t, night, wet, daylight, scatter = 0, fogFar = 500) {
     state.night = night; state.wet = wet;
+    fadeFar.value = Math.min(150, fogFar * 1.25 + 10);
     for (const m of A.night) {
       const g = m.userData.nightGain ?? 1.2;
       m.emissiveIntensity = (m.userData.dayMin ?? 0) * (1 - night) + night * g;
@@ -206,7 +215,9 @@ export function createMaterials() {
       if (m.userData.flk) {
         const ph = t * (m.userData.flk === 1 ? 13.0 : 7.3);
         const f = Math.sin(ph) * Math.sin(ph * 2.71 + 1.3) + Math.sin(t * 0.7 + m.userData.flk);
-        if (f > 1.1 || (Math.sin(t * 0.37 * m.userData.flk) > 0.93 && Math.sin(t * 31) > 0)) k *= 0.08;
+        const off = f > 1.1 || (Math.sin(t * 0.37 * m.userData.flk) > 0.93 && Math.sin(t * 31) > 0);
+        if (off) k *= 0.08;
+        if (m.userData.flk === 1) state.flk = off ? 0.08 : 1;
       }
       m.color.setScalar(k);
     }
@@ -218,16 +229,16 @@ export function createMaterials() {
     beacon.color.setRGB(b, 0.05, 0.02);
     const am2 = (Math.floor(t * 1.4) % 2) ? 3 : 0.15;
     amber.color.setRGB(am2, am2 * 0.55, 0.02);
-    glow.opacity = night * 0.42;
-    beam.opacity = night * 0.045;
+    glow.opacity = night * (0.42 + scatter * 0.14);
+    beam.opacity = night * (0.045 + scatter * 0.075);
     chase.map.offset.x = Math.floor(t * 6) / 8;
     flame.uniforms.uTime.value = t;
     wn.offset.set(t * 0.004, t * 0.0025);
     // wet streets: glossier + darker
     for (const m of A.wet) {
-      m.roughness = Math.max(0.18, m.userData.baseRough - wet * 0.62);
-      m.color.setScalar((m.userData.base ?? 1) * (1 - wet * 0.35));
-      m.envMapIntensity = 0.12 + wet * 0.9;
+      m.roughness = Math.max(m.userData.wetMin ?? 0.18, m.userData.baseRough - wet * 0.64);
+      m.color.setScalar((m.userData.base ?? 1) * (1 - wet * (m.userData.wetDark ?? 0.42)));
+      m.envMapIntensity = 0.12 + wet * 0.95;
     }
     puddle.envMapIntensity = 0.25 + wet * 0.5 + night * 0.2;
     puddle.opacity = 0.18 + wet * 0.67; // barely there when dry, glossy when it rains

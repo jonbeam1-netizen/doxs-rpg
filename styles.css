@@ -776,3 +776,37 @@ body.touch-ui #district-card { top: auto !important; bottom: calc(292px + env(sa
 /* an achievement popping on the ending screen must not sit on the ending's title */
 body:has(.q-ending) #ui-root .ach-toast { top: auto; bottom: 24px; }
 @media (max-width: 600px) { .creator-title { font-size: clamp(20px, 7vw, 30px); } }
+
+/* ======================= City map (M): fills the viewport, pan/zoom canvas ======================= */
+.ui-modal.map-modal { padding: 12px; }
+.map-modal .ui-panel { width: 100%; max-width: none !important; height: 100%; max-height: none; display: flex; flex-direction: column; overflow: hidden; padding: 10px 12px 8px; touch-action: none; }
+.map-modal .ui-title { font-size: 22px; margin-bottom: 8px; padding-bottom: 4px; flex: none; }
+.map-modal .ui-x { top: 8px; right: 10px; }
+.map-modal .ui-body { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.map-full { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.map-view { position: relative; flex: 1; min-height: 0; overflow: hidden; border: 1px solid var(--panel-edge); background: #0c1214; touch-action: none; }
+.map-view canvas, .ui-body .map-view canvas { position: absolute; inset: 0; width: 100% !important; height: 100% !important; max-width: none; display: block; cursor: crosshair; touch-action: none; }
+.map-view canvas:active { cursor: grabbing; }
+.map-ctrls { position: absolute; right: 10px; top: 10px; display: flex; flex-direction: column; gap: 6px; align-items: flex-end; }
+.map-btn { min-width: 34px; height: 34px; padding: 0 8px; background: rgba(16,14,12,0.88); color: var(--bone); border: 1px solid var(--panel-edge); font-family: var(--font-body); font-size: 19px; line-height: 1; cursor: pointer; }
+.map-btn.wide { font-size: 15px; text-transform: uppercase; letter-spacing: 1px; }
+.map-btn:hover { border-color: var(--rust); background: #2a231b; }
+.map-legend { position: absolute; left: 10px; top: 10px; bottom: 10px; width: 190px; overflow-y: auto; padding: 8px 10px; background: rgba(12,11,9,0.9); border: 1px solid var(--panel-edge); font-size: 15px; scrollbar-width: thin; scrollbar-color: #4a4034 transparent; }
+.map-legend .ml-sec { font-family: var(--font-title); font-size: 14px; color: var(--bone-dim); margin: 2px 0 4px; border-bottom: 1px solid #2e2821; }
+.map-legend .ml-sec:not(:first-child) { margin-top: 10px; }
+.map-legend .ml-row { display: flex; align-items: center; gap: 8px; padding: 2px 0; color: var(--bone); }
+.ml-ico { flex: none; width: 18px; height: 18px; display: inline-flex; align-items: center; justify-content: center; font: bold 11px var(--font-body); color: var(--c); }
+.ml-ico.pin { border-radius: 50%; background: rgba(0,0,0,0.85); border: 1.5px solid var(--c); }
+.ml-ico.dot { width: 12px; height: 12px; margin: 0 3px; border-radius: 50%; background: var(--c); border: 2px solid #000; }
+.ml-ico.dia { width: 13px; height: 13px; margin: 0 2px; transform: rotate(45deg); background: var(--c); border: 1.5px solid #000; color: #000; font-size: 0; }
+.ml-ico.me { font-size: 15px; color: var(--c); text-shadow: 0 0 2px #000; }
+.map-hint { flex: none; text-align: center; margin-top: 6px; font-size: 14px; opacity: 0.7; }
+@media (max-width: 700px), (max-height: 520px) {
+  .ui-modal.map-modal { padding: 6px; }
+  .map-modal .ui-panel { padding: 8px 8px 6px; }
+  .map-modal .ui-title { font-size: 19px; margin-bottom: 6px; }
+  .map-hint { display: none; }
+  .map-legend { width: 160px; font-size: 14px; }
+}
+@media (pointer: coarse) { .map-btn { min-width: 44px; height: 44px; } }
+body.touch-ui .map-btn { min-width: 44px; height: 44px; }

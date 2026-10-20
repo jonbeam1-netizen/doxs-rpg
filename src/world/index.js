@@ -18,6 +18,7 @@ import { ISLE_MAX_X, MAP_EXT, SPOTS as ISLE_SPOTS, TOLL_X, LAND_X, BRIDGE, ISLE,
 import { buildSignals, createSignals } from './signals.js';
 import { runAudit } from './audit.js';
 import { CamColliders } from './camcollide.js';
+import { buildSkyline } from './skyline.js';
 
 // The city of Rotwell. See DESIGN.md "World" for the public API (game.world).
 
@@ -205,6 +206,8 @@ export async function installWorld(game, opts = {}) {
   await stage(0.92, 'turning on the smog', 'atmosphere');
   const atmo = new Atmosphere(game, mats, lights);
   const particles = new Particles(game.scene, emitters);
+  let skyline = null;
+  try { skyline = buildSkyline(game.scene); } catch (e) { console.error('[world] skyline failed', e); }
   let post = null;
   try { post = new Post(game); } catch (e) { console.error('[world] post-processing unavailable', e); }
 
@@ -372,6 +375,7 @@ export async function installWorld(game, opts = {}) {
       window.__door = (id, o = {}) => { const l = game.locations.get(id); if (!l) return null; let nx = (l.doorX ?? l.x) - l.x, nz = (l.doorZ ?? l.z) - l.z; const n = Math.hypot(nx, nz) || 1; nx /= n; nz /= n; const off = o.off ?? 5; return window.__shot((l.doorX ?? l.x) + nx * off, (l.doorZ ?? l.z) + nz * off, Math.atan2(nx, nz) + (o.yo ?? 0), { h: o.h ?? 12, dist: o.dist ?? 7.5, pitch: o.pitch ?? 0.32, n: o.n ?? 14 }); };
       window.__key = async (code, n = 6) => { for (const t of ['keydown', 'keyup']) { window.dispatchEvent(new KeyboardEvent(t, { code, key: code, bubbles: true })); if (t === 'keydown') game._frame(); } await window.__step(n); };
       window.__noanim = () => { if (document.getElementById('qa-noanim')) return; const s = document.createElement('style'); s.id = 'qa-noanim'; s.textContent = '*,*::before,*::after{animation-duration:0s!important;animation-delay:0s!important;transition-duration:0s!important;transition-delay:0s!important}'; document.head.appendChild(s); };
+      window.__atmo = atmo;
       window.__weather = (kind = null, snap = true) => { atmo.force = kind; if (snap && kind) atmo.snapWeather = true; return kind ?? atmo.weather; };
       window.__step = async (n = 10) => { for (let i = 0; i < n; i++) { await new Promise((r) => setTimeout(r, 16)); game._frame(); } };
       window.__shot = async (x, z, yaw, o = {}) => {
@@ -537,7 +541,7 @@ export async function installWorld(game, opts = {}) {
       isleFog.setRGB(l * 0.85, l * 1.0, l * 0.98);
       f.color.lerp(isleFog, 0.35 * isleK);
     }
-    try { mats.update(game.elapsed, env.night, env.wet, env.daylight); } catch (e) { if (!visuals._e2) { console.error('[world] mats', e); visuals._e2 = true; } }
+    try { mats.update(game.elapsed, env.lamps ?? env.night, env.wet, env.daylight, env.scatter ?? 0, env.fogFar ?? 500); } catch (e) { if (!visuals._e2) { console.error('[world] mats', e); visuals._e2 = true; } }
     try { particles.update(dt, cam, game.scene, 0.22 + env.daylight * 0.78); } catch (e) { if (!visuals._e3) { console.error('[world] particles', e); visuals._e3 = true; } }
     // chunk culling by distance
     const far = Math.min(900, atmo.fogFar + 160);
@@ -552,6 +556,7 @@ export async function installWorld(game, opts = {}) {
       const dr = d < drd;
       for (const m of c.userData.dress) m.visible = dr;
     }
+    if (skyline) { try { skyline.update(atmo, cam, game.elapsed); } catch (e) { if (!visuals._e4) { console.error('[world] skyline', e); visuals._e4 = true; } } }
     if (post) post.update(env);
     for (const o of isle.live) {
       const near = Math.hypot(o.x - cam.x, o.z - cam.z) < (o.range ?? 500);

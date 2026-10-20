@@ -12,10 +12,11 @@ const GradeShader = {
   uniforms: {
     tDiffuse: { value: null }, uTime: { value: 0 }, uRes: { value: new THREE.Vector2(1, 1) },
     uDesat: { value: 0.32 }, uGrain: { value: 0.055 }, uVig: { value: 0.4 }, uCA: { value: 0.0035 }, uNight: { value: 0 }, uFlash: { value: 0 }, uWet: { value: 0 },
+    uTint: { value: new THREE.Vector3(1, 1, 1) },
   },
   vertexShader: `varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
   fragmentShader: `
-    uniform sampler2D tDiffuse; uniform float uTime, uDesat, uGrain, uVig, uCA, uNight, uFlash, uWet; uniform vec2 uRes;
+    uniform sampler2D tDiffuse; uniform float uTime, uDesat, uGrain, uVig, uCA, uNight, uFlash, uWet; uniform vec2 uRes; uniform vec3 uTint;
     varying vec2 vUv;
     float hash(vec2 p){ p = fract(p * vec2(443.897, 441.423)); p += dot(p, p.yx + 19.19); return fract((p.x + p.y) * p.x); }
     void main(){
@@ -30,7 +31,7 @@ const GradeShader = {
       // split tone: greenish-teal shadows, sickly yellow mids/highs
       vec3 sh = vec3(0.92, 1.02, 1.0), hi = vec3(1.05, 1.03, 0.86);
       col *= mix(sh, hi, smoothstep(0.05, 0.6, l));
-      col = mix(col, col * vec3(0.86, 0.95, 1.12), uNight * 0.45);   // sick blue-black nights
+      col *= uTint;   // time-of-day grade: cold dawn, yellow smog noon, sickly orange dusk, blue-black night
       // crush blacks + gentle S curve
       col = max(col - 0.012, 0.0) / 0.988;
       col = mix(col, col * col * (3.0 - 2.0 * col), 0.28);
@@ -93,6 +94,7 @@ export class Post {
     const u = this.grade.uniforms;
     u.uTime.value = this.game.elapsed;
     u.uNight.value = env.night;
+    if (env.grade) { u.uTint.value.copy(env.grade.tint); u.uDesat.value = env.grade.desat; }
     u.uFlash.value = env.flash ?? 0;
     // restrained bloom: only real light sources (lamps, neon, fire) should glow
     this.bloom.strength = 0.26 + env.night * 0.22;
