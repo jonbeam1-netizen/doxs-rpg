@@ -231,8 +231,22 @@ export function installStreetEvents(game, q) {
   ];
 
   let lastHour = -999;
-  g.bus.on('time:hour', () => {
+  // Never shove a modal in the player's face mid-fight, mid-chase, mid-heist, on a board,
+  // right after a time skip, or while they're walking up to a quest objective.
+  function busy(hoursPassed) {
+    if (hoursPassed > 2) return true;
+    if (g.combat?.inBrawl?.() || (p().heat || 0) >= 1 || g.heists?.active || g.skate?.on) return true;
+    const pp = g.player.group.position;
+    if ((g.npcs?.near?.(pp.x, pp.z, 25) || []).some((n) => n.hostile && !n.dead)) return true;
+    try {
+      for (const id of q.activeIds()) for (const t of q.targets(id)) if (Math.hypot(t.x - pp.x, t.z - pp.z) < 30) return true;
+    } catch { /* ignore */ }
+    return false;
+  }
+
+  g.bus.on('time:hour', ({ hoursPassed } = {}) => {
     if (!g.started || !g.player || g.player.dead || g.player.vehicle || g.ui.isBlocking() || !g.state.getFlag('intro_done')) return;
+    if (busy(hoursPassed)) return;
     const nowH = Math.floor(g.time.total / 60);
     if (nowH - lastHour < 3) return;
     const cooldown = g.state.getFlag('street_cd', 0) || 0;

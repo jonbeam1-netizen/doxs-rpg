@@ -405,6 +405,14 @@ export function installStreet(game, I) {
     const until = Number(msg?.until);
     if (o && Number.isFinite(until) && until > game.time.total && until < game.time.total + 240) openHydrant(o, until, false);
   });
+  // Late joiners: the host tells them which hydrants are gushing right now.
+  game.bus.on('net:player-joined', ({ id } = {}) => {
+    try {
+      if (!id || !game.net?.isHost) return;
+      const now = game.time.total;
+      for (const o of hydrants) if (o.until > now) game.net.sendTo(id, { t: 'interact:hydrant', id: o.id, until: o.until });
+    } catch { /* offline */ }
+  });
 
   // ============================================================ PERFORMERS
   const PERF = [

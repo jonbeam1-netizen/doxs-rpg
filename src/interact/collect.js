@@ -244,19 +244,20 @@ export function installCollect(game, I) {
       game.bus.emit('interact:milestone', { kind: 'tags', count: n });
     }
   }
+  const okName = (v) => (typeof v === 'string' && v.trim() ? v : 'someone').slice(0, 16);
   const okColor = (c) => (typeof c === 'string' && /^#[0-9a-f]{6}$/i.test(c) ? c : TAG_COLORS[0]);
   game.net?.on?.('interact:tag', (msg, from) => {
     if (from && from === game.net.localId) return;
-    const o = tags.find((t) => t.id === msg?.id);
+    const o = typeof msg?.id === 'string' && tags.find((t) => t.id === msg.id);
     if (!o || I.S().tags[o.id]) return; // your own tag stays on your screen
-    setTag(o, String(msg.name || 'someone').slice(0, 16), okColor(msg.color));
+    setTag(o, okName(msg.name), okColor(msg.color));
     o.mine = false;
   });
   game.net?.on?.('interact:tags', (msg, from) => {
     if (from && from === game.net.localId) return;
     for (const e of (Array.isArray(msg?.list) ? msg.list : []).slice(0, TAG_TOTAL)) {
       const o = tags.find((t) => t.id === e?.id);
-      if (o && !I.S().tags[o.id]) { setTag(o, String(e.name || 'someone').slice(0, 16), okColor(e.color)); o.mine = false; }
+      if (o && !I.S().tags[o.id]) { setTag(o, okName(e?.name), okColor(e?.color)); o.mine = false; }
     }
   });
   const shareTags = () => {

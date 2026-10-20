@@ -110,7 +110,7 @@ export class SkateVendor {
         html: `"Okay... okay. You've been around. You've got that 'slept in a dumpster at least twice' glow. Respect."<br><br>
           "Listen. Some goons jacked my personal board last night. My <b>BABY</b>. Seven plies of pure love, and they're probably using her as a cheese board right now. They hang out down in <b>${esc(this._districtName(q))}</b>."<br><br>
           "Get her back and I'll hook you up. Open the shop to ya and everything."`,
-        options: [{ label: "I'll get your board back.", hint: 'Starts "Board Thieves"' }, { label: 'Sounds like a you problem.' }] });
+        options: [{ label: "I'll get your board back.", hint: 'Starts "Board Thieves" · reward: a free board + Kev\'s shop' }, { label: 'Sounds like a you problem.' }] });
       if (i === 0) this.startQuest();
       return;
     }

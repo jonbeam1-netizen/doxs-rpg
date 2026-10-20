@@ -206,10 +206,11 @@ export class HeistManager {
     if (!s || s.phase !== 'active') return false;
     if (s.crew.some((c) => c.id === id)) return true;
     if (s.crew.length >= 4) return false;
-    s.crew.push({ id, name: String(name).slice(0, 16), masked: false, mask: MASKS[mask] ? mask : 'stocking', out: false });
-    for (const gid of gear) if (GEAR[gid]) s.gear[gid] = true;
+    s.crew.push({ id, name: (typeof name === 'string' ? name : 'Crew').slice(0, 16), masked: false, mask: typeof mask === 'string' && Object.prototype.hasOwnProperty.call(MASKS, mask) ? mask : 'stocking', out: false });
+    for (const gid of (Array.isArray(gear) ? gear : [])) if (typeof gid === 'string' && Object.prototype.hasOwnProperty.call(GEAR, gid)) s.gear[gid] = true;
     for (const o of s.obj) if (o.type === 'hold') o.need = this.needFor(o, s.gear);
-    this.toast(`<b>${esc(name)}</b> is in on the ${esc(s.name)}. The split just got smaller. And safer.`, 'good');
+    if (this.A) this.A.needFull = true; // crew & gear changed: everyone gets a full snapshot
+    this.toast(`<b>${esc(s.crew[s.crew.length - 1].name)}</b> is in on the ${esc(s.name)}. The split just got smaller. And safer.`, 'good');
     this.dirty();
     return true;
   }
@@ -450,6 +451,7 @@ export class HeistManager {
 
   applyAct(msg, from) {
     const s = this.s;
+    if (!msg || typeof msg !== 'object' || typeof msg.a !== 'string') return; // remote data is untrusted
     if (!this.auth || !s || s.phase !== 'active' || msg.uid !== s.uid) return;
     const crew = s.crew.find((c) => c.id === from);
     if (!crew && msg.a !== 'join') return;
@@ -458,7 +460,7 @@ export class HeistManager {
     switch (msg.a) {
       case 'join': this.addCrew(from, msg); break;
       case 'mask':
-        crew.masked = !!msg.on; if (MASKS[msg.style]) crew.mask = msg.style; break;
+        crew.masked = !!msg.on; if (typeof msg.style === 'string' && Object.prototype.hasOwnProperty.call(MASKS, msg.style)) crew.mask = msg.style; break;
       case 'hold': {
         const o = s.obj.find((x) => x.k === msg.k);
         if (!o || o.done || o.type !== 'hold' || o !== cur) break;
@@ -488,7 +490,7 @@ export class HeistManager {
       case 'stash': if (bag && bag.s === 'c' && bag.by === from) bag.s = 'k'; break;
       case 'secure': {
         let n = 0;
-        for (const i of msg.list || []) { const b = s.bags[i]; if (b && (b.s === 'c' || b.s === 'k') && b.by === from) { b.s = 's'; n++; } }
+        for (const i of (Array.isArray(msg.list) ? msg.list.slice(0, 32) : [])) { const b = s.bags[i]; if (b && (b.s === 'c' || b.s === 'k') && b.by === from) { b.s = 's'; n++; } }
         if (n) {
           const val = s.bags.filter((b) => b.s === 's').reduce((a, b) => a + b.v, 0);
           this.broadcastToast(`💰 <b>${esc(crew.name)}</b> dropped off ${n} bag${n > 1 ? 's' : ''}. Secured: ${fmtMoney(val)}`, 'money');
@@ -501,9 +503,9 @@ export class HeistManager {
       case 'down': {
         if (crew.out) break;
         crew.out = true;
-        for (const d of msg.bags || []) {
-          const b = s.bags[d.i];
-          if (b && b.by === from && (b.s === 'c' || b.s === 'k')) { b.s = 'g'; b.by = null; if (Number.isFinite(d.x)) { b.x = d.x; b.z = d.z; } }
+        for (const d of (Array.isArray(msg.bags) ? msg.bags.slice(0, 32) : [])) {
+          const b = Number.isInteger(d?.i) ? s.bags[d.i] : null;
+          if (b && b.by === from && (b.s === 'c' || b.s === 'k')) { b.s = 'g'; b.by = null; if (Number.isFinite(d.x) && Number.isFinite(d.z)) { b.x = d.x; b.z = d.z; } }
         }
         for (const b of s.bags) if (b.by === from && (b.s === 'c' || b.s === 'k')) { const p = this.crewPos(from); b.s = 'g'; b.by = null; if (p) { b.x = p.x; b.z = p.z; } }
         this.broadcastToast(`<b>${esc(crew.name)}</b> is out (${msg.why === 'arrested' ? 'busted' : 'wrecked'}). ${pick(['Their share just got redistributed.', 'More for the rest of you. Grim, but true.'])}`, 'bad');
@@ -698,17 +700,80 @@ export class HeistManager {
   }
 
   // ------------------------------------------------------------------ net
-  broadcastState(force = false) {
+  // Bandwidth: the full snapshot (~1.5 KB: every objective's static layout) goes out on start,
+  // crew changes, phase changes, late joins and every 8 s as a safety net. In between we send
+  // a small delta only when something actually changed, plus a ~1 Hz clock heartbeat.
+  broadcastState(force = false, full = false) {
     if (!this.shared || !this.s) return;
     if (!force && !this.A?.dirty) return;
-    if (this.A) this.A.dirty = false;
-    try { this.net.broadcast({ t: 'heist:state', s: this.s }); } catch (e) { console.error('[heists] state broadcast failed', e); }
+    const A = this.A, s = this.s;
+    if (A) A.dirty = false;
+    try {
+      if (full || !A || A.needFull || !A.lastFull || this.t - A.lastFull > 8 || s.phase !== 'active') {
+        if (A) { A.lastFull = this.t; A.needFull = false; A.lastSig = null; A.beatT = this.t; }
+        this.net.broadcast({ t: 'heist:state', s });
+        return;
+      }
+      const d = this.stateDelta();
+      const sig = JSON.stringify({ ...d, timeLeft: 0 });
+      if (sig !== A.lastSig) { A.lastSig = sig; A.beatT = this.t; this.net.broadcast({ t: 'heist:state', d }); }
+      else if (this.t - (A.beatT || 0) >= 1) { A.beatT = this.t; this.net.broadcast({ t: 'heist:state', d: { uid: s.uid, timeLeft: d.timeLeft } }); }
+    } catch (e) { console.error('[heists] state broadcast failed', e); }
+  }
+
+  stateDelta() {
+    const s = this.s;
+    const r1 = (n) => Math.round((Number(n) || 0) * 10) / 10;
+    return {
+      uid: s.uid, phase: s.phase, timeLeft: Math.round(s.timeLeft * 10) / 10, alarm: s.alarm, susp: r1(s.susp), extraGot: s.extraGot,
+      leader: s.leader, crew: s.crew, bags: s.bags, truck: s.truck,
+      objd: s.obj.map((o) => [o.done ? 1 : 0, r1(o.prog), r1(o.need), r1(o.x), r1(o.z)]),
+    };
+  }
+
+  applyDelta(d) {
+    const s = this.s;
+    if (!s || !d || typeof d !== 'object' || d.uid !== s.uid) return false; // wait for the next full snapshot
+    if (Number.isFinite(d.timeLeft)) s.timeLeft = d.timeLeft;
+    if (Number.isFinite(d.susp)) s.susp = d.susp;
+    if (Number.isFinite(d.extraGot)) s.extraGot = d.extraGot;
+    if ('alarm' in d) s.alarm = d.alarm;
+    if (typeof d.phase === 'string') s.phase = d.phase;
+    if (typeof d.leader === 'string') s.leader = d.leader;
+    if (Array.isArray(d.crew)) s.crew = d.crew.filter((c) => c && typeof c === 'object');
+    if (Array.isArray(d.bags)) s.bags = d.bags.filter((b) => b && typeof b === 'object');
+    if (d.truck && typeof d.truck === 'object') s.truck = d.truck;
+    if (Array.isArray(d.objd)) {
+      d.objd.forEach((v, i) => {
+        const o = s.obj[i];
+        if (!o || !Array.isArray(v)) return;
+        o.done = !!v[0];
+        if (Number.isFinite(v[1])) o.prog = v[1];
+        if (Number.isFinite(v[2])) o.need = v[2];
+        if (Number.isFinite(v[3]) && Number.isFinite(v[4])) { o.x = v[3]; o.z = v[4]; }
+      });
+    }
+    return true;
+  }
+
+  // Someone joined the session mid-job: offer them a spot (the host runs the job).
+  onPlayerJoined(id) {
+    const s = this.s;
+    if (!id || !this.auth || !this.shared || !s || s.phase !== 'active') return;
+    try {
+      this.net.sendTo(id, { t: 'heist:invite', uid: s.uid, id: s.id, name: s.name, approach: s.approach, leaderName: this.myName() });
+      if (this.A) this.A.needFull = true;
+    } catch (e) { console.error('[heists] late invite failed', e); }
   }
 
   onState(msg, from) {
-    if (this.auth) return;
+    if (this.auth || !msg || typeof msg !== 'object') return;
     if (msg.toast) {
-      if (this.s && msg.uid === this.s.uid) this.toast(msg.toast, msg.kind || 'info');
+      if (this.s && msg.uid === this.s.uid && typeof msg.toast === 'string') this.toast(msg.toast, typeof msg.kind === 'string' ? msg.kind : 'info');
+      return;
+    }
+    if (msg.d) {
+      this.applyDelta(msg.d); // phase changes always arrive as full snapshots, handled below
       return;
     }
     const s = msg.s;

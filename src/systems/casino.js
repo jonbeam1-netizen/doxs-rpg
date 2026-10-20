@@ -387,7 +387,7 @@ export function installCasino(game) {
         return `${pick([
           'The Golden Tooth: a casino shaped like a giant gold tooth. Inside, it smells like cigarettes, desperation, and carpet shampoo. No clocks. No windows. No hope.',
           'Slot machines scream. A woman in a fur coat is feeding quarters into a machine with one hand and a cigarette with the other. She hasn\'t blinked in hours.',
-          'Vinnie Molars, the owner, smiles at you with 32 gold teeth. "Welcome, welcome! Lose responsibly! Or irresponsibly! We\'re not picky!"',
+          'Vinnie Molars, the Contessa\'s floor manager, smiles at you with 32 gold teeth. "Welcome, welcome! Lose responsibly! Or irresponsibly! We\'re not picky!"',
         ])}<br><br><span class="sys-hint">Room: <b>${ROOMS[room].name}</b> (${fmtMoney(ROOMS[room].min)}–${fmtMoney(ROOMS[room].max)} bets). Today's net: <span class="${c.net >= 0 ? 'ui-good' : 'ui-bad'}">${c.net >= 0 ? '+' : ''}${fmtMoney(c.net)}</span>.${p.sys.casino.net > ROOMS[room].limit * 0.7 ? ' <b class="ui-bad">Security is watching you.</b>' : ''}</span>`;
       },
       options: () => {

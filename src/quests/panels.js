@@ -123,9 +123,13 @@ export class QuestPanels {
       html = `<div class="qt-title" style="color:${color}">${fin ? '<span class="qt-fin">FINALE</span>' : ''}${esc(d.title)}</div><div class="qt-obj">${esc(this.q.objectiveText(id).replace(/^FINALE: /, ''))}</div>`;
       if (timeLeft != null) {
         const s = Math.max(0, Math.ceil(timeLeft));
-        html += `<div class="qt-timer">${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}</div>`;
+        const waiting = this.q.current(id)?.obj?.night && !this.g.time.isNight;
+        html += `<div class="qt-timer">${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}${waiting ? ' <span class="qt-key">(clock starts after 8 PM)</span>' : ''}</div>`;
       }
       html += `<div class="qt-more">${more > 0 ? `+${more} more · ` : ''}<span class="qt-key">J: quest log</span></div>`;
+    } else {
+      let h = null; try { h = this.q.hint(); } catch { /* ignore */ }
+      if (h) html = `<div class="qt-title" style="color:${KIND_COLORS.main}">${esc(h.title)}</div><div class="qt-obj">${esc(h.text)}</div>`;
     }
     if (this.trackerEl._last !== html) { this.trackerEl.innerHTML = html; this.trackerEl._last = html; }
   }
@@ -149,7 +153,15 @@ export class QuestPanels {
       try { html += goalsHtml(g); } catch (e) { console.error('[quests] goals failed', e); html += '<div class="ui-muted">Goals unavailable.</div>'; }
     } else if (this.logTab === 'active') {
       const ids = q.activeIds().sort((a, b) => rank(q.def(a)) - rank(q.def(b)));
-      if (!ids.length) html += '<div class="ui-muted">Nothing on your plate. Go bother somebody with a "!" over their head.</div>';
+      // Kev's skateboard job lives in the skate module; list it here so the log isn't missing it.
+      let skateQ = null;
+      try { const sq = g.skate?.data?.()?.quest; if (sq && (sq.stage === 'hunt' || sq.stage === 'won')) skateQ = sq; } catch { /* no skate module */ }
+      if (skateQ) {
+        html += `<div class="q-card" style="border-left-color:${KIND_COLORS.side}"><div class="q-kind">Side job · from Skidmark Kev</div><h3 style="color:${KIND_COLORS.side}">Board Thieves</h3>
+          <div class="q-obj"><b>▸</b> ${skateQ.stage === 'won' ? 'Bring the board back to Skidmark Kev near Threads &amp; Dreads (Downtown).' : 'Get Kev\'s board back from the goons in Gutterside (marked on your map).'}</div>
+          <div class="q-rew">Reward: a skateboard (G to ride) and Kev's shop</div></div>`;
+      }
+      if (!ids.length && !skateQ) html += '<div class="ui-muted">Nothing on your plate. Go bother somebody with a "!" over their head.</div>';
       const tracked = q.trackedId();
       for (const id of ids) {
         const d = q.def(id); const qq = q.get(id);

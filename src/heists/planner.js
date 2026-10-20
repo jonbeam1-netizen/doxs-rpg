@@ -128,6 +128,10 @@ export class Planner {
     if (holds.some((o) => o.fast.thermite)) rec.push('thermite');
     if (ks.has('truck_stop') && approach === 'loud') rec.push('spikes');
     rec.push('getaway');
+    // Don't "recommend" one-use gear that costs more than half the job pays
+    // (a $1,200 drill for a ~$1,000 corner-store safe is a trap for new players).
+    const est = Math.round((d.bags?.count || 0) * (((d.bags?.value?.[0] || 0) + (d.bags?.value?.[1] || 0)) / 2) + (((d.extra?.[0] || 0) + (d.extra?.[1] || 0)) / 2));
+    for (let i = rec.length - 1; i >= 0; i--) if (!GEAR[rec[i]].perm && est > 0 && GEAR[rec[i]].price > est * 0.5) rec.splice(i, 1);
     // gear check loop
     for (;;) {
       const h = mgr.h;
@@ -141,7 +145,7 @@ export class Planner {
       opts.push({ label: 'Back out' });
       const gi = await g.ui.dialog({
         title: `${d.name} — ${approach === 'quiet' ? 'Quiet' : 'Loud'}`, speaker: PLANNER.name,
-        text: `Recommended kit:\n${lines}\n\nMask: ${MASKS[h.mask].name}${missing.length ? `\n\n"${pick(PLANNER.noGear)}"` : ''}`,
+        text: `Expected take: ~${fmtMoney(est)}\nRecommended kit:\n${lines || '(nothing worth buying for this one)'}\n\nMask: ${MASKS[h.mask].name}${missing.length ? `\n\n"${pick(PLANNER.noGear)}"` : ''}`,
         options: opts,
       });
       if (gi == null || gi === opts.length - 1) return;

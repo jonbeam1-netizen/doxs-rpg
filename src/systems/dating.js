@@ -216,7 +216,7 @@ export function installDating(game) {
       const p = st.p;
       const relTxt = r.partner ? '<b style="color:#d84a8a">❤ Your partner</b>' : r.rel >= 80 ? 'Totally into you' : r.rel >= 50 ? 'Crushing on you' : r.rel >= 25 ? 'Interested' : r.rel > 0 ? 'Barely knows you' : 'Stranger';
       const opts = [
-        { label: 'Flirt', hint: r.lastFlirt === game.time.day ? 'done today' : `${Math.round(chanceFor(id) * 100)}% chance`, run: () => flirt(id) },
+        { label: 'Flirt', hint: r.lastFlirt === game.time.day ? 'done today, come back tomorrow' : `${Math.round(chanceFor(id) * 100)}% chance`, disabled: r.lastFlirt === game.time.day, run: () => flirt(id) },
         { label: 'Give a gift', run: () => gift(id) },
         { label: 'Ask on a date', hint: r.rel < 25 ? 'needs relationship 25' : '3h', disabled: r.rel < 25, run: () => date(id) },
       ];

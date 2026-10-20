@@ -527,9 +527,11 @@ class Skate {
 
   onNet(msg, from) {
     const net = this.game.net;
-    if (!from || from === net.localId) return;
+    if (!from || from === net.localId || !msg || typeof msg !== 'object') return;
     if (!msg.on) { this._dropRemote(from); return; }
-    const board = BOARDS[msg.board] ? msg.board : 'plank';
+    // untrusted network data: only own-property string keys
+    const own = (o, k) => typeof k === 'string' && Object.prototype.hasOwnProperty.call(o, k);
+    const board = own(BOARDS, msg.board) ? msg.board : 'plank';
     let r = this.remotes.get(from);
     if (!r || r.boardId !== board) {
       this._dropRemote(from, true);
@@ -537,9 +539,9 @@ class Skate {
       this.game.scene.add(r.mesh);
       this.remotes.set(from, r);
     }
-    const tr = String(msg.trick || '');
+    const tr = typeof msg.trick === 'string' ? msg.trick : '';
     if (tr === 'bail') r.bail = 1.5;
-    else if (TRICKS[tr] && tr !== 'ollie') r.trick = { name: tr, t: 0, dur: BOARDS[board].flip };
+    else if (own(TRICKS, tr) && tr !== 'ollie') r.trick = { name: tr, t: 0, dur: BOARDS[board].flip };
   }
 
   _dropRemote(id, keepPose = false) {

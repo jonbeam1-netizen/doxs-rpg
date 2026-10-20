@@ -477,7 +477,9 @@ export function installShops(game) {
   game.locations.register('gun_shop', (g, loc) => placeMenu(g, loc, {
     hours: [9, 21],
     speaker: 'Buck Bang',
-    closed: () => 'Bang Bang Bros. is locked behind steel shutters. But around back, there\'s a door with a slot... and light underneath.',
+    closed: () => (g.time.isBetween(22, 3)
+      ? 'Bang Bang Bros. is locked behind steel shutters. But around back, there\'s a door with a slot... and light underneath.'
+      : 'Bang Bang Bros. is locked behind steel shutters. Around back there\'s a door with a slot, dark for now. Word is it opens 10 PM to 3 AM.'),
     closedOptions: () => (g.time.isBetween(22, 3) ? [{ label: 'Knock on the back door', hint: 'after hours', run: () => backroom(loc) }] : []),
     text: () => pick([
       'Buck Bang, a man shaped like a gun safe, cleans a rifle on the counter. "Welcome to Bang Bang Bros. If it goes bang, we got it. If it doesn\'t, we\'ll make it."',

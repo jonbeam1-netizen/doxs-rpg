@@ -198,7 +198,7 @@ export function installMarket(game) {
     if (p.job?.id === 'cop' && chance(0.5)) game.ui.toast(`${dealer.name} squints at you. "You smell like bacon, man. ...Eh, money's money."`, 'info', 3500);
     const wrap = document.createElement('div');
     const entry = game.ui.openPanel({ title: `${name} — ${DISTRICTS[dist]?.name ?? dist}`, body: wrap, width: 780 });
-    let msg = pick(dealer.greet);
+    let msg = pick(dealer.greet).replace(/\{name\}/g, dealer.name);
     const render = () => {
       const stock = stockOf(dist);
       const total = st.totalDrugs();
@@ -216,8 +216,8 @@ export function installMarket(game) {
           <td class="num" style="white-space:nowrap"><button class="ui-btn primary" data-buy="${id}" ${canBuy ? '' : 'disabled'}>Buy</button>
           <button class="ui-btn" data-sell="${id}" ${have ? '' : 'disabled'}>Sell</button></td></tr>`;
       }
-      html += `</table><div class="ui-row" style="margin-top:10px"><button class="ui-btn" data-rumor>Ask about the word on the street</button>
-        <button class="ui-btn" data-sellall ${total ? '' : 'disabled'}>Sell everything</button><span style="flex:1"></span>
+      html += `</table><div class="ui-row" style="margin-top:10px"><button class="ui-btn" data-rumor="1">Ask about the word on the street</button>
+        <button class="ui-btn" data-sellall="1" ${total ? '' : 'disabled'}>Sell everything</button><span style="flex:1"></span>
         <span class="sys-hint">Dealing raises heat — more with cops nearby.</span></div>`;
       wrap.innerHTML = html;
     };

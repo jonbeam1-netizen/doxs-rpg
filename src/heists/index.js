@@ -73,36 +73,41 @@ export async function installHeists(game) {
   game.bus.on('player:arrested', () => down('arrested'));
 
   // ---- co-op
+  // Network data is untrusted: only accept plain strings (String(obj) can throw on odd payloads).
+  const str = (v, max = 16, d = '') => (typeof v === 'string' ? v : d).slice(0, max);
+  const gearList = (v) => (Array.isArray(v) ? v.filter((x) => typeof x === 'string').slice(0, 12) : []);
   net.on('heist:state', (msg, from) => mgr.onState(msg, from));
   net.on('heist:payout', (msg, from) => mgr.onPayout(msg, from));
   net.on('heist:act', (msg, from) => mgr.applyAct(msg, from));
   net.on('heist:loot', (msg, from) => mgr.applyAct(msg, from));
   net.on('heist:accept', (msg, from) => {
     if (!mgr.auth || !mgr.shared) return;
-    mgr.applyAct({ a: 'join', uid: msg.uid, name: msg.name, gear: Array.isArray(msg.gear) ? msg.gear.slice(0, 12) : [], mask: msg.mask }, from);
+    if (!msg || typeof msg !== 'object') return;
+    mgr.applyAct({ a: 'join', uid: msg.uid, name: str(msg.name), gear: gearList(msg.gear), mask: str(msg.mask, 24) }, from);
     mgr.broadcastState(true);
   });
   net.on('heist:invite', async (msg, from) => {
     try {
-      if (msg.declined) { game.ui.toast(`The boss passed on your pitch. ${esc(msg.why || '')}`, 'bad', 4000); return; }
-      const def = HEISTS[msg.id];
+      if (!msg || typeof msg !== 'object') return;
+      if (msg.declined) { game.ui.toast(`The boss passed on your pitch. ${esc(str(msg.why, 120))}`, 'bad', 4000); return; }
+      const def = typeof msg.id === 'string' && Object.prototype.hasOwnProperty.call(HEISTS, msg.id) ? HEISTS[msg.id] : null;
       if (!def) return;
       if (msg.pitch) {
         if (!net.isHost) return;
-        const name = esc(String(msg.name || 'Your buddy').slice(0, 16));
+        const name = esc(str(msg.name) || 'Your buddy');
         if (mgr.s) { net.sendTo(from, { t: 'heist:invite', declined: true, why: 'They\'re already on a job.' }); return; }
         const st = mgr.status(msg.id);
         if (!st.ok) { net.sendTo(from, { t: 'heist:invite', declined: true, why: `The host can't do that job yet (${st.why || 'locked'}).` }); game.ui.toast(`${name} pitched the ${esc(def.name)}, but you're not ready: ${esc(st.why || '')}`, 'info', 5000); return; }
         const ok = await game.ui.confirm(`${name} wants to pull the ${def.name} (${msg.approach === 'quiet' ? 'quiet' : 'loud'}). You'd be running it — guards, timer, the works. Everyone splits the take evenly.`, { title: '📞 Heist pitch', yes: 'Let\'s do it', no: 'Not now' });
         if (!ok || mgr.s) { net.sendTo(from, { t: 'heist:invite', declined: true, why: 'Not now.' }); return; }
-        mgr.startRun(msg.id, msg.approach === 'quiet' ? 'quiet' : 'loud', { pitcher: from, pitcherInfo: { name: String(msg.name || '').slice(0, 16), gear: Array.isArray(msg.gear) ? msg.gear.slice(0, 12) : [], mask: msg.mask }, invite: true });
+        mgr.startRun(msg.id, msg.approach === 'quiet' ? 'quiet' : 'loud', { pitcher: from, pitcherInfo: { name: str(msg.name), gear: gearList(msg.gear), mask: str(msg.mask, 24) }, invite: true });
         mgr.broadcastState(true);
         return;
       }
       // host invite -> client
       if (net.isHost || mgr.s) return;
-      const ok = await game.ui.confirm(`<b>${esc(String(msg.leaderName || 'The host').slice(0, 16))}</b> is pulling the <b>${esc(def.name)}</b> (${msg.approach === 'quiet' ? 'quiet' : 'loud'}) and wants you in. Even split. Bring a mask.`,
-        { title: '📞 You got a job offer', yes: 'I\'m in', no: 'Pass', html: `<b>${esc(String(msg.leaderName || 'The host').slice(0, 16))}</b> is pulling the <b>${esc(def.name)}</b> (${msg.approach === 'quiet' ? 'quiet' : 'loud'}) and wants you in.<br><br>${esc(def.blurb)}<br><br>Even split. Bring a mask (<kbd>V</kbd>).` });
+      const ok = await game.ui.confirm(`<b>${esc(str(msg.leaderName) || 'The host')}</b> is pulling the <b>${esc(def.name)}</b> (${msg.approach === 'quiet' ? 'quiet' : 'loud'}) and wants you in. Even split. Bring a mask.`,
+        { title: '📞 You got a job offer', yes: 'I\'m in', no: 'Pass', html: `<b>${esc(str(msg.leaderName) || 'The host')}</b> is pulling the <b>${esc(def.name)}</b> (${msg.approach === 'quiet' ? 'quiet' : 'loud'}) and wants you in.<br><br>${esc(def.blurb)}<br><br>Even split. Bring a mask (<kbd>V</kbd>).` });
       if (!ok || mgr.s) return;
       net.sendToHost({ t: 'heist:accept', uid: msg.uid, name: mgr.myName(), gear: mgr.myGearIds(), mask: mgr.h.mask });
     } catch (e) { console.error('[heists] invite failed', e); }
@@ -117,6 +122,7 @@ export async function installHeists(game) {
     if (s.leader === 'local') s.leader = id;
     if (isHost) mgr.shared = true;
   });
+  game.bus.on('net:player-joined', ({ id } = {}) => mgr.onPlayerJoined(id));
   game.bus.on('net:disconnected', () => {
     const s = mgr.s;
     if (!s) return;

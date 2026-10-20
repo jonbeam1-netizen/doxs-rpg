@@ -75,7 +75,8 @@ export async function installQuests(game) {
   // Co-op: brag to friends when someone hits an ending.
   try {
     game.net.on('q_ending', (msg) => {
-      game.ui.toast(`<b>${esc(msg?.name || 'Your buddy')}</b> reached an ending: <b>${esc(msg?.title || '???')}</b>`, 'good', 6000);
+      const sv = (v, d) => (typeof v === 'string' && v ? v.slice(0, 40) : d);
+      game.ui.toast(`<b>${esc(sv(msg?.name, 'Your buddy'))}</b> reached an ending: <b>${esc(sv(msg?.title, '???'))}</b>`, 'good', 6000);
     });
   } catch { /* single player */ }
 }

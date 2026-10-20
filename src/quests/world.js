@@ -193,6 +193,10 @@ export class QuestWorld {
       const color = KIND_COLORS[d.kind] || KIND_COLORS.side;
       q.targets(id).forEach((t, i) => want.set(`${id}:${i}`, { ...t, color, title: d.title, tracked: id === tracked, kind: d.kind }));
     }
+    if (!tracked) {
+      let h = null; try { h = q.hint(); } catch { /* ignore */ }
+      (h?.targets || []).forEach((t, i) => want.set(`hint:${i}`, { ...t, color: KIND_COLORS.main, title: h.title, tracked: false, kind: 'main' }));
+    }
     // beacons
     for (const [k, b] of this.beacons) if (!want.has(k)) { this.root.remove(b.group); this.beacons.delete(k); }
     for (const [k, t] of want) this._beacon(k, t, t.color, t.tracked);

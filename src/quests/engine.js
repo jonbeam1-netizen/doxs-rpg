@@ -208,6 +208,29 @@ export class QuestEngine {
   }
   track(id) { this.g.state.setFlag('q_tracked', id); this.changed(); }
 
+  // Nothing tracked after the prologue (or after an ending): point at the story doors that are
+  // open to you right now, so the tracker and the map always have a next step.
+  hint() {
+    if (this.trackedId() || !this.isDone('main_prologue')) return null;
+    const ends = this.g.state.getFlag('endings', []) || [];
+    const targets = []; const names = []; const seen = new Set();
+    for (const d of Object.values(this.defs)) {
+      if (d.kind !== 'main' || d.id === 'main_prologue' || this.store[d.id] || seen.has(d.giver)) continue;
+      let ok = true; try { ok = d.available ? !!d.available(this.g) : true; } catch { ok = false; }
+      if (!ok) continue;
+      const p = this.charPos(d.giver); if (!p) continue;
+      seen.add(d.giver);
+      const who = CHARACTERS[d.giver]?.name || d.giver;
+      names.push(who);
+      targets.push({ x: p.x, z: p.z, label: `${who}: ${d.title}` });
+    }
+    const title = ends.length ? 'Legend of Rotwell' : 'Five Doors';
+    const text = targets.length
+      ? `Pick a story: talk to ${names.join(', ').replace(/, ([^,]*)$/, ' or $1')} (gold "!"). J → Goals shows what each door needs.`
+      : 'No new doors open yet. Raise your stats, karma or cash (J → Goals shows what each door needs), or take a side gig from anyone with a "!".';
+    return { title, text, targets };
+  }
+
   // ---------------------------------------------------------------- rewards & items
   reward(r = {}, quiet = false) {
     const g = this.g, s = g.state;
@@ -375,6 +398,8 @@ export class QuestEngine {
       for (const id of this.activeIds()) {
         const q = this.store[id];
         if (q.sd?.timeLeft == null) continue;
+        // a night-only timed step doesn't burn its clock during the day (you can't do it yet)
+        if (this.current(id)?.obj?.night && !g.time.isNight) continue;
         q.sd.timeLeft -= dt;
         if (q.sd.timeLeft <= 0) this._timeout(id);
       }
@@ -535,7 +560,9 @@ export class QuestEngine {
     for (const d of offers) opts.push({ label: `<b class="q-mark new">!</b> ${d.title}`, hint: d.kind === 'main' ? 'new story' : 'new quest', go: () => this.runOffer(d, charId) });
     for (const e of extras) opts.push({ label: e.label, hint: e.hint, disabled: e.disabled, go: e.run });
     opts.push({ label: 'Leave' });
-    let line = pick(c.idle || ['...']);
+    let line = null;
+    try { line = c.after?.(g) || null; } catch { line = null; }
+    line = line || pick(c.idle || ['...']);
     if (!hooks.length && !offers.length) {
       const locked = Object.values(this.defs).find((d) => d.giver === charId && !this.store[d.id] && d.lockedText);
       const lt = locked ? locked.lockedText(g) : null;
@@ -568,6 +595,10 @@ export class QuestEngine {
         { label: 'Sure, I\'ll do it.', hint: def.rewardText ? 'reward: ' + def.rewardText : '', result: 'accept' },
         { label: 'Not right now.', result: 'decline' },
       ] };
+    } else if (def.rewardText) {
+      // Custom offer pages: still show the payoff on the first (accepting) choice before you commit.
+      pages[pages.length - 1] = { ...lastObj, choices: lastObj.choices.map((c, i) => (i === 0 && !['decline', 'stay'].includes(c.result) && typeof c.hint !== 'function' && !/reward/i.test(c.hint || '')
+        ? { ...c, hint: `${c.hint ? c.hint + ' · ' : ''}reward: ${def.rewardText}` } : c)) };
     }
     const r = await this.say(pages, { char: charId, def, title: def.title });
     if (r === 'accept') this.start(def.id);
@@ -625,7 +656,9 @@ export class QuestEngine {
     const opts = choices.map((c) => {
       let ok = true;
       try { ok = !c.if || !!c.if(g, ctx.q); } catch { ok = false; }
-      return { label: c.label, hint: c.hint || '', disabled: !ok };
+      let hint = c.hint || '';
+      try { if (typeof hint === 'function') hint = hint(g, ctx.q) || ''; } catch { hint = ''; }
+      return { label: c.label, hint, disabled: !ok };
     });
     const i = await g.ui.dialog({ title, speaker, html, options: opts });
     if (i == null) return 'stay';

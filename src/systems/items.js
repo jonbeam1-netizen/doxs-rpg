@@ -59,7 +59,21 @@ export function installItems(game) {
       }
       st.removeItem(id, 1);
       if (fx.time) game.time.advance(fx.time);
-      if (fx.energy) st.addStat('energy', fx.energy);
+      if (fx.energy) {
+        let energy = fx.energy;
+        // Caffeine stacks badly: each extra drink within 6 game-hours gives 40% less, so chugging
+        // a six-pack of Kardiak Arrest isn't an infinite gym membership. Food and sleep are unaffected.
+        if (energy > 0 && d.cat === 'drink') {
+          const now = game.time.total;
+          p.sys ??= {};
+          p.sys.caf = (Array.isArray(p.sys.caf) ? p.sys.caf : []).filter((t) => now - t < 360 && now >= t);
+          const n = p.sys.caf.length;
+          energy = Math.max(1, Math.round(energy * Math.pow(0.6, n)));
+          p.sys.caf.push(now);
+          if (n >= 2) game.ui.toast(`Your heart is doing a drum solo. Only +${energy} energy. (Caffeine wears off in a few hours. Eat or sleep instead.)`, 'bad', 3200);
+        }
+        st.addStat('energy', energy);
+      }
       if (fx.hp > 0) st.heal(fx.hp);
       if (fx.hp < 0) st.damage(-fx.hp, 'item');
       if (fx.sober) { game.sysFx.sober(); game.sysFx.remove('hungover'); }

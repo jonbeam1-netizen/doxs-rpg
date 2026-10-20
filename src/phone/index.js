@@ -99,12 +99,24 @@ export async function installPhone(game) {
       const obj = game.quests?.objectiveText?.(id);
       if (!obj || lastQuestObj[id] === obj) return; // start + step often fire together
       lastQuestObj[id] = obj;
-      text(questFrom(id), `${prefix}${obj}`, { silent: false });
+      // "Go talk to <giver>" texted BY the giver reads like nonsense; skip it.
+      const st = game.quests?.current?.(id);
+      if (st?.obj?.type === 'talk' && st.obj.who === QUESTS[id]?.giver) return;
+      // The quest engine already toasts every objective; the text is a quiet log
+      // entry (bubble + phone) rather than a second toast stacked on top.
+      text(questFrom(id), `${prefix}${obj}`, { silent: true });
     } catch { /* ignore */ }
   }, 900);
   game.bus.on('quest:started', ({ id } = {}) => { if (game.started && QUESTS[id]) questText(id, 'So here\'s the deal: '); });
   game.bus.on('quest:step', ({ id } = {}) => { if (game.started && QUESTS[id]) questText(id, 'Next up: '); });
-  game.bus.on('quest:completed', ({ id } = {}) => { if (game.started && QUESTS[id] && chance(0.6)) setTimeout(() => text(questFrom(id), pick(['Nice work. Don\'t let it go to your head. There\'s not much room in there.', 'Done? Huh. Didn\'t think you had it in you. Still don\'t, honestly.', 'You did it! I owe you one. (I will never pay it back.)'])), 1500); });
+  const nearGiver = (id) => {
+    try {
+      const c = game.quests?.charPos?.(QUESTS[id]?.giver), pp = game.player?.group?.position;
+      return !!(c && pp && Math.hypot(c.x - pp.x, c.z - pp.z) < 40);
+    } catch { return false; }
+  };
+  // (no "nice work" text from someone you're standing next to)
+  game.bus.on('quest:completed', ({ id } = {}) => { if (game.started && QUESTS[id] && !QUESTS[id].repeatable && !nearGiver(id) && chance(0.6)) setTimeout(() => text(questFrom(id), pick(['Nice work. Don\'t let it go to your head. There\'s not much room in there.', 'Done? Huh. Didn\'t think you had it in you. Still don\'t, honestly.', 'You did it! I owe you one. (I will never pay it back.)'])), 1500); });
   game.bus.on('player:arrested', () => { if (game.started) setTimeout(() => text('Mom', pick(['I saw your mugshot on the news. You looked tired. Are you sleeping?', 'The neighbors are TALKING. Call me.'])), 4000); });
   game.bus.on('car:destroyed', (d = {}) => { if (game.started && !d.remote && chance(0.5)) setTimeout(() => text('Rotwell Mutual Insurance', 'We noticed your vehicle is on fire. Your premium has been increased. Thank you for choosing Rotwell Mutual.'), 3000); });
   game.bus.on('player:levelup', ({ level } = {}) => { if (game.started && level % 3 === 0) setTimeout(() => text('Mom', `Level ${level}! I told everyone at church. They didn't care. I'm proud of you.`), 2500); });

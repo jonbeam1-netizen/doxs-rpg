@@ -86,8 +86,10 @@ export function installHomes(game) {
 
   function homeOptions(loc) {
     const p = st.p;
+    const hr = game.time.hour;
     const out = [
-      { label: 'Sleep until morning', hint: `until 7AM · ${Math.round(game.time.minutesUntil(7) / 60)}h`, run: () => sleep(loc, Math.max(60, game.time.minutesUntil(7))) },
+      // "until morning" only makes sense in the evening/night (at 7 AM it would skip a whole day)
+      ...(hr >= 17 || hr < 6 ? [{ label: 'Sleep until morning', hint: `until 7AM · ${Math.round(game.time.minutesUntil(7) / 60)}h`, run: () => sleep(loc, Math.max(60, game.time.minutesUntil(7))) }] : []),
       { label: 'Sleep 8 hours', run: () => sleep(loc, 480) },
       { label: 'Take a nap', hint: '2 hours', run: () => sleep(loc, 120) },
       { label: 'Stash', hint: 'safe from cops & muggers', run: () => openStash(loc) },
@@ -191,8 +193,9 @@ export function installHomes(game) {
     const frac = Math.min(1, minutes / 480);
     const wasDrunk = p.sys.drunk;
     game.time.advance(minutes);
-    const energyGain = Math.round(p.maxEnergy * restore * frac);
-    st.addStat('energy', energyGain);
+    const before = p.energy;
+    st.addStat('energy', Math.round(p.maxEnergy * restore * frac));
+    const energyGain = Math.max(0, Math.round(p.energy - before)); // what you actually got (a full tank gains nothing)
     st.heal(Math.round(p.maxHp * (0.25 + 0.1 * h.tier) * frac));
     if (minutes >= 360) { game.sysFx.sober(); if (wasDrunk >= 3) game.sysFx.add({ id: 'hungover', min: 180 }); }
     const notes = [];

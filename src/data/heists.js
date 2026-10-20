@@ -68,7 +68,7 @@ export const HEISTS = {
     objectives: {
       quiet: [
         { k: 'goto', type: 'goto', label: 'Get to the Gas-N-Gulp' },
-        { k: 'mask', type: 'mask', label: 'Mask up (G)' },
+        { k: 'mask', type: 'mask', label: 'Mask up (V)' },
         { k: 'backdoor', type: 'lockpick', label: 'Pick the stockroom door', spot: 'left', pins: 3 },
         { k: 'safe', type: 'hold', label: 'Crack the floor safe', spot: 'right', need: 10, fast: { drill: 0.45 }, verb: 'Cracking', onDone: 'bags' },
         { k: 'loot', type: 'loot', label: 'Grab the bags' },
@@ -76,7 +76,7 @@ export const HEISTS = {
       ],
       loud: [
         { k: 'goto', type: 'goto', label: 'Get to the Gas-N-Gulp' },
-        { k: 'mask', type: 'mask', label: 'Mask up (G)' },
+        { k: 'mask', type: 'mask', label: 'Mask up (V)' },
         { k: 'register', type: 'hold', label: 'Rob the register', spot: 'door', need: 3, verb: 'Yelling at Dwayne', onDone: 'alarm,cash' },
         { k: 'safe', type: 'hold', label: 'Crack the floor safe', spot: 'right', need: 12, fast: { drill: 0.45 }, verb: 'Cracking', onDone: 'bags' },
         { k: 'loot', type: 'loot', label: 'Grab the bags' },
@@ -103,7 +103,7 @@ export const HEISTS = {
     objectives: {
       quiet: [
         { k: 'find', type: 'truck_find', label: 'Find the armored truck' },
-        { k: 'mask', type: 'mask', label: 'Mask up (G)' },
+        { k: 'mask', type: 'mask', label: 'Mask up (V)' },
         { k: 'stop', type: 'truck_stop', label: 'Boot its wheel while it\'s parked at a pickup (or ram/spike it)' },
         { k: 'doors', type: 'lockpick', label: 'Pick the rear doors', spot: 'truckRear', pins: 4, onDone: 'bags' },
         { k: 'loot', type: 'loot', label: 'Grab the bags' },
@@ -111,7 +111,7 @@ export const HEISTS = {
       ],
       loud: [
         { k: 'find', type: 'truck_find', label: 'Find the armored truck' },
-        { k: 'mask', type: 'mask', label: 'Mask up (G)' },
+        { k: 'mask', type: 'mask', label: 'Mask up (V)' },
         { k: 'stop', type: 'truck_stop', label: 'Stop the truck: ram it 3x, spike it, or boot it at a stop' },
         { k: 'doors', type: 'hold', label: 'Blow the rear doors', spot: 'truckRear', need: 10, fast: { thermite: 0.35 }, verb: 'Rigging charges', onDone: 'bags' },
         { k: 'loot', type: 'loot', label: 'Grab the bags' },
@@ -143,7 +143,7 @@ export const HEISTS = {
     objectives: {
       quiet: [
         { k: 'goto', type: 'goto', label: 'Get to First Bank of Rotwell' },
-        { k: 'mask', type: 'mask', label: 'Mask up (G)' },
+        { k: 'mask', type: 'mask', label: 'Mask up (V)' },
         { k: 'service', type: 'lockpick', label: 'Pick the service entrance', spot: 'farLeft', pins: 4 },
         { k: 'cams', type: 'hack', label: 'Loop the security cameras', spot: 'left', rounds: 3 },
         { k: 'vault', type: 'hold', label: 'Crack the vault', spot: 'right', need: 20, fast: { drill: 0.5 }, verb: 'Cracking the vault', onDone: 'bags,cash' },
@@ -152,7 +152,7 @@ export const HEISTS = {
       ],
       loud: [
         { k: 'goto', type: 'goto', label: 'Get to First Bank of Rotwell' },
-        { k: 'mask', type: 'mask', label: 'Mask up (G)' },
+        { k: 'mask', type: 'mask', label: 'Mask up (V)' },
         { k: 'lobby', type: 'hold', label: 'EVERYBODY ON THE FLOOR! (control the lobby)', spot: 'door', need: 3, verb: 'Screaming', onDone: 'alarm,cash' },
         { k: 'gate', type: 'hold', label: 'Cut the vault gate', spot: 'left', need: 8, fast: { thermite: 0.35 }, verb: 'Cutting' },
         { k: 'vault', type: 'hold', label: 'Drill the vault', spot: 'right', need: 26, fast: { drill: 0.45 }, verb: 'Drilling', onDone: 'bags' },
@@ -189,7 +189,7 @@ export const HEISTS = {
     objectives: {
       quiet: [
         { k: 'goto', type: 'goto', label: 'Get to The Golden Tooth' },
-        { k: 'mask', type: 'mask', label: 'Mask up (G)' },
+        { k: 'mask', type: 'mask', label: 'Mask up (V)' },
         { k: 'staff', type: 'lockpick', label: 'Pick the staff entrance', spot: 'farRight', pins: 4 },
         { k: 'cage', type: 'hack', label: 'Hack the cage\'s time lock', spot: 'right', rounds: 4 },
         { k: 'count', type: 'hold', label: 'Crack the counting room safe', spot: 'left', need: 22, fast: { drill: 0.5 }, verb: 'Cracking', onDone: 'bags,cash' },
@@ -198,7 +198,7 @@ export const HEISTS = {
       ],
       loud: [
         { k: 'goto', type: 'goto', label: 'Get to The Golden Tooth' },
-        { k: 'mask', type: 'mask', label: 'Mask up (G)' },
+        { k: 'mask', type: 'mask', label: 'Mask up (V)' },
         { k: 'storm', type: 'hold', label: 'Storm the cage', spot: 'door', need: 3, verb: 'Waving your gun at grandmas', onDone: 'alarm,cash' },
         { k: 'door', type: 'hold', label: 'Breach the counting room door', spot: 'right', need: 12, fast: { thermite: 0.35 }, verb: 'Breaching' },
         { k: 'count', type: 'hold', label: 'Drill the counting room safe', spot: 'left', need: 26, fast: { drill: 0.45 }, verb: 'Drilling', onDone: 'bags' },
@@ -236,7 +236,7 @@ export const HEISTS = {
     objectives: {
       quiet: [
         { k: 'goto', type: 'goto', label: 'Get to Grimco Tower' },
-        { k: 'mask', type: 'mask', label: 'Mask up (G)' },
+        { k: 'mask', type: 'mask', label: 'Mask up (V)' },
         { k: 'lobby', type: 'lockpick', label: 'Pick the loading dock door', spot: 'farLeft', pins: 5 },
         { k: 'elev', type: 'hack', label: 'Hack the penthouse elevator', spot: 'left', rounds: 4 },
         { k: 'alarm', type: 'hack', label: 'Kill the vault alarm', spot: 'farRight', rounds: 4 },
@@ -246,7 +246,7 @@ export const HEISTS = {
       ],
       loud: [
         { k: 'goto', type: 'goto', label: 'Get to Grimco Tower' },
-        { k: 'mask', type: 'mask', label: 'Mask up (G)' },
+        { k: 'mask', type: 'mask', label: 'Mask up (V)' },
         { k: 'lobby', type: 'hold', label: 'Take the lobby', spot: 'door', need: 3, verb: 'Screaming at interns', onDone: 'alarm,cash' },
         { k: 'elev', type: 'hack', label: 'Hack the penthouse elevator', spot: 'left', rounds: 3 },
         { k: 'door', type: 'hold', label: 'Blow the penthouse door', spot: 'farRight', need: 12, fast: { thermite: 0.35 }, verb: 'Rigging charges' },

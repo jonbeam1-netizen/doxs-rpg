@@ -72,24 +72,24 @@ export const DRUG_ORDER = Object.keys(DRUGS).sort((a, b) => DRUGS[a].base - DRUG
 // Dealer personalities, one per district (dealer handler uses loc.district).
 export const DEALERS = {
   gutterside: { name: 'Twitchy Kev', greet: [
-    "Kev's eye twitches. Then the other one. \"You buyin' or you a cop? If you're a cop you gotta tell me. That's the law. I think.\"",
-    '"Yo yo yo. Welcome to Kev\'s Discount Pharma. No refunds, no receipts, no questions, no teeth."',
+    "{name}'s eye twitches. Then the other one. \"You buyin' or you a cop? If you're a cop you gotta tell me. That's the law. I think.\"",
+    '"Yo yo yo. Welcome to Discount Pharma. No refunds, no receipts, no questions, no teeth."',
   ] },
   downtown: { name: 'Business Brenda', greet: [
-    'Brenda checks her Bluetooth earpiece. "I have a 3 o\'clock. Make it quick, sweetie."',
-    '"Brenda\'s Boutique Pharmaceuticals. We\'re disrupting the corner-store space."',
+    '{name} taps a Bluetooth earpiece. "I have a 3 o\'clock. Make it quick, sweetie."',
+    '"Boutique Pharmaceuticals, this is {name}. We\'re disrupting the corner-store space."',
   ] },
   hilltop: { name: 'Sebastian', greet: [
     'A man in a cashmere turtleneck sniffs at you. "Ah. New money. Or... no money. Let\'s find out."',
-    '"Sebastian. Purveyor of artisanal, small-batch, gluten-free contraband."',
+    '"{name}. Purveyor of artisanal, small-batch, gluten-free contraband."',
   ] },
   rustyards: { name: 'Dockside Dmitri', greet: [
-    'Dmitri leans on a shipping container that is definitely humming. "Fresh off boat. Do not ask which boat."',
+    '{name} leans on a shipping container that is definitely humming. "Fresh off boat. Do not ask which boat."',
     '"My cousin, he is customs inspector. So: no customs. Only inspecting of your money."',
   ] },
   blackwater: { name: 'Salty Dorothea', greet: [
     'A one-eyed woman in a dripping raincoat opens a cooler full of ice and very non-fish items. "Smuggler prices, sugar. The rare stuff comes in by boat. The cheap stuff costs extra out here."',
-    '"Dorothea. I sell to sailors, inmates and seagulls. The seagulls tip best."',
+    '"{name}. I sell to sailors, inmates and seagulls. The seagulls tip best."',
   ] },
   dustbowl: { name: 'Meth-ew McConaissance', greet: [
     'A sunburnt cowboy with four teeth tips his hat. "Alright alright alright. Whatcha need, pardner?"',

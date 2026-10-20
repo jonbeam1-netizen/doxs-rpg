@@ -1,4 +1,5 @@
 import { mulberry32 } from '../core/util.js';
+import { CHARACTERS } from '../data/quests.js';
 
 // Deterministic placement of street interactables on top of the world API.
 // Everything here only reads world data that is identical on every co-op
@@ -42,6 +43,15 @@ export class Placer {
     for (const s of this.w.seats || []) this.avoid.push({ x: s.x, z: s.z, r: 1.6 + (s.width || 1) / 2 });
     for (const s of Object.values(this.w.dealerSpots || {})) this.avoid.push({ x: s.x, z: s.z, r: 3 });
     for (const it of game.interact.items.values()) if (!it.getPos && !String(it.id).startsWith('loc:') && Number.isFinite(it.x)) this.avoid.push({ x: it.x, z: it.z, r: 3.5 });
+    // story characters, the heist board and Kev: no hydrant/ATM parked on top of a quest giver
+    // (the nearest "E" prompt wins, so a prop there hijacks the conversation).
+    try {
+      const pts = [];
+      const qw = game.quests?.world;
+      if (qw?._placeFor) for (const c of Object.values(CHARACTERS)) pts.push(qw._placeFor(c)); // deterministic, same as the spawn
+      pts.push(game.heists?.planner?.pos, game.skate?.vendor?.npc?.pos);
+      for (const p of pts) if (p && Number.isFinite(p.x) && Number.isFinite(p.z)) this.avoid.push({ x: p.x, z: p.z, r: 3.5 });
+    } catch { /* optional modules */ }
     const isle = this.w.island;
     if (isle?.spots) for (const s of Object.values(isle.spots)) if (Number.isFinite(s?.x) && Number.isFinite(s?.z)) this.avoid.push({ x: s.x, z: s.z, r: 4 });
     this._wall = null;

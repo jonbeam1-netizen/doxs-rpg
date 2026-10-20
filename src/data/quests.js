@@ -54,7 +54,10 @@ const STATN = { str: 'STR', int: 'INT', cha: 'CHA', karma: 'Karma' };
 //            'accept' | 'decline' | <step number>.
 // ---------------------------------------------------------------------------
 export const pay = (amount, label, result = 'advance', then = null) => ({
-  label: label || `Pay ${$(amount)}`, hint: $(amount),
+  label: label || `Pay ${$(amount)}`,
+  // Say WHY it's greyed out: quest payments come out of your pockets, not the bank.
+  hint: (g) => (g.state.canAfford(amount) ? $(amount)
+    : `${$(amount)} cash · you have ${$(g.state.p.money)}${(g.state.p.bank || 0) > 0 ? ' (withdraw at an ATM)' : ''}`),
   if: (g) => g.state.canAfford(amount),
   do: (g) => { g.state.spend(amount, 'quest'); return result; },
   then,
@@ -65,6 +68,12 @@ export const gate = (stat, min, label, result = 'advance', then = null) => ({
   result, then,
 });
 export const leave = (label = 'Not right now.') => ({ label, result: 'stay' });
+// Marker for "earn money / get promoted" steps: where you work now (else Pizza Butt, which hires anyone).
+const jobMarker = (label = 'Work a shift') => (g) => {
+  const loc = g.jobs?.current?.()?.def?.loc || 'pizza_butt';
+  const p = g.quests.locPos(loc) || g.quests.locPos('pizza_butt');
+  return p && { ...p, label: `${label}: ${p.label}` };
+};
 export const fight = (spec, label, then = null, result = 'advance') => ({
   label, hint: 'fight',
   do: async (g) => ((await g.quests.brawl(spec)) ? result : 'stay'),
@@ -106,6 +115,11 @@ export const CHARACTERS = {
   sal: {
     name: 'Big Sal Monella', title: 'Boss of the Gutter Rats', loc: 'rats_clubhouse', slot: 0,
     color: '#3a4a20', hat: 'cap', hatColor: '#6a7a2a', talkPrompt: 'Talk to Big Sal',
+    // Post-ending greeting (overrides idle chatter so the world remembers what you did).
+    after: (g) => ({
+      ruthless: '> Big Sal is back from his "retirement" at the harbor: damp, humbled, and wearing a tank top that says ERRAND BOY. "Boss. You still need jobs run? I need the work. The harbor\'s cold."',
+      shared: 'Co-boss! The truck\'s got two steering wheels now. Neither one works. That\'s teamwork, baby.',
+    })[g.state.getFlag('ending_kingpin')] || null,
     idle: [
       'Monella. Like the bacteria. You get one joke. You used it already. In your head. I saw.',
       "Ice cream truck don't sell ice cream. The jingle's a code. The code is 'run'.",
@@ -117,6 +131,9 @@ export const CHARACTERS = {
   vivienne: {
     name: 'Vivienne Velour', title: 'The Velvet Contessa', loc: 'syndicate_lounge', slot: 0,
     color: '#5a1020', hat: 'fedora', hatColor: '#2a0a12', talkPrompt: 'Speak with the Contessa',
+    after: (g) => (g.state.getFlag('vivienne_gone') || g.state.getFlag('ending_kingpin')
+      ? '> The Contessa is back, in a blonde wig, sunglasses and a stick-on mustache. "I am NOT Vivienne. I am her cousin. Vivian. One N. Completely different woman. Now. Business?"'
+      : null),
     idle: [
       "Don't touch the velvet, darling. The velvet touches YOU. When it's ready.",
       'Lord Snifferton smells poverty on you. He\'s growling. He\'s also drooling, so it\'s complicated.',
@@ -128,6 +145,10 @@ export const CHARACTERS = {
   grimsworth: {
     name: 'Chadwick Grimsworth III', title: 'CEO, Grimco', loc: 'grimco', slot: 0,
     color: '#1c1c24', hat: 'tophat', hatColor: '#0a0a0e', talkPrompt: 'Talk to Mr. Grimsworth',
+    after: (g) => ({
+      coup: '> Grimsworth now staffs the Grimco lobby desk. His smile has not moved. "Welcome to Grimco, boss. Would you like a lanyard? I have made you forty lanyards."',
+      partner: 'Partner! The ficus sends its regards. It voted to give us both a raise. We accepted on its behalf.',
+    })[g.state.getFlag('ending_corporate')] || null,
     idle: [
       'Grimco: We Own That Too.',
       "Ethics? I've heard of it. We acquired it in '09 and dissolved it for tax purposes.",
@@ -339,10 +360,10 @@ export const CHARACTERS = {
     ],
   },
   gary: {
-    name: 'Gary Butt', title: 'Owner, Pizza Butt', loc: 'pizza_butt', slot: 0,
-    color: '#8a2a1a', hat: 'cap', hatColor: '#c43a1a', talkPrompt: 'Talk to Gary Butt',
+    name: 'Tony Butt', title: 'Owner, Pizza Butt', loc: 'pizza_butt', slot: 0,
+    color: '#8a2a1a', hat: 'cap', hatColor: '#c43a1a', talkPrompt: 'Talk to Tony Butt',
     idle: [
-      "Yes, my name is Gary Butt. Yes, I named the place after myself. No, I don't see what's funny.",
+      "Yes, my name is Tony Butt. Yes, I named the place after myself. No, I don't see what's funny.",
       'Pizza Butt: We Put the Cheese in Places.',
       "Our slogan used to be 'Stuffed Crust'. Legal made us stop. I don't know why.",
     ],
@@ -496,7 +517,7 @@ export const QUESTS = {
         ],
       },
       {
-        text: 'Get a job. Big Marge at the Greasy Spoon (next to the motel) hires anybody with a pulse. Apply and work one shift.',
+        text: 'Get a job. Big Marge at the Greasy Spoon (down the street from the motel) hires anybody with a pulse. Apply and work one shift.',
         obj: { type: 'event', evt: 'job:worked', count: 1 },
         marker: { loc: 'greasy_spoon', label: 'Greasy Spoon (jobs)' },
         reward: { money: 20 },
@@ -510,8 +531,11 @@ export const QUESTS = {
         done: '> Calories acquired. Watch your energy bar: work, training and fights all drain it. Food and sleep refill it.',
       },
       {
-        text: 'Get less pathetic: raise STR, INT or CHA to 10. Pump iron at the Iron Lung Gym ($12 day pass) or read at the Public Library (free), both Downtown.',
-        obj: { type: 'check', check: (g) => Math.max(g.state.p.str, g.state.p.int, g.state.p.cha) >= 10 },
+        // Goal is relative to where you are when the step starts (a Gym Rat who levels up on
+        // their first shift would otherwise skip the gym/library intro entirely).
+        text: (g, q) => `Get less pathetic: raise STR, INT or CHA to ${q?.sd?.goal || 10}. Pump iron at the Iron Lung Gym ($12 day pass) or read at the Public Library (free), both Downtown.`,
+        onStart: (g, q) => { const p = g.state.p; q.sd.goal = Math.max(10, Math.floor(Math.max(p.str, p.int, p.cha)) + 3); },
+        obj: { type: 'check', check: (g, q) => Math.max(g.state.p.str, g.state.p.int, g.state.p.cha) >= (q?.sd?.goal || 10) },
         marker: { loc: ['iron_lung', 'library'], label: 'Gym / Library' },
         done: '> You feel slightly less pathetic. The bar was low. You cleared it. Barely. Like a drunk doing a limbo.',
       },
@@ -531,6 +555,7 @@ export const QUESTS = {
       {
         text: 'Reg says Rotwell only respects cash. Get $250 in your pocket (shifts, deals, Pizza Butt deliveries...).',
         obj: { type: 'money', min: 250 },
+        marker: jobMarker(),
       },
       {
         text: 'Go to City Hall downtown and see who runs this dump.',
@@ -578,7 +603,7 @@ export const QUESTS = {
         ],
       },
     ],
-    reward: { xp: 2500, money: 15000 }, rewardText: 'The streets. All of them. (+$15,000 first week of tribute)',
+    reward: { xp: 2500, money: 15000, rep: { rats: 200 } }, rewardText: 'The streets. All of them. (+$15,000 first week of tribute)',
     steps: [
       {
         text: 'Teach the Velvet peddlers in Gutterside a lesson. They\'re hanging around the Greasy Spoon.',
@@ -589,6 +614,7 @@ export const QUESTS = {
       {
         text: (g, q) => `Move product: sell 10 units of anything, to anyone. (${q.sd.n || 0}/10)`,
         obj: { type: 'event', evt: 'drug:sold', count: 10, sum: 'qty' },
+        marker: { near: 'dealer', label: 'Street dealer' },
       },
       {
         text: 'Sal needs wheels for a job. Drive any car to Chop Chop Customs in the Rustyards. (Buy a beater at Lemon Lot, or press F next to someone else\'s.)',
@@ -626,8 +652,8 @@ export const QUESTS = {
         ],
       },
       {
-        text: 'Rob the Golden Tooth vault after dark (8 PM - 6 AM). Expect security.',
-        obj: { type: 'brawl', loc: 'golden_tooth', count: 4, kind: 'gang', tier: 2, label: 'Casino Security', night: true },
+        text: 'Rob the Golden Tooth vault after dark (8 PM - 6 AM). Four guards will jump you: bring a real weapon (Bang Bang Bros, Downtown) and bandages, and shake any cops first.',
+        obj: { type: 'brawl', loc: 'golden_tooth', count: 4, kind: 'gang', tier: 2, label: 'Casino Security', night: true, req: (g) => (g.state.p.heat || 0) < 2, reqText: 'Sirens everywhere. Shake the cops (or pay off your heat at the PD) before you hit the vault.' },
         arrive: [{ who: 'nar', t: ['> 0-4-2-0. The vault door swings open with a sad little "ding". Then every alarm in Hilltop goes off, and five very large men in velvet tuxedos come running, cracking their knuckles in unison. They\'ve rehearsed that.'] }],
         win: ['> The vault is full of cash, gold chips, and a framed photo of Vivienne kissing a stack of money. You take the money. You leave the photo. You\'re not a monster.'],
         reward: { money: 4000 },
@@ -641,6 +667,7 @@ export const QUESTS = {
       {
         text: (g) => `Grease the cops before the takeover: have $7,500 on you (now ${$(g.state.p.money)}). Rat jobs, heists and the market pay best.`,
         obj: { type: 'money', min: 7500 },
+        marker: { loc: 'rats_clubhouse', label: 'Rat jobs (clubhouse)' },
       },
       {
         text: 'FINALE: Meet Big Sal at the clubhouse. It\'s time to take the city.', finale: true,
@@ -650,8 +677,8 @@ export const QUESTS = {
           {
             t: ['But there can only be one Big Cheese... and I ain\'t sure it\'s me anymore. My back\'s shot. My liver\'s a raisin. My fungus is thinking about running for office.'],
             choices: [
-              { label: 'Share the throne with Sal. Rats stick together.', do: (g, q) => { q.data.variant = 'shared'; g.state.addStat('karma', 5); g.state.addMoney(-Math.min(7500, g.state.p.money), 'payoffs'); return 'complete'; } },
-              fight({ count: 1, kind: 'fighter', tier: 4, label: 'Big Sal Monella' }, 'Take the crown. Sal can retire... to the harbor.', ['> Sal goes down swinging and biting. Mostly biting. The Rats watch in silence, then slowly, one by one, they kneel. One of them kneels in something. It\'s fine.'], 'complete'),
+              { label: 'Share the throne with Sal. Rats stick together.', hint: '-$7,500 payoffs · +karma', do: (g, q) => { q.data.variant = 'shared'; g.state.addStat('karma', 5); g.state.addMoney(-Math.min(7500, g.state.p.money), 'payoffs'); return 'complete'; } },
+              { ...fight({ count: 1, kind: 'fighter', tier: 4, label: 'Big Sal Monella' }, 'Take the crown. Sal can retire... to the harbor.', ['> Sal goes down swinging and biting. Mostly biting. The Rats watch in silence, then slowly, one by one, they kneel. One of them kneels in something. It\'s fine.'], 'complete'), hint: 'boss fight · -$7,500 payoffs · -karma' },
             ],
           },
         ],
@@ -679,7 +706,7 @@ export const QUESTS = {
         ],
       },
     ],
-    reward: { xp: 2500, money: 30000 }, rewardText: 'The top floor. (+$30,000 signing bonus)',
+    reward: { xp: 2500, money: 30000, rep: { syndicate: 200 } }, rewardText: 'The top floor. (+$30,000 signing bonus)',
     steps: [
       {
         text: 'Deliver the Contessa\'s velvet briefcase to Grimco Tower in Hilltop. 3 minutes. Do NOT open it.',
@@ -691,6 +718,7 @@ export const QUESTS = {
       {
         text: (g, q) => `Launder Syndicate money: play 3 rounds at the Golden Tooth Casino. (${q.sd.n || 0}/3)`,
         obj: { type: 'event', evt: 'casino:result', count: 3 },
+        marker: { loc: 'golden_tooth', label: 'Golden Tooth Casino' },
       },
       {
         text: 'Torch the Rats\' stash: crash the Gutter Rats clubhouse in Gutterside.',
@@ -700,6 +728,7 @@ export const QUESTS = {
       {
         text: 'The Contessa wants eyes inside the legit world. Get a job and earn a promotion (or already hold a promoted rank).',
         obj: { type: 'event', evt: 'job:promoted', count: 1, orCheck: (g) => (g.state.p.job?.rank ?? 0) >= 1 },
+        marker: jobMarker('Get promoted'),
       },
       {
         text: 'Meet Grimco\'s CEO, Chadwick Grimsworth III, outside Grimco Tower.',
@@ -720,6 +749,7 @@ export const QUESTS = {
       {
         text: 'Executives don\'t sleep in motels. Buy a real home (Double-Wide Dreams in the Dustbowl is the cheapest at $3,500).',
         obj: { type: 'home' },
+        marker: { loc: 'double_wide', label: 'Double-Wide Dreams ($3,500)' },
       },
       {
         text: 'Hostile takeover: confront the Contessa at the Velvet Syndicate lounge.',
@@ -745,6 +775,7 @@ export const QUESTS = {
       {
         text: (g) => `A seat on Grimco\'s board costs money. Have $15,000 on you (now ${$(g.state.p.money)}). Syndicate jobs, heists and the market pay best.`,
         obj: { type: 'money', min: 15000 },
+        marker: { loc: 'syndicate_lounge', label: 'Syndicate jobs (lounge)' },
       },
       {
         text: 'FINALE: Attend the Grimco board meeting. Meet Grimsworth outside Grimco Tower.', finale: true,
@@ -754,10 +785,10 @@ export const QUESTS = {
           {
             t: ['You\'re in, partner. Welcome to the top floor. The air\'s thinner up here. That\'s because we bottle it and sell it downstairs. Shall we shake on it?'],
             choices: [
-              { label: 'Shake his hand. Partners.', do: (g, q) => { q.data.variant = 'partner'; g.state.addMoney(-Math.min(15000, g.state.p.money), 'board seat'); return 'complete'; } },
-              gate('int', 35, 'Call a shareholder vote and kick HIM out', 'complete', [
+              { label: 'Shake his hand. Partners.', hint: '-$15,000 board seat', do: (g, q) => { q.data.variant = 'partner'; g.state.addMoney(-Math.min(15000, g.state.p.money), 'board seat'); return 'complete'; } },
+              { ...gate('int', 35, 'Call a shareholder vote and kick HIM out', 'complete', null), hint: 'needs INT 35 · -$15,000 board seat · -karma', then: [
                 '> You produce proxy votes from every shell company you set up while laundering for Vivienne. The ficus switches sides. Grimsworth is escorted out by security, still smiling, because his face is legally unable to stop.',
-              ]),
+              ] },
             ],
           },
         ],
@@ -981,7 +1012,7 @@ export const QUESTS = {
           for (const s of qs) {
             const i = await g.quests.ask({ title: 'Grimco OS 3.1', speaker: 'TERMINAL', text: s.q, options: s.a.map((label) => ({ label })) });
             if (i !== s.right) {
-              await g.quests.say([{ who: 'nar', t: ['> ACCESS DENIED. Also, you\'re ugly. — Grimco OS', '> The terminal reboots. It takes eleven minutes. You can try again.'] }]);
+              await g.quests.say([{ who: 'nar', t: ['> ACCESS DENIED. Also, you\'re ugly. — Grimco OS', '> The terminal reboots. It takes eleven minutes. Step outside, come back in, and try again.'] }]);
               return 'stay';
             }
           }
@@ -1014,6 +1045,7 @@ export const QUESTS = {
     steps: [
       {
         text: 'Trial of Stench: sleep in a cardboard box under the overpass.',
+        marker: { loc: 'hobo_camp', label: 'Cardboard box (overpass)' },
         obj: { type: 'flag', flag: 'slept_box' },
         onStart: (g) => g.state.setFlag('slept_box', false),
       },
@@ -1024,7 +1056,7 @@ export const QUESTS = {
         done: '> You are broke. Truly, cleanly broke. Somewhere under the overpass, Reg feels a disturbance in the filth and smiles.',
       },
       {
-        text: (g, q) => `Trial of the Can: collect cans from dumpsters across the city. (${(q.sd.points || []).filter((p) => p.done).length}/4)`,
+        text: (g, q) => `Trial of the Can: dig through the marked dumpsters in four districts (follow the beacons). (${(q.sd.points || []).filter((p) => p.done).length}/4)`,
         obj: { type: 'visit', points: [{ district: 'downtown', label: 'Dumpster' }, { district: 'hilltop', label: 'Dumpster' }, { district: 'rustyards', label: 'Dumpster' }, { district: 'dustbowl', label: 'Dumpster' }] },
         visitText: [
           'Downtown dumpster: 14 cans and a half-eaten birthday cake that says "HAPPY RETIREMENT, DOUG". Rest well, Doug.',
@@ -1057,6 +1089,7 @@ export const QUESTS = {
       },
       {
         text: (g, q) => `Trial of the Fist: a king defends his overpass. Win 5 street brawls: bar fights, The Pit, gang jobs, anything. (${q.sd.n || 0}/5)`,
+        marker: { loc: 'the_pit', label: 'The Pit (fight club)' },
         obj: { type: 'event', evt: 'brawl:won', count: 5 },
       },
       {
@@ -1188,10 +1221,10 @@ export const QUESTS = {
             'Round 3: Final minutes. Your body is begging. Your soul has left and is watching from the ceiling fan.',
           ];
           for (const r of rounds) {
-            const c = await g.quests.ask({ title: `Gutbuster — ${eaten} dogs down`, text: r, options: [
-              { label: 'Dunk the buns in water and pace yourself', hint: 'safe' },
-              { label: 'Two at a time. Fortune favors the gross.', hint: 'risky' },
-              { label: 'Unhinge your jaw like a snake', hint: g.state.p.str >= 15 ? 'very risky' : 'needs STR 15', disabled: g.state.p.str < 15 },
+            const c = await g.quests.ask({ title: `Gutbuster — ${eaten}/30 dogs down`, text: r, options: [
+              { label: 'Dunk the buns in water and pace yourself', hint: '+7 dogs · easy on the gut' },
+              { label: 'Two at a time. Fortune favors the gross.', hint: '+10 dogs · risky' },
+              { label: 'Unhinge your jaw like a snake', hint: g.state.p.str >= 15 ? '+13 dogs · very risky (STR helps)' : 'needs STR 15', disabled: g.state.p.str < 15 },
             ] });
             const add = c === 2 ? 13 : c === 1 ? 10 : 7;
             const strain = c === 2 ? 9 : c === 1 ? 8 : 4;
@@ -1241,6 +1274,7 @@ export const QUESTS = {
       },
       {
         text: (g, q) => `Wait for HoboCoin to "moon". (Check back with Chad on day ${q.sd.due || '?'}.)`,
+        marker: { who: 'chad' },
         obj: { type: 'wait', days: 2 },
       },
       {
@@ -1274,6 +1308,7 @@ export const QUESTS = {
     steps: [
       {
         text: (g, q) => `Collect 5 teeth by winning fights. (${q.sd.n || 0}/5)`,
+        marker: { loc: 'the_pit', label: 'The Pit (fight club)' },
         obj: { type: 'event', evts: ['brawl:won', 'npc:killed'], count: 5, filter: (d, evt) => evt !== 'npc:killed' || d?.byPlayer },
         done: '> Your pocket rattles like a maraca full of bad decisions. Five teeth.',
       },
@@ -1383,7 +1418,7 @@ export const QUESTS = {
     ],
     reward: { money: 300, weapon: 'brass', stats: { str: 2 }, xp: 250 }, rewardText: '$300, brass knuckles, +2 STR',
     steps: [
-      { text: 'Get your STR to 25.', obj: { type: 'stat', stat: 'str', min: 25 } },
+      { text: (g) => `Get your STR to 25 (now ${Math.floor(g.state.p.str)}).`, obj: { type: 'stat', stat: 'str', min: 25 }, marker: { loc: 'iron_lung', label: 'Iron Lung Gym' } },
       {
         text: 'Fight Brock Hardbody outside the Iron Lung Gym downtown.',
         obj: { type: 'brawl', loc: 'iron_lung', count: 1, kind: 'fighter', tier: 3, label: 'Brock Hardbody' },
@@ -1398,7 +1433,7 @@ export const QUESTS = {
     summary: '"The Joy of Taxidermy, Volume Two" is twenty-two years overdue. The borrower is a biker called Gravel at the Dirty Spur. Ms. Shush wants it back. Quietly. Or loudly. She\'s stopped caring.',
     offer: [
       { who: 'nar', t: ['> A tiny old librarian with a voice like a knife being sharpened in a quiet room.'] },
-      ['Shhhhhh. Young man. "The Joy of Taxidermy, Volume Two" is TWENTY-TWO YEARS overdue. The fine is now four thousand dollars and one firstborn.', 'The borrower is a biker at the Dirty Spur. They call him "Gravel". I call him a disgrace to the Dewey Decimal System. Retrieve it.'],
+      ['Shhhhhh. Young... person. "The Joy of Taxidermy, Volume Two" is TWENTY-TWO YEARS overdue. The fine is now four thousand dollars and one firstborn.', 'The borrower is a biker at the Dirty Spur. They call him "Gravel". I call him a disgrace to the Dewey Decimal System. Retrieve it.'],
     ],
     reward: { money: 150, stats: { int: 3 }, xp: 150 }, rewardText: '$150, +3 INT, a lifetime of quiet judgment',
     steps: [
@@ -1458,7 +1493,7 @@ export const QUESTS = {
 
   side_pizza: {
     kind: 'side', title: '30 Minutes or It\'s Free', giver: 'gary',
-    summary: 'Gary Butt of Pizza Butt needs a delivery driver. Two pizzas, two addresses, two time limits. Late pizza is free pizza, and free pizza comes out of YOUR pay.',
+    summary: 'Tony Butt of Pizza Butt needs a delivery driver. Two pizzas, two addresses, two time limits. Late pizza is free pizza, and free pizza comes out of YOUR pay.',
     offer: [
       { who: 'nar', t: ['> A man in a Pizza Butt uniform with a name tag that reads GARY BUTT. Yes, that\'s his real name. Yes, he named the restaurant after himself. No, he does not get the joke.'] },
       'My delivery guy quit. Then he died. Then he un-died and quit again. I need a driver. Two pizzas, two addresses, two time limits. Pizza Butt: We Put the Cheese in Places.',
@@ -1470,19 +1505,19 @@ export const QUESTS = {
         text: 'Deliver a hot pizza to Grimco Tower in Hilltop before it gets cold!',
         obj: { type: 'goto', loc: 'grimco', timer: 150, radius: 8 },
         give: 'q_pizza', take: 'q_pizza',
-        failText: 'Too late! The pizza is cold. Gary takes it out of your pay and hands you another one. Go!',
+        failText: 'Too late! The pizza is cold. Tony takes it out of your pay and hands you another one. Go!',
         arrive: [{ who: 'nar', t: ['> A Grimco executive takes the pizza, eats one slice, and drops the rest in the trash in front of you, maintaining eye contact.', '> He tips you a business card. It says: "TIP: Be Rich."'] }],
       },
       {
         text: 'Deliver a pizza to the guard at Bunker 9 in the Dustbowl. It\'s far. Drive!',
         obj: { type: 'goto', loc: 'bunker', timer: 240, radius: 12 },
         give: 'q_pizza', take: 'q_pizza',
-        failText: 'Too late! Pickles\' pizza is a cold, sad disc. Gary gives you another. HURRY.',
+        failText: 'Too late! Pickles\' pizza is a cold, sad disc. Tony gives you another. HURRY.',
         arrive: [{ who: 'pickles', t: ['> Corporal Pickles takes the pizza like it\'s a newborn baby.', 'Pineapple and anchovy. Nobody else gets me. *He tips you $50 and a single tear.*'] }],
         onDone: (g) => g.state.addMoney(50, 'tip'),
       },
       {
-        text: 'Collect your pay from Gary Butt.',
+        text: 'Collect your pay from Tony Butt.',
         obj: { type: 'talk', who: 'gary' },
         talk: [['Two on-time deliveries! You\'re Pizza Butt\'s Employee of the Minute! Here\'s your pay and your badge. ...Okay, minute\'s up. Give it back. Kidding. Keep it. I have a box of them.']],
       },
@@ -1571,7 +1606,7 @@ export const QUESTS = {
     ],
     reward: { xp: 300 }, rewardText: 'A bike (or $2,500 if you have nowhere to park it)',
     steps: [
-      { text: (g, q) => `Win 2 races at the Dustbowl Drag Strip. (${q.sd.n || 0}/2)`, obj: { type: 'event', evt: 'race:won', count: 2 } },
+      { text: (g, q) => `Win 2 races at the Dustbowl Drag Strip. (${q.sd.n || 0}/2)`, obj: { type: 'event', evt: 'race:won', count: 2 }, marker: { loc: 'drag_strip', label: 'Dustbowl Drag Strip' } },
       {
         text: 'Claim your prize from Mad Martha at the drag strip.',
         obj: { type: 'talk', who: 'martha' },

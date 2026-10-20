@@ -331,15 +331,15 @@ export function installCivic(game) {
   // ================= CHURCH =================
   game.locations.register('church', (g, loc) => placeMenu(g, loc, {
     hours: [6, 22],
-    speaker: 'Pastor Rick',
+    speaker: 'Pastor Prosper',
     closed: () => 'The Church of the Holy Rebate is closed. The neon cross out front blinks "OPEN 6AM-10PM — JESUS SAVES (15% ON SELECT ITEMS)".',
     text: () => {
       const p = st.p;
       const k = p.karma;
-      const read = k >= 40 ? 'Pastor Rick beams. "A SAINT walks among us! A saint with a wallet, I hope."'
-        : k >= 10 ? 'Pastor Rick nods warmly. "Welcome, friend. The Lord sees your good deeds. The Lord also sees the collection plate."'
-          : k > -20 ? 'Pastor Rick shakes your hand a little too long, checking for a watch. "Welcome, sinner. We\'re all sinners. Some of us just tithe more."'
-            : 'Pastor Rick takes a step back. The holy water in the font starts to bubble. "Oh my. Oh dear. Oh, that\'s gonna cost extra."';
+      const read = k >= 40 ? 'Pastor Prosper beams. "A SAINT walks among us! A saint with a wallet, I hope."'
+        : k >= 10 ? 'Pastor Prosper nods warmly. "Welcome, friend. The Lord sees your good deeds. The Lord also sees the collection plate."'
+          : k > -20 ? 'Pastor Prosper shakes your hand a little too long, checking for a watch. "Welcome, sinner. We\'re all sinners. Some of us just tithe more."'
+            : 'Pastor Prosper takes a step back. The holy water in the font starts to bubble. "Oh my. Oh dear. Oh, that\'s gonna cost extra."';
       return `${read}<br><br><em>${pick(['The pews are padded with velvet and coupons.', 'A stained glass window shows Jesus giving a thumbs up next to a "50% OFF" sign.', 'The choir is singing a hymn about compound interest.'])}</em>`;
     },
     options: () => {
@@ -348,14 +348,14 @@ export function installCivic(game) {
       const sunday = g.time.day % 7 === 0;
       return [
         { label: 'Donate to the church', hint: '+karma', run: async () => {
-          const n = await g.ui.promptNumber({ title: 'Donation', text: 'Pastor Rick: "Give, and it shall be given unto you. Probably. Terms and conditions apply."', max: p.money, min: 0, initial: Math.min(100, p.money) });
+          const n = await g.ui.promptNumber({ title: 'Donation', text: 'Pastor Prosper: "Give, and it shall be given unto you. Probably. Terms and conditions apply."', max: p.money, min: 0, initial: Math.min(100, p.money) });
           if (!n || n > p.money) return;
           st.addMoney(-n, 'donation');
           t.donated = (t.donated || 0) + n;
           const k = Math.min(12, Math.floor(Math.sqrt(t.donated / 20))) - Math.min(12, Math.floor(Math.sqrt((t.donated - n) / 20)));
           if (k > 0) st.addStat('karma', k);
           sfx('coin');
-          return say(g, 'Donation', k > 0 ? pick(['Pastor Rick blesses you, then blesses the money twice as hard.', 'A choir boy hands you a receipt for your taxes. And for your soul.']) : 'Pastor Rick: "The Lord appreciates it! He\'s... a little full today, though." (Karma gains max out per day.)', 'Pastor Rick');
+          return say(g, 'Donation', k > 0 ? pick(['Pastor Prosper blesses you, then blesses the money twice as hard.', 'A choir boy hands you a receipt for your taxes. And for your soul.']) : 'Pastor Prosper: "The Lord appreciates it! He\'s... a little full today, though." (Karma gains max out per day.)', 'Pastor Prosper');
         } },
         { label: 'Confess your sins', hint: t.confess ? 'once a day' : '$20 "suggested" · -heat / +karma', disabled: !!t.confess, run: async () => {
           if (!st.spend(20, 'confession')) return;
@@ -364,7 +364,7 @@ export function installCivic(game) {
           const sins = pick(['You tell him about the drugs. He asks for a sample. "For research."', 'You confess to stealing a pen from the bank. He gasps. Then steals your pen.', 'You confess to everything. He takes notes. For a "book".']);
           if (p.heat > 0) st.addHeat(-1);
           if (p.karma < 0) st.addStat('karma', 3); else st.addStat('karma', 1);
-          return say(g, 'Confession Booth', `${sins}<br><br>"Say three Hail Marys and Venmo me." You feel lighter. ${p.heat > 0 ? '(Pastor Rick calls a cop buddy. -1 heat.)' : ''}`, 'Pastor Rick');
+          return say(g, 'Confession Booth', `${sins}<br><br>"Say three Hail Marys and Venmo me." You feel lighter. ${p.heat > 0 ? '(Pastor Prosper calls a cop buddy. -1 heat.)' : ''}`, 'Pastor Prosper');
         } },
         { label: 'Volunteer at the soup kitchen', hint: t.soup ? 'once a day' : '3h · -25 energy · +karma', disabled: !!t.soup || p.energy < 25, run: async () => {
           t.soup = true;
@@ -380,7 +380,7 @@ export function installCivic(game) {
           g.time.advance(120);
           st.addStat('karma', 3);
           st.addStat('cha', 0.3);
-          return say(g, 'Sunday Service', 'Pastor Rick preaches about the Prosperity Gospel: "Jesus wants you to have a boat." The collection plate comes around four times. You feel spiritually renewed and financially audited.');
+          return say(g, 'Sunday Service', 'Pastor Prosper preaches about the Prosperity Gospel: "Jesus wants you to have a boat." The collection plate comes around four times. You feel spiritually renewed and financially audited.');
         } },
         { label: 'Buy holy water', hint: '$20', run: () => g.items.buy('holy_water', 1) },
         { label: 'Pray for luck', hint: t.pray ? 'once a day' : (p.karma >= 20 ? 'free' : 'needs karma 20'), disabled: !!t.pray || p.karma < 20, run: () => { t.pray = true; game.sysFx.add({ id: 'lucky', min: 360, label: 'Blessed (lucky)' }); return say(g, 'Prayer', 'You pray. For once, someone up there picks up. You feel lucky for the next few hours.'); } },
@@ -397,7 +397,7 @@ export function installCivic(game) {
     const flavor = pick([
       'Old Mrs. Henderson has 14 cards and a dauber in each hand. She glares at you like you killed her husband. (You didn\'t. Probably.)',
       'B-12. G-56. Someone yells "BINGO" falsely and is dragged out by three grandmas.',
-      'The caller is Pastor Rick, who reads every number like it\'s a sermon. "O... SIXTY... NINE." He winks. Nobody laughs. Except you. Alone.',
+      'The caller is Pastor Prosper, who reads every number like it\'s a sermon. "O... SIXTY... NINE." He winks. Nobody laughs. Except you. Alone.',
     ]);
     if (prize) { st.addMoney(prize, 'bingo'); sfx('win'); }
     return say(game, 'Bingo Night', `${flavor}<br><br>${prize ? `<b class="ui-good">BINGO! You win ${fmtMoney(prize)}.</b> The grandmas will remember your face.` : 'You don\'t win. A grandma pats your hand and steals your dauber.'}`);
