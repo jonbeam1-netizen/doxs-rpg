@@ -61,6 +61,19 @@ export class Police {
     this.pendHeat = 0; this.pendCap = 0; this.lastCrimeT = -99; this.starAt = -99; this.shootoutT = 0;
     this.witT = 0; this.witBy = null; this._hudShown = false;
 
+    // Every OTHER module's heat (heists, quests, talk, dealing, island...) goes through the
+    // same star pacing as crimes: positive heat becomes pending and is paid out one star at a
+    // time. Negative heat (bribes, jail, losing them) still applies instantly.
+    const st = game.state;
+    this._rawHeat = st.addHeat.bind(st);
+    st.addHeat = (n) => {
+      if (!(n > 0) || !Number.isFinite(n)) return this._rawHeat(n);
+      this.pendHeat += n;
+      this.pendCap = Math.max(this.pendCap, Math.min(5, this.heat + this.pendHeat));
+      this.lastCrimeT = game.elapsed;
+      this._payHeat(0);
+    };
+
     const root = document.getElementById('ui-root') || document.body;
     this.bustEl = document.createElement('div');
     this.bustEl.id = 'npc-busted';
@@ -177,7 +190,7 @@ export class Police {
     if (want <= heat + 0.001) return;
     this.pendHeat -= want - heat;
     if (Math.floor(want) > star) this.starAt = g.elapsed;
-    g.state.addHeat(want - heat);
+    this._rawHeat(want - heat);
   }
 
   // brief "WITNESSED" flag in the heat HUD

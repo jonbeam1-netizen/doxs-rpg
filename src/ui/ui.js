@@ -177,7 +177,7 @@ export class UI {
     h.karma.textContent = p.karma;
     h.clock.textContent = this.game.time.label();
     const heat = p.heat | 0;
-    this.setHud('heat', heat > 0 ? '★'.repeat(heat) + '<span style="opacity:.25">' + '★'.repeat(5 - heat) + '</span>' : '');
+    if (!this.game.police) this.setHud('heat', heat > 0 ? '★'.repeat(heat) + '<span style="opacity:.25">' + '★'.repeat(5 - heat) + '</span>' : '');
   }
 
   _peekStats(ms = 5000) {
