@@ -3,7 +3,10 @@ import { createStickman } from '../entities/stickman.js';
 import { clamp, rand, pick, chance, angleLerp } from '../core/util.js';
 import { weaponDef, weaponMesh, MUZZLE } from './weapons-mesh.js';
 import { genName, line, HURT, FLEE, TAUNTS, COP_YELL, WARNINGS } from './names.js';
-import { clearPose, gesture, cartArms } from './crowd.js';
+import { clearPose, gesture, cartArms, talkGesture, endTalkGesture } from './crowd.js';
+
+const BYES = ['Later.', 'Take it easy.', 'Don\'t be a stranger. Actually, be a stranger.', 'Yeah, yeah.', 'Watch your back out there.', 'Bye, weirdo.'];
+const _frus = new THREE.Frustum(), _pm = new THREE.Matrix4(), _sph = new THREE.Sphere(new THREE.Vector3(), 1.2);
 
 const POSE_BARKS = {
   lie: ['zzz...', 'Five more minutes, ma.', 'This is my GOOD cardboard.', 'Spare change? Spare kidney?', 'Mmmf. Go away.'],
@@ -140,6 +143,17 @@ export class NPCManager {
     }
     this.map.set(id, npc);
     this._attachWeapon(npc);
+    // Nobody materializes in plain sight: anyone spawned on camera after the game is running fades in.
+    if (spec.fadeIn !== false && g.started) {
+      try {
+        const cam = g.camera.position;
+        if (spec.fadeIn === true || (Math.hypot(group.position.x - cam.x, group.position.z - cam.z) < 110 && this.onScreen(group.position.x, group.position.z))) {
+          npc.fade = 0;
+          model.setOpacity?.(0);
+          if (npc.weaponObj) npc.weaponObj.visible = false;
+        }
+      } catch { npc.fade = null; }
+    }
 
     if (!npc.replica && kind !== 'static') this._addTalk(npc);
     else if (kind === 'static' && spec.onTalk) this._addTalk(npc);
@@ -215,6 +229,113 @@ export class NPCManager {
     if (npc.barkCd <= 0 && npc.dist < 30 && chance(0.35)) {
       this.ctx.fx.say(npc.group, pick(dir ? ['WHOA!', 'Jesus, watch it!', 'MY HIP!', 'Not today, Satan!', 'AAAH!', 'Learn to DRIVE!'] : FLEE), { ttl: 1.4, kind: tough ? 'angry' : '' });
       npc.barkCd = 3;
+    }
+    return true;
+  }
+
+  // ------------------------------------------------------------ visibility helpers
+  // Is (x,z) inside the local camera's view frustum? (no distance cap, no occlusion)
+  onScreen(x, z, r = 1.2) {
+    const g = this.game, cam = g.camera;
+    if (!cam) return false;
+    if (this._frusT !== g.elapsed || !this._frusOk) {
+      this._frusT = g.elapsed; this._frusOk = true;
+      cam.updateMatrixWorld();
+      _frus.setFromProjectionMatrix(_pm.multiplyMatrices(cam.projectionMatrix, cam.matrixWorldInverse));
+    }
+    _sph.center.set(x, 1, z); _sph.radius = r;
+    return _frus.intersectsSphere(_sph);
+  }
+
+  // Could the local player actually see someone standing at (x,z)? Frustum + buildings in the way + distance.
+  canSee(x, z, maxD = 140) {
+    const cam = this.game.camera?.position;
+    if (!cam) return false;
+    if (Math.hypot(x - cam.x, z - cam.z) > maxD) return false;
+    if (!this.onScreen(x, z)) return false;
+    try { return this.game.physics.raycast(cam.x, cam.z, x, z, 0.8, 2.4) >= 1; } catch { return true; }
+  }
+
+  // A sidewalk point min..max metres from (cx,cz) that the camera can't see right now (behind the camera or
+  // around a corner). opts.los: also needs a clear walking line to (cx,cz). opts.ahead: prefer the way the
+  // player is heading. Returns {x,z} or null.
+  hiddenPoint(cx, cz, min = 25, max = 45, opts = {}) {
+    const w = this.game.world;
+    const tries = opts.tries ?? 24;
+    let best = null, bs = -Infinity;
+    for (let i = 0; i < tries; i++) {
+      let p = null;
+      try { p = w?.sidewalkPointNear?.(cx, cz, min, max); } catch { p = null; }
+      if (!p) continue;
+      if (this.game.physics.pointBlocked(p.x, p.z)) continue;
+      if (this.canSee(p.x, p.z, 160)) continue;
+      if (opts.los && !this.los(p.x, p.z, cx, cz)) continue;
+      if (opts.ok && !opts.ok(p)) continue;
+      let s = Math.random();
+      if (opts.ahead) s += ((p.x - cx) * opts.ahead.x + (p.z - cz) * opts.ahead.z) / (Math.hypot(p.x - cx, p.z - cz) || 1) * 2;
+      if (s > bs) { bs = s; best = p; }
+    }
+    return best;
+  }
+
+  // ------------------------------------------------------------ conversations
+  // The player started talking to this NPC: it stops, turns to face them and stays put while any dialog /
+  // menu / minigame is up, then goes back to what it was doing a couple of seconds after the last one closes.
+  // Fights and fleeing still override (see _talkStep).
+  holdTalk(npc, opts = {}) {
+    if (!npc || npc.dead || npc.replica) return;
+    const T = npc.talk || (npc.talk = { t: 0, idle: 0, g: 0, origFacing: npc.facing, linger: opts.linger ?? rand(1.6, 2.6) });
+    T.idle = 0;
+    T.quiet = !!opts.quiet;
+    this._cancelAttack(npc);
+    npc.vx = npc.vz = 0;
+    npc.turnBack = null;
+    npc.acc = 1; // think this frame
+    const pp = this.game.player?.group?.position;
+    if (pp) T.yaw = Math.atan2(pp.x - npc.pos.x, pp.z - npc.pos.z);
+  }
+
+  releaseTalk(npc, forced = false) {
+    const T = npc?.talk;
+    if (!T) return;
+    npc.talk = null;
+    try { if (!npc.pose || npc.pose.walking) endTalkGesture(npc); } catch { /* ignore */ }
+    if (forced || npc.dead) return;
+    // turned-around standers / chatters drift back to how they were standing
+    if (npc.pose && !npc.pose.walking && (npc.pose.kind === 'stand' || npc.pose.kind === 'chat')) npc.turnBack = T.origFacing;
+    if (!T.quiet && npc.kind !== 'static' && npc.dist < 12 && T.t > 1.2 && npc.barkCd <= 0 && chance(0.35)) {
+      this.ctx.fx.say(npc.group, pick(BYES), { ttl: 1.8 });
+      npc.barkCd = 6;
+    }
+  }
+
+  // Returns true while the conversation is steering the NPC.
+  _talkStep(npc, dt) {
+    const T = npc.talk, g = this.game;
+    if (npc.hostile || npc.dead || npc.knockdown > 0 || npc.state === 'flee' || npc.state === 'chase' || npc.state === 'warn' || npc.state === 'hunt') {
+      this.releaseTalk(npc, true);
+      return false;
+    }
+    const pl = g.player;
+    const pp = pl?.group?.position;
+    if (!pp) { this.releaseTalk(npc, true); return false; }
+    const dx = pp.x - npc.pos.x, dz = pp.z - npc.pos.z, d = Math.hypot(dx, dz);
+    const busy = g.ui?.isBlocking?.() || !!g.minigames?.active || !!g.present?.active;
+    T.t += dt;
+    if (busy && d < 9) T.idle = 0; else T.idle += dt;
+    if (T.idle > T.linger || d > 14 || pl.vehicle || pl.dead) { this.releaseTalk(npc); return false; }
+    npc.vx = npc.vz = 0;
+    if (d > 0.2) T.yaw = Math.atan2(dx, dz);
+    const pose = npc.pose;
+    if (!pose || pose.walking) npc.faceTo = T.yaw; // _move turns them smoothly
+    else if (pose.kind === 'stand' || pose.kind === 'chat') {
+      npc.facing = angleLerp(npc.facing, T.yaw, 1 - Math.exp(-7 * dt));
+      npc.group.rotation.y = npc.facing;
+    } // seated / lying / leaning: the body stays put, crowd.gesture turns the head & torso
+    // the player turns to face them while the dialog is up
+    if (busy && !pl.vehicle && (pl.speed || 0) < 0.6 && d > 0.3) {
+      pl.facing = angleLerp(pl.facing, T.yaw + Math.PI, 1 - Math.exp(-9 * dt));
+      pl.group.rotation.y = pl.facing;
     }
     return true;
   }
@@ -655,8 +776,8 @@ export class NPCManager {
         if (npc.replica) { this._updateReplica(npc, dt); }
         else if (npc.dead) { this._updateDead(npc, dt); }
         else {
-          const posed = npc.state === 'pose';
-          const interval = posed ? 0.4 : simD < 40 ? 0 : simD < 80 ? 0.1 : 0.3;
+          const posed = npc.state === 'pose' && !npc.talk && npc.turnBack == null;
+          const interval = npc.talk ? 0 : posed ? 0.4 : simD < 40 ? 0 : simD < 80 ? 0.1 : 0.3;
           npc.acc += dt;
           if (npc.acc >= interval) {
             const step = Math.min(npc.acc, posed ? 0.6 : 0.35);
@@ -667,17 +788,35 @@ export class NPCManager {
           if (simD < 50 && npc.state !== 'pose') active.push(npc);
         }
 
+        // fade-in for anyone who spawned on camera
+        if (npc.fade != null) {
+          npc.fade = Math.min(1, npc.fade + dt / 0.7);
+          npc.model.setOpacity?.(npc.fade);
+          if (npc.weaponObj) npc.weaponObj.visible = npc.fade > 0.6;
+          if (npc.fade >= 1) npc.fade = null;
+        }
         // render LOD
         const vis = d < visD;
         if (npc.group.visible !== vis) npc.group.visible = vis;
         // ambient body language: drop the pose the moment they do anything else
         if (npc.pose && (npc.dead || (npc.pose.walking ? !(npc.state === 'wander' || npc.state === 'idle') : npc.state !== 'pose'))) clearPose(npc);
         if (npc.pose && !npc.pose.walking) {
-          if (vis && d < 45) gesture(npc, dt);
+          // a stander who turned to talk drifts back to their old facing
+          if (npc.turnBack != null && !npc.talk) {
+            npc.facing = angleLerp(npc.facing, npc.turnBack, 1 - Math.exp(-4 * dt));
+            npc.group.rotation.y = npc.facing;
+            if (Math.abs(Math.atan2(Math.sin(npc.turnBack - npc.facing), Math.cos(npc.turnBack - npc.facing))) < 0.02) npc.turnBack = null;
+          }
+          if (vis && d < 45) {
+            let look = null;
+            if (npc.talk && npc.talk.yaw != null) look = Math.atan2(Math.sin(npc.talk.yaw - npc.facing), Math.cos(npc.talk.yaw - npc.facing));
+            gesture(npc, dt, look);
+          }
         } else if (vis && d < 75 && !npc.dead) {
           npc.model.animate(dt, npc.speed, { aim: npc.aiming, swingStyle: npc.wdef?.swing, airborne: false });
           if (npc.drunkWobble) npc.model.parts.hips.rotation.z = Math.sin(this.t * 2.3 + npc.drunkWobble) * 0.12;
           if (npc.pose?.walking) cartArms(npc);
+          if (npc.talk) talkGesture(npc, dt);
         } else if (npc.dead) npc.model.animate(dt, 0, {});
         const wantShadow = d < shD;
         if (wantShadow !== npc.shadowOn) {
@@ -698,14 +837,17 @@ export class NPCManager {
         const rr = a.radius + b.radius + 0.1;
         const d2 = dx * dx + dz * dz;
         if (d2 >= rr * rr || d2 < 1e-6) continue;
+        // (someone mid-conversation doesn't get jostled: the other one steps aside)
+        if (a.talk && b.talk) continue;
         const d = Math.sqrt(d2);
         const push = (rr - d) * 0.5;
         const nx = dx / d, nz = dz / d;
-        a.pos.x -= nx * push; a.pos.z -= nz * push;
-        b.pos.x += nx * push; b.pos.z += nz * push;
+        const pa = a.talk ? 0 : b.talk ? 2 : 1, pb = b.talk ? 0 : a.talk ? 2 : 1;
+        a.pos.x -= nx * push * pa; a.pos.z -= nz * push * pa;
+        b.pos.x += nx * push * pb; b.pos.z += nz * push * pb;
       }
       // and keep them out of the local player
-      if (!g.player.vehicle && !g.player.dead) {
+      if (!g.player.vehicle && !g.player.dead && !a.talk) {
         const dx = a.pos.x - lp.x, dz = a.pos.z - lp.z;
         const rr = a.radius + 0.45;
         const d2 = dx * dx + dz * dz;
@@ -789,6 +931,9 @@ export class NPCManager {
       if (npc.stun > 0 && npc.atk.phase === 'wind' && !(npc.A?.poise || npc.boss || (npc.poiseT > 0 && npc.A?.sway))) this._cancelAttack(npc);
       else if (this._updateAttack(npc, dt)) return; // a charge is steering them
     }
+
+    // mid-conversation: stand still, face the player (fights / fleeing break it off)
+    if (npc.talk && this._talkStep(npc, dt)) return;
 
     switch (npc.state) {
       case 'idle': this._sIdle(npc, dt, players); break;

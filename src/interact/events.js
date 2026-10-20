@@ -49,41 +49,77 @@ export function installEvents(game, I) {
     m.group.rotation.y = facing;
     return m;
   }
-  function spotNear() {
+  // Can the local camera see (x,z)? (frustum + buildings in the way; see NPCManager.canSee)
+  const seen = (x, z, r = 140) => { try { return game.npcs?.canSee ? game.npcs.canSee(x, z, r) : true; } catch { return true; } };
+  // A clear sidewalk spot for a scene. Scheduled scenes go somewhere the camera can't see right now —
+  // up ahead around a corner if possible, else off to the side / behind — so the player stumbles onto
+  // them instead of watching them materialize.
+  function spotNear(hidden = true) {
     const pp = I.pp();
-    for (let i = 0; i < 12; i++) {
-      const s = w.sidewalkPointNear?.(pp.x, pp.z, 16, 34);
+    const cam = game.camera?.position;
+    const fwd = cam ? { x: pp.x - cam.x, z: pp.z - cam.z } : { x: Math.sin(game.player.facing || 0), z: Math.cos(game.player.facing || 0) };
+    const fl = Math.hypot(fwd.x, fwd.z) || 1; fwd.x /= fl; fwd.z /= fl;
+    let best = null, bs = -Infinity;
+    for (let i = 0; i < (hidden ? 34 : 12); i++) {
+      const s = hidden ? w.sidewalkPointNear?.(pp.x, pp.z, 24, 50) : w.sidewalkPointNear?.(pp.x, pp.z, 16, 34);
       if (!s) continue;
       if (game.locations.list.some((l) => Math.hypot((l.doorX ?? l.x) - s.x, (l.doorZ ?? l.z) - s.z) < 7)) continue;
       if (I.objects.some((o) => o.kind !== 'rat' && o.kind !== 'tag' && Math.hypot(o.x - s.x, o.z - s.z) < 5)) continue;
       let blocked = false;
       for (const [ox, oz] of [[2, 0], [-2, 0], [0, 2], [0, -2]]) if (game.physics.pointBlocked(s.x + ox, s.z + oz)) blocked = true;
       if (blocked) continue;
-      return s;
+      if (!hidden) return s;
+      // nothing of the scene (a few metres across) may be on camera
+      if (seen(s.x, s.z, 170) || seen(s.x + 2.5, s.z, 170) || seen(s.x - 2.5, s.z, 170) || seen(s.x, s.z + 2.5, 170) || seen(s.x, s.z - 2.5, 170)) continue;
+      const dx = s.x - pp.x, dz = s.z - pp.z, d = Math.hypot(dx, dz) || 1;
+      const score = (dx * fwd.x + dz * fwd.z) / d * 2 + Math.random();
+      if (score > bs) { bs = score; best = s; }
     }
-    return null;
+    return best;
   }
-  function end(delay = 0, msg = null) {
+  function kill(e) {
+    if (e.killed) return; e.killed = true;
+    I.remove(e.o);
+    for (const m of e.men) { try { m.dispose(); } catch { /* ignore */ } }
+    for (const p of e.fx || []) { p.geometry.dispose(); p.material.dispose(); }
+    if (ev === e) ev = null;
+    w.markers?.delete?.('ix:event');
+  }
+  // Wrap the scene up. The people / wreck linger until `delay` has passed AND the camera has looked away
+  // (force = gone right now: resets, or a brawl taking their place).
+  function end(delay = 0, msg = null, force = false) {
     const e = ev;
     if (!e) return;
     e.over = true;
     if (msg) I.toast(msg, 'info', 2400);
-    const kill = () => {
-      if (e.killed) return; e.killed = true;
-      I.remove(e.o);
-      for (const m of e.men) { try { m.dispose(); } catch { /* ignore */ } }
-      for (const p of e.fx || []) { p.geometry.dispose(); p.material.dispose(); }
-      if (ev === e) ev = null;
-      w.markers?.delete?.('ix:event');
-    };
     w.markers?.delete?.('ix:event');
-    if (delay > 0) setTimeout(kill, delay * 1000); else kill();
+    if (force) { kill(e); return; }
+    e.killAt = Math.max(0, delay);
+  }
+  // A brawl takes over from the cosmetic stick figures: the fighters spawn exactly where they stood.
+  function brawlAt(spec, men) {
+    const npcs = game.npcs;
+    const before = new Set((npcs?.list?.() || []).map((n) => n.id));
+    const spots = men.map((m) => { const v = new THREE.Vector3(); m.group.getWorldPosition(v); return { x: v.x, z: v.z, f: m.group.rotation.y, color: m.mat?.color?.getHex?.() }; });
+    const id = game.combat?.startBrawl?.(spec);
+    if (!game.net?.isAuthority || !npcs?.list) return id;
+    try {
+      npcs.list().filter((n) => !before.has(n.id) && n.brawlId).forEach((n, i) => {
+        const s = spots[i];
+        if (s) {
+          n.pos.x = s.x; n.pos.z = s.z; n.facing = s.f; n.group.rotation.y = s.f;
+          if (s.color != null) { try { n.model.setColor(s.color); } catch { /* ignore */ } }
+        }
+        n.fade = null; n.model.setOpacity?.(1); if (n.weaponObj) n.weaponObj.visible = true;
+      });
+    } catch (err) { console.error('[interact] brawl swap', err); }
+    return id;
   }
 
   // ------------------------------------------------------------ spawners
-  function spawn(kind, at) {
-    if (ev) end();
-    let s = at || spotNear();
+  function spawn(kind, at, hidden = true) {
+    if (ev) end(0, null, true);
+    let s = at || spotNear(hidden);
     let carRot = Math.PI / 2;
     if (kind === 'carfire' && !at) {
       // the wreck must sit fully on the sidewalk, lengthwise along it
@@ -91,7 +127,7 @@ export function installEvents(game, I) {
         return [[2.2, 1.1], [2.2, -1.1], [-2.2, 1.1], [-2.2, -1.1]].every(([u, v]) => w.onSidewalk(p.x + ax * u + bx * v, p.z + az * u + bz * v) && !game.physics.pointBlocked(p.x + ax * u + bx * v, p.z + az * u + bz * v)); };
       s = null;
       for (let i = 0; i < 10 && !s; i++) {
-        const p = spotNear();
+        const p = spotNear(hidden);
         if (!p) continue;
         if (fits(p, Math.PI / 2)) { s = p; carRot = Math.PI / 2; } else if (fits(p, 0)) { s = p; carRot = 0; }
       }
@@ -161,8 +197,10 @@ export function installEvents(game, I) {
         { label: `Bet on ${B}`, hint: 'Underdog · pays 3×', disabled: st.p.money < 5, run: () => bet(e, 1) },
         { label: 'Jump in', hint: 'Fight both. Win their lunch money.', run: () => {
           const x = e.x, z = e.z;
-          end(0);
-          game.combat?.startBrawl?.({ x, z, count: 2, kind: 'drunk', label: 'You jumped into a street fight', onWin: () => { const n = randInt(25, 70); st.addMoney(n, 'street fight'); I.toast(`Both idiots down. Their wallets agree to come with you: ${fmt(n)}.`, 'money', 3000); } });
+          // the two idiots turn on you (the onlookers drift off once you look away)
+          brawlAt({ x, z, count: 2, kind: 'drunk', label: 'You jumped into a street fight', onWin: () => { const n = randInt(25, 70); st.addMoney(n, 'street fight'); I.toast(`Both idiots down. Their wallets agree to come with you: ${fmt(n)}.`, 'money', 3000); } }, [e.a, e.b]);
+          e.a.group.visible = e.b.group.visible = false;
+          end(4);
           done(e, 'joined');
         } },
       ],
@@ -256,12 +294,12 @@ export function installEvents(game, I) {
       options: [
         { label: 'Stop the mugger', hint: 'Fight · good karma', run: () => {
           const x = e.x, z = e.z, victim = e.victim;
-          e.mugger.group.visible = false;
-          game.combat?.startBrawl?.({
+          brawlAt({
             x, z, count: 1, kind: 'thug', label: 'Stop the mugger!',
             onWin: () => { st.addStat('karma', 3, 'mugging'); const n = randInt(15, 50); st.addMoney(n, 'reward'); I.toast(`The tiny man hugs your leg and gives you ${fmt(n)}. "My hero!"`, 'good', 3200); I.bump('heroics'); done(e, 'stopped'); },
             onLose: () => { done(e, 'failed'); },
-          });
+          }, [e.mugger]);
+          e.mugger.group.visible = false;
           I.say(victim.group, 'My hero!! ...probably!', { ttl: 2.2 });
           end(6);
         } },
@@ -285,7 +323,12 @@ export function installEvents(game, I) {
     e.t += dt;
     const pp = I.pp();
     const far = Math.hypot(pp.x - e.x, pp.z - e.z) > 130;
-    if (!e.over && !e.busy && (e.t > e.life || far)) { end(0); return; }
+    if (!e.over && !e.busy && (e.t > e.life || far)) { end(0, null, far); if (!ev) return; }
+    // wrapped up: clear it away once the delay is up and the camera isn't on it (or after a long while)
+    if (e.over && e.killAt != null) {
+      e.killAt -= dt;
+      if (e.killAt <= 0 && (far || e.killAt < -120 || !e.o.group.visible || !seen(e.x, e.z, 150))) { kill(e); return; }
+    }
     if (!e.o.group.visible) return;
     const t = game.elapsed;
     for (const m of e.men) if (!m.dead) m.animate(dt, 0);
@@ -340,9 +383,10 @@ export function installEvents(game, I) {
     if (game.time.isNight) kinds.push('mugging', 'fight'); else kinds.push('flashmob');
     if (spawn(pick(kinds))) lastHour = h;
   });
-  game.bus.on('state:reset', () => { if (ev) end(0); lastHour = -99; });
+  game.bus.on('state:reset', () => { if (ev) end(0, null, true); lastHour = -99; });
   game.bus.on('player:arrested', () => { if (ev) end(0); });
 
-  I.spawnEvent = (kind, at) => spawn(KINDS.includes(kind) ? kind : pick(KINDS), at);
+  // at: explicit spot; visible: allow a spot the camera can see (debug / scripted use)
+  I.spawnEvent = (kind, at, visible = false) => spawn(KINDS.includes(kind) ? kind : pick(KINDS), at, !visible);
   I.event = () => ev;
 }

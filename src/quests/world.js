@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { CHARACTERS } from '../data/quests.js';
 import { createStickman } from '../entities/stickman.js';
 import { KIND_COLORS } from './engine.js';
+import { angleLerp } from '../core/util.js';
 
 // Quest characters on the street, floating "!" / "?" markers over them,
 // light-column beacons at objectives, and entries in game.world.markers.
@@ -123,6 +124,8 @@ export class QuestWorld {
       m.group.position.set(at.x, 0, at.z);
       m.group.rotation.y = at.facing;
       g.scene.add(m.group);
+      // never pop into view: fade in (npcs.spawn does the same for regular quest NPCs)
+      if (g.started) { entry.fade = 0; m.setOpacity?.(0); }
       entry.model = m; entry.group = m.group;
       entry.interactId = 'qnpc:' + id;
       g.interact.add({ id: entry.interactId, x: at.x, z: at.z, radius: 2.6, prompt: c.talkPrompt || `Talk to ${c.name}`, onInteract: onTalk });
@@ -266,11 +269,16 @@ export class QuestWorld {
     for (const e of this.chars.values()) {
       const gp = e.group?.position || e.npc?.pos;
       if (e.sprite && e.sprite.visible && gp) e.sprite.position.set(gp.x, 2.75 + Math.sin(t * 3 + e.x) * 0.12, gp.z);
+      if (e.model && e.fade != null) {
+        e.fade = Math.min(1, e.fade + dt / 0.7);
+        e.model.setOpacity?.(e.fade);
+        if (e.fade >= 1) e.fade = null;
+      }
       if (e.model && pp && Math.abs(gp.x - pp.x) + Math.abs(gp.z - pp.z) < 90) {
         e.model.animate(dt, 0, {});
-        // face the player when close
+        // turn (smoothly) to face the player when close
         const dx = pp.x - gp.x, dz = pp.z - gp.z;
-        if (dx * dx + dz * dz < 36) e.group.rotation.y = Math.atan2(dx, dz);
+        if (dx * dx + dz * dz < 36) e.group.rotation.y = angleLerp(e.group.rotation.y, Math.atan2(dx, dz), 1 - Math.exp(-6 * dt));
       }
     }
   }

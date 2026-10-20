@@ -1,30 +1,124 @@
 import { createStickman } from '../entities/stickman.js';
-import { pick, chance, fmtMoney, weightedPick } from '../core/util.js';
+import { pick, chance, fmtMoney, weightedPick, angleLerp } from '../core/util.js';
+import { talkGesture, endTalkGesture } from '../npc/crowd.js';
 
-// Random street encounters triggered on 'time:hour' with a cooldown. Each
-// spawns a throwaway stick figure in front of you and opens a dialog.
+// Random street encounters triggered on 'time:hour' with a cooldown. Encounters with a person in them
+// spawn that stick figure out of sight (behind the camera or around a corner, 25-45 m away on a sidewalk),
+// have them walk (muggers run) up to you with a callout, and only open the dialog once they're ~2.5 m away
+// and facing you. Walk off and they follow for a bit, then give up. Afterwards they wander off and are
+// removed out of view — nobody pops in or out in front of the camera.
+
+const CALLS = ['Hey! You! Stick man!', 'Psst! Hey, you!', 'Yo! Hold up a sec!', 'Hey buddy! Over here!', 'Hey! HEY! Wait up!'];
+const GIVE_UP = ['Fine! Be that way!', 'Rude!', 'Yeah, keep walking, twig!', 'Ugh. Whatever.', 'Your loss, pal!'];
+// per-encounter callouts (shouted once they're close enough to hear) and approach speeds (m/s)
+const CALL = {
+  preacher: ['REPENT! YOU THERE! REPENT!', 'YOU! SINNER! A WORD!'], rolex: ['Psst! Hey! You like watches?', 'Psst. Over here. Quick.'],
+  flasher: ['Psssst. Hey. Wanna see something?'], mugger: ['Hey! YOU! Don\'t move!', 'Hold it right there, stick!'],
+  tourist: ['Excuse me! Excuse me! Sir!', 'Hello? Hello! Do you speak... Rotwell?'], magician: ['Step right up, stick man!', 'You there! Wanna see a trick?'],
+  survey: ['Sir! Sir! Quick survey!', 'Got a minute for Grimco?'], proposal: ['Heeeey... beautiful...', 'Wait! Waaait! You\'re the one!'],
+  hotdog: ['HOT DOGS! Get your hot dogs!', 'Hey! You look hungry!'], gangbro: ['Yo! Hold up!', 'Ay! Got something for you!'],
+  hugs: ['FREE HUGS! FREE HUGS!', 'Hey! You look like you need a hug!'], umbrella: ['Umbrella? UMBRELLAAA!', 'Hey! You\'re soaked! Got a deal for you!'],
+  fan: ['OH MY GOD! IT\'S YOU! IT\'S REALLY YOU!', 'WAIT! WAIT! CAN I GET AN AUTOGRAPH?!'], recruiter: ['Sir! A moment of your time!', 'Hi there! Got a sec for Grimco?'],
+  grandpa: ['Young man! Excuse me! Young... stick!'], spouse: ['HONEY! HONEY, IT\'S ME!', 'THERE you are! Sweetie!'],
+  shakedown: ['Hold it right there, pal!', 'Hey you! Stop walkin\'!'], rivalgang: ['Ay! You! We gotta talk.', 'Look who\'s on OUR block.'],
+  lenny: ['BEST FRIEEEND!', 'HEY! HEY BEST FRIEND!'], hypeman: ['THERE HE IS! THE ONE! THE ONLY!'],
+};
+const SPEED = { mugger: 5.6, fan: 5.2, hypeman: 4.8, spouse: 4.2, lenny: 4.4, grandpa: 2.1, preacher: 3.0 };
 
 export function installStreetEvents(game, q) {
   const g = game;
-  let actor = null, actorT = 0;
+  let actor = null;   // the encounter's stickman (createStickman model)
+  let enc = null;     // { ev, phase: 'approach'|'talk'|'leave', t, ... }
   const p = () => g.state.p;
   const nar = (t) => q.fmt((Array.isArray(t) ? t : [t]).map((l) => (l.startsWith('> ') || l.startsWith('@ ') ? l : '> ' + l)));
   const say = (title, speaker, text, options) => g.ui.dialog({ title, speaker, html: q.fmt(Array.isArray(text) ? text : [text]), options });
   const after = (text, kind = 'info') => g.ui.toast(text, kind, 4600);
+  const bark = (text, opts = {}) => { if (actor) { try { g.npcs?.say?.(actor.group, text, { ttl: 2.4, ...opts }); } catch { /* ignore */ } } };
+  const los = (ax, az, bx, bz) => (g.npcs?.los ? g.npcs.los(ax, az, bx, bz) : g.physics.raycast(ax, az, bx, bz, 0.8, 1.2) >= 1);
+  const canSee = (x, z) => { try { return g.npcs?.canSee ? g.npcs.canSee(x, z, 150) : true; } catch { return true; } };
 
-  function spawnActor(color = '#2a2a2a', hat = null, hatColor = 0x2a2420) {
-    removeActor();
-    const pl = g.player; if (!pl) return;
-    const f = pl.facing;
-    const x = pl.group.position.x + Math.sin(f) * 2.2, z = pl.group.position.z + Math.cos(f) * 2.2;
-    const r = g.physics.resolveCircle(x, z, 0.45);
-    const m = createStickman({ color, hat, hatColor });
-    m.group.position.set(r.x, 0, r.z);
-    m.group.rotation.y = Math.atan2(pl.group.position.x - r.x, pl.group.position.z - r.z);
-    g.scene.add(m.group);
-    actor = m; actorT = 25;
+  // A corner to walk via when there's no straight line to the player.
+  function waypoint(fx, fz, tx, tz) {
+    const w = g.world;
+    let best = null, bd = Infinity;
+    for (let i = 0; i < 14; i++) {
+      let pt = null;
+      try { pt = w?.sidewalkPointNear?.(tx, tz, 3, 24); } catch { pt = null; }
+      if (!pt || !los(fx, fz, pt.x, pt.z) || !los(pt.x, pt.z, tx, tz)) continue;
+      const d = Math.hypot(pt.x - fx, pt.z - fz) + Math.hypot(tx - pt.x, tz - pt.z);
+      if (d < bd) { bd = d; best = pt; }
+    }
+    return best;
   }
-  function removeActor() { if (actor) { actor.dispose(); actor = null; } }
+
+  // Somewhere the camera can't see, 25-45 m out on a sidewalk, with a walkable way to the player.
+  function hiddenSpawn() {
+    const pp = g.player.group.position;
+    const npcs = g.npcs;
+    if (!npcs?.hiddenPoint) return null;
+    const ahead = { x: Math.sin(g.player.facing || 0), z: Math.cos(g.player.facing || 0) };
+    let pt = npcs.hiddenPoint(pp.x, pp.z, 25, 45, { los: true, tries: 28 });
+    if (pt) return { ...pt, wp: null };
+    pt = npcs.hiddenPoint(pp.x, pp.z, 25, 45, { tries: 28, ahead, ok: (c) => !!(c._wp = waypoint(c.x, c.z, pp.x, pp.z)) });
+    return pt ? { x: pt.x, z: pt.z, wp: pt._wp || null } : null;
+  }
+
+  function spawnActor(ev) {
+    removeActor();
+    const pl = g.player; if (!pl) return false;
+    const at = hiddenSpawn();
+    if (!at) return false;
+    const m = createStickman({ color: ev.color || '#2a2a2a', hat: ev.hat || null, hatColor: ev.hatColor ?? 0x2a2420 });
+    m.group.position.set(at.x, 0, at.z);
+    const pp = pl.group.position;
+    m.group.rotation.y = Math.atan2((at.wp?.x ?? pp.x) - at.x, (at.wp?.z ?? pp.z) - at.z);
+    g.scene.add(m.group);
+    actor = m;
+    const d0 = Math.hypot(pp.x - at.x, pp.z - at.z);
+    const speed = ev.speed ?? SPEED[ev.id] ?? 2.7;
+    enc = { ev, phase: 'approach', t: 0, wp: at.wp, wpT: 0, minD: d0, awayT: 0, waitT: 0, avoidT: 0, avoidSign: 1, stuckT: 0,
+      called: false, speed, limit: d0 / speed + 14, tk: { g: 0 } };
+    return true;
+  }
+  function removeActor() {
+    if (actor) { try { actor.dispose(); } catch { actor.group?.removeFromParent?.(); } actor = null; }
+    enc = null;
+  }
+  // Done talking: wander off down the sidewalk and vanish once nobody can see it.
+  function dismiss(giveUp = false) {
+    if (!actor || !enc) return;
+    if (giveUp) bark(pick(GIVE_UP), { kind: 'angry' });
+    const pos = actor.group.position, pp = g.player.group.position;
+    let to = null;
+    try { to = g.npcs?.hiddenPoint?.(pos.x, pos.z, 18, 40, { los: true, tries: 14 }); } catch { to = null; }
+    if (!to) { const a = Math.atan2(pos.x - pp.x, pos.z - pp.z); to = { x: pos.x + Math.sin(a) * 40, z: pos.z + Math.cos(a) * 40 }; }
+    enc.phase = 'leave'; enc.t = 0; enc.to = to; enc.wp = null; enc.speed = Math.min(enc.speed, 2.6);
+    endTalkGesture({ model: actor });
+  }
+
+  // Swap the encounter actor for real brawl NPCs (same spot, same colors) instead of popping new ones in.
+  function brawlHere(spec) {
+    const a = actor;
+    if (!a || !g.net?.isAuthority) { removeActor(); return q.brawl(spec); }
+    const at = { x: a.group.position.x, z: a.group.position.z, f: a.group.rotation.y };
+    const before = new Set((g.npcs?.list?.() || []).map((n) => n.id));
+    const pr = q.brawl({ ...spec, x: at.x, z: at.z });
+    try {
+      const fresh = (g.npcs?.list?.() || []).filter((n) => !before.has(n.id) && n.brawlId);
+      fresh.forEach((n, i) => {
+        if (i === 0) {
+          n.pos.x = at.x; n.pos.z = at.z; n.facing = at.f; n.group.rotation.y = at.f;
+          try { n.model.setColor(enc?.ev?.color || n.color); } catch { /* ignore */ }
+        } else {
+          const h = g.npcs.hiddenPoint(at.x, at.z, 9, 22, { los: true, tries: 12 });
+          if (h) { n.pos.x = h.x; n.pos.z = h.z; }
+        }
+        n.fade = null; n.model.setOpacity?.(1); if (n.weaponObj) n.weaponObj.visible = true;
+      });
+    } catch (e) { console.error('[quests] brawl swap', e); }
+    removeActor();
+    return pr;
+  }
 
   const EVENTS = [
     {
@@ -104,8 +198,7 @@ export function installStreetEvents(game, q) {
         ]);
         if (i === 0) { g.state.addMoney(-take, 'mugged'); after('He takes it, then gives you a dollar back "for the bus". There is no bus.', 'bad'); }
         if (i === 1) {
-          removeActor();
-          const won = await q.brawl({ count: 1, kind: 'thug', tier: 1, label: 'Pom-Pom Mugger' });
+          const won = await brawlHere({ count: 1, kind: 'thug', tier: 1, label: 'Pom-Pom Mugger' });
           if (won) { const loot = 20 + Math.round(Math.random() * 80); g.state.addMoney(loot, 'reverse mugging'); after(`You reverse-mugged a mugger: ${fmtMoney(loot)} and a pom-pom.`, 'money'); }
         }
         if (i === 2) {
@@ -422,8 +515,7 @@ export function installStreetEvents(game, q) {
         ]);
         if (i === 0 && g.state.spend(50, 'toll')) { q.addRep(f, -1); after('He takes the money and laughs. Somewhere, your boss feels a disturbance.', 'bad'); }
         if (i === 1) {
-          removeActor();
-          const won = await q.brawl({ count: 2, kind: 'gang', tier: 2, label: `${enemy} Punks` });
+          const won = await brawlHere({ count: 2, kind: 'gang', tier: 2, label: `${enemy} Punks` });
           if (won) { q.addRep(f, 3); after('They limp off. Word will get around. Your crew will hear about it by dinner.', 'good'); }
         }
         if (i === 2) {
@@ -524,30 +616,155 @@ export function installStreetEvents(game, q) {
     const night = g.time.isNight;
     const pool = EVENTS.filter((e) => (!e.night || night) && (!e.day || !night) && (!e.req || e.req()));
     if (!pool.length) return;
+    if (enc) return; // someone's already on their way over
     const ev = weightedPick(pool.map((e) => [e, e.w]));
+    // (no hidden spot to walk in from right now? try again next hour instead of popping them in)
+    if (!trigger(ev)) return;
     lastHour = nowH;
     g.state.setFlag('street_cd', g.time.total + 180);
-    trigger(ev);
   });
 
-  async function trigger(ev) {
-    try {
-      if (ev.color) spawnActor(ev.color, ev.hat || null, ev.hatColor ?? 0x2a2420);
-      await ev.run();
-    } catch (e) { console.error('[quests] street event failed', ev.id, e); }
-    actorT = Math.min(actorT, 6);
+  // People: spawn out of sight and walk up (see update). Narration-only events open right away.
+  function trigger(ev) {
+    if (ev.color) {
+      if (enc) return false;
+      if (!spawnActor(ev)) return false;
+      return true;
+    }
+    run(ev);
+    return true;
+  }
+
+  async function run(ev) {
+    try { await ev.run(); } catch (e) { console.error('[quests] street event failed', ev.id, e); }
+  }
+
+  // They made it to you: face each other, then the dialog. The actor stays put for the whole conversation.
+  async function startTalk() {
+    const e = enc;
+    e.phase = 'talk'; e.t = 0; e.tk = { g: 0 };
+    try { await e.ev.run(); } catch (err) { console.error('[quests] street event failed', e.ev.id, err); }
+    if (enc === e && actor) { e.phase = 'linger'; e.t = 0; }
+  }
+
+  // Can the player be approached right now? (same no-interrupt rules as the scheduler)
+  function interrupted() {
+    const pl = g.player;
+    if (!pl || pl.dead || pl.vehicle) return true;
+    if (g.combat?.inBrawl?.() || (p().heat || 0) >= 1 || g.heists?.active || g.skate?.on) return true;
+    return false;
+  }
+
+  function face(m, yaw, dt, k = 8) {
+    m.group.rotation.y = angleLerp(m.group.rotation.y, yaw, 1 - Math.exp(-k * dt));
+  }
+
+  // Walk the actor toward (tx,tz) with simple obstacle sidestepping. Returns the distance left.
+  function walk(e, tx, tz, speed, dt) {
+    const pos = actor.group.position;
+    let dx = tx - pos.x, dz = tz - pos.z;
+    const d = Math.hypot(dx, dz) || 1e-3;
+    dx /= d; dz /= d;
+    if (e.avoidT > 0) {
+      e.avoidT -= dt;
+      const a = e.avoidSign * 1.1, c = Math.cos(a), s = Math.sin(a);
+      const nx = dx * c - dz * s, nz = dx * s + dz * c; dx = nx; dz = nz;
+    }
+    const step = Math.min(d, speed * dt);
+    const r = g.physics.resolveCircle(pos.x + dx * step, pos.z + dz * step, 0.4);
+    const got = Math.hypot(r.x - pos.x, r.z - pos.z);
+    if (step > 0.005 && got < step * 0.35) e.stuckT += dt; else e.stuckT = 0;
+    if (e.stuckT > 0.35) { e.avoidT = 0.7; e.avoidSign = chance(0.5) ? 1 : -1; e.stuckT = 0; }
+    pos.x = r.x; pos.z = r.z;
+    e.spd = got / Math.max(dt, 1e-4);
+    if (got > 0.002) face(actor, Math.atan2(dx, dz), dt, 10);
+    return d;
   }
 
   g.addSystem({
     name: 'quest-street',
     update(dt) {
-      if (!actor) return;
-      actorT -= dt;
-      actor.animate(dt, 0, {});
-      const pp = g.player?.group?.position;
-      if (actorT <= 0 || (pp && Math.hypot(pp.x - actor.group.position.x, pp.z - actor.group.position.z) > 40)) removeActor();
+      if (!actor || !enc) return;
+      const e = enc, pl = g.player, pp = pl?.group?.position;
+      if (!pp) { removeActor(); return; }
+      e.t += dt;
+      e.spd = 0;
+      const pos = actor.group.position;
+      const dx = pp.x - pos.x, dz = pp.z - pos.z, d = Math.hypot(dx, dz);
+      const yaw = Math.atan2(dx, dz);
+      if (e.phase === 'approach') {
+        // shout once they're close enough to hear (or once the player can see them coming)
+        if (!e.called && (d < 15 || (d < 26 && canSee(pos.x, pos.z)))) { e.called = true; bark(pick(CALL[e.ev.id] || CALLS), { kind: e.ev.id === 'mugger' ? 'angry' : '' }); }
+        // the player walked off: tail them for a bit, then give up
+        if (d < e.minD) e.minD = d;
+        if (d > e.minD + 4) e.awayT += dt; else e.awayT = Math.max(0, e.awayT - dt);
+        if (interrupted() || e.awayT > 5 || d > 60 || e.t > e.limit) { dismiss(!interrupted() && d < 40); }
+        else if (d <= 3.2 && (e.front == null || Math.hypot(e.front.x - pos.x, e.front.z - pos.z) < 0.45 || e.frontT > 3.5)) {
+          // close enough (and stepped round in front of the camera): square up and talk
+          // (wait for any open menu to close first)
+          face(actor, yaw, dt, 9);
+          const off = Math.abs(Math.atan2(Math.sin(yaw - actor.group.rotation.y), Math.cos(yaw - actor.group.rotation.y)));
+          if (g.ui.isBlocking() || g.minigames?.active) { e.waitT += dt; if (e.waitT > 8) dismiss(false); }
+          else if (off < 0.35) startTalk();
+        } else {
+          // straight at the player if there's a clear line, else via a corner
+          e.wpT -= dt;
+          if (e.wpT <= 0) {
+            e.wpT = 0.5;
+            if (los(pos.x, pos.z, pp.x, pp.z)) e.wp = null;
+            else if (!e.wp || Math.hypot(e.wp.x - pos.x, e.wp.z - pos.z) < 1.2) e.wp = waypoint(pos.x, pos.z, pp.x, pp.z);
+          }
+          let tgt = e.wp || pp;
+          // the last few metres: step round to the player's front-left/right (the side the camera sees) so
+          // they don't end up talking to the back of the camera
+          if (!e.wp && d < 7) {
+            const cam = g.camera?.position;
+            let fx = cam ? pp.x - cam.x : Math.sin(pl.facing || 0), fz = cam ? pp.z - cam.z : Math.cos(pl.facing || 0);
+            const fl = Math.hypot(fx, fz) || 1; fx /= fl; fz /= fl;
+            const sx = -fz, sz = fx, side = ((pos.x - pp.x) * sx + (pos.z - pp.z) * sz) >= 0 ? 1 : -1;
+            const ux = fx * 0.75 + sx * side * 0.66, uz = fz * 0.75 + sz * side * 0.66, ul = Math.hypot(ux, uz);
+            const fr = g.physics.resolveCircle(pp.x + ux / ul * 2.3, pp.z + uz / ul * 2.3, 0.4);
+            e.front = { x: fr.x, z: fr.z };
+            e.frontT = (e.frontT || 0) + dt;
+            // (don't walk straight through the player to get there)
+            const toF = Math.hypot(fr.x - pos.x, fr.z - pos.z);
+            if (d < 1.6 && toF > 1) {
+              const ax = pos.x - pp.x, az = pos.z - pp.z, al = Math.hypot(ax, az) || 1;
+              tgt = { x: pp.x + ax / al * 2 + (fr.x - pos.x) / toF * 1.5, z: pp.z + az / al * 2 + (fr.z - pos.z) / toF * 1.5 };
+            } else tgt = fr;
+          } else { e.front = null; e.frontT = 0; }
+          // slow to a walk for the last few metres (muggers too: menacing swagger)
+          const sp = d < 6 ? Math.min(e.speed, 2.4) : e.speed;
+          const left = walk(e, tgt.x, tgt.z, sp, dt);
+          if (e.wp && left < 1) e.wp = null;
+        }
+      } else if (e.phase === 'talk' || e.phase === 'linger') {
+        face(actor, yaw, dt, 7);
+        // the player turns to them too while the dialog is up
+        if (g.ui.isBlocking() && !pl.vehicle && (pl.speed || 0) < 0.6 && d > 0.3) {
+          pl.facing = angleLerp(pl.facing, yaw + Math.PI, 1 - Math.exp(-9 * dt));
+          pl.group.rotation.y = pl.facing;
+        }
+        if (e.phase === 'linger' && (e.t > 1.6 || d > 6) && !g.ui.isBlocking()) dismiss(false);
+      } else if (e.phase === 'leave') {
+        const left = walk(e, e.to.x, e.to.z, e.speed, dt);
+        // gone once nobody can see it (or it's far / taking forever and out of view)
+        const hidden = !canSee(pos.x, pos.z);
+        if ((hidden && (d > 14 || e.t > 4)) || d > 90 || (left < 1 && hidden) || e.t > 60) { removeActor(); return; }
+        if (left < 1) { e.to = { x: pos.x + (pos.x - pp.x), z: pos.z + (pos.z - pp.z) }; }
+      }
+      actor.animate(dt, e.spd || 0, {});
+      if (e.phase === 'talk' && actor) talkGesture({ talk: e.tk, model: actor, id: 'enc' }, dt);
     },
   });
 
-  return { trigger: (id) => { const ev = EVENTS.find((e) => e.id === id); if (ev) trigger(ev); }, events: EVENTS };
+  g.bus.on('state:reset', () => removeActor());
+  q.streetEncounter = () => (enc && actor ? { ...enc, pos: actor.group.position, model: actor } : null); // (debug / tests)
+  g.bus.on('player:arrested', () => { if (enc && enc.phase === 'approach') dismiss(false); });
+
+  return {
+    trigger: (id) => { const ev = EVENTS.find((e) => e.id === id); return ev ? trigger(ev) : false; },
+    events: EVENTS,
+    encounter: () => enc,
+  };
 }

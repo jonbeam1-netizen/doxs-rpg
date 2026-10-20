@@ -432,6 +432,10 @@ export class Ambient {
     const now = this.game.time.total;
     for (const [d, t] of Object.entries(this.dealerDead)) {
       if (now >= t) {
+        // (don't swap the body for a fresh dealer while the player is looking right at the corner)
+        const cur0 = this.dealers[d];
+        const spot = this._dealerSpot(d);
+        if ((cur0 && !cur0.removed && this.ctx.npcs.canSee(cur0.pos.x, cur0.pos.z, 90)) || (spot && this.ctx.npcs.canSee(spot.x, spot.z, 90))) continue;
         delete this.dealerDead[d];
         const cur = this.dealers[d];
         if (cur && !cur.removed) this.ctx.npcs.remove(cur);

@@ -72,11 +72,9 @@ export class Talk {
     const g = this.game;
     if (!npc || npc.dead) return;
     g.bus.emit('npc:talk', { npc });
-    // face the player & pause
-    const pp = g.player.pos;
-    npc.state = 'idle'; npc.stateT = 0; npc.idleFor = 6; npc.goal = null; npc.vx = npc.vz = 0;
-    npc.facing = Math.atan2(pp.x - npc.pos.x, pp.z - npc.pos.z);
-    npc.group.rotation.y = npc.facing;
+    // Stop, turn to the player and stay put for the whole conversation (chained dialogs, shops and
+    // minigames included); seated / lying folks stay down and just turn their head. See NPCManager.holdTalk.
+    try { this.ctx.npcs.holdTalk(npc); } catch (e) { console.error('[npc] holdTalk failed', e); }
 
     if (typeof npc.spec.onTalk === 'function') {
       try { await npc.spec.onTalk(g, npc); } catch (e) { console.error('[npc] onTalk failed', e); }

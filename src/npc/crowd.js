@@ -181,12 +181,34 @@ export function clearPose(npc) {
 }
 
 // Cheap periodic motion for posed NPCs near the camera.
-export function gesture(npc, dt) {
+// look: while in a conversation, the player's bearing relative to the body (radians, + = toward local +x);
+// seated / lying / leaning people turn their head and shoulders instead of getting up.
+export function gesture(npc, dt, look = null) {
   const pose = npc.pose;
   if (!pose) return;
   const P = npc.model.parts;
   pose.t += dt;
   const t = pose.t;
+  P.head.rotation.y = 0;
+  P.torso.rotation.y = 0;
+  baseGesture(npc, pose, P, t);
+  // conversation: ease the head (and shoulders) round to the player, nod along now and then
+  const want = look != null ? 1 : 0;
+  pose.talkK = (pose.talkK || 0) + (want - (pose.talkK || 0)) * Math.min(1, dt * 4);
+  if (look != null) pose.look = look;
+  const k = pose.talkK;
+  if (k > 0.002) {
+    const L = Math.max(-2, Math.min(2, pose.look || 0));
+    const tor = pose.kind === 'lie' ? 0 : Math.max(-0.55, Math.min(0.55, L * 0.45)) * k;
+    if (pose.kind !== 'lie') P.torso.rotation.y = tor;
+    const head = Math.max(-1.05, Math.min(1.05, L - tor));
+    P.head.rotation.y = P.head.rotation.y * (1 - k) + head * k;
+    // small "talking" bob of the head
+    if (look != null) P.head.rotation.x = Math.sin(t * 2.7) * 0.05 * k + Math.max(0, Math.sin(t * 0.8)) * 0.08 * k;
+  } else if (P.head.rotation.x !== 0) P.head.rotation.x = 0;
+}
+
+function baseGesture(npc, pose, P, t) {
   if (pose.hands === 'smoke') {
     // drag every ~5s: hand to mouth, hold, back down
     const c = t % 5.2;
@@ -212,6 +234,39 @@ export function gesture(npc, dt) {
     // slow breathing
     P.hips.position.y = 0.95 + Math.sin(t * 1.4) * 0.006;
   }
+}
+
+// Standing conversation body language, layered on top of the idle animate(): talk with the hands,
+// listen with little nods. Runs every frame while npc.talk is set (see NPCManager.holdTalk).
+export function talkGesture(npc, dt) {
+  const T = npc.talk;
+  if (!T) return;
+  const P = npc.model.parts;
+  T.g = (T.g || 0) + dt;
+  const t = T.g + (npc.chatPhase || 0) + (npc.id?.length || 0);
+  const k = Math.min(1, T.g * 2.5); // ease in
+  // w: 1 = talking with the hands, 0 = listening (hands on hips), blended smoothly
+  const w = Math.max(0, Math.min(1, (Math.sin(t * 0.85) + 0.25) * 2.5));
+  const mix = (cur, v) => cur + (v - cur) * k;
+  if (npc.pose?.kind !== 'cart' && !npc.aiming) {
+    const g1 = Math.max(0, Math.sin(t * 2.3)), g2 = Math.max(0, Math.sin(t * 1.7 + 1.3));
+    const L = (a, b) => a + (b - a) * w; // listen -> speak
+    P.armR.upper.rotation.x = mix(P.armR.upper.rotation.x, L(-0.05, -0.3 - g1 * 0.55));
+    P.armR.upper.rotation.z = mix(P.armR.upper.rotation.z, L(-0.42, -0.22));
+    P.armR.lower.rotation.x = mix(P.armR.lower.rotation.x, L(-1.1, -0.75 - g1 * 0.55));
+    P.armL.upper.rotation.x = mix(P.armL.upper.rotation.x, L(-0.05, -0.12 - g2 * 0.35));
+    P.armL.upper.rotation.z = mix(P.armL.upper.rotation.z, L(0.42, 0.18));
+    P.armL.lower.rotation.x = mix(P.armL.lower.rotation.x, L(-1.1, -0.45 - g2 * 0.45));
+  }
+  P.neck.rotation.x = (Math.sin(t * 3.1) * 0.06 * w + Math.max(0, Math.sin(t * 1.9)) * 0.14 * (1 - w)) * k;
+  P.head.rotation.y = Math.sin(t * 0.5) * 0.12 * k;
+}
+
+export function endTalkGesture(npc) {
+  const P = npc.model?.parts;
+  if (!P) return;
+  P.neck.rotation.x = 0;
+  P.head.rotation.y = 0;
 }
 
 // Cart pushers walk normally, then we pin the arms onto the handle.
