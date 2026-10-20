@@ -8,6 +8,8 @@ import { JOBS } from '../data/jobs.js';
 import { fmtMoney, pick, chance, randInt, esc } from '../core/util.js';
 import { ensureState, capacity, hasCourse, today, dim } from './common.js';
 import { meter } from './ui-kit.js';
+import { icon } from '../present/icons.js';
+import { chip, fxChips, itemIcon } from '../ui/visual.js';
 
 export function installItems(game) {
   const st = game.state;
@@ -181,62 +183,80 @@ export function installItems(game) {
   function openInventory(tab = 'items') {
     if (invEntry && !invEntry.closed) return invEntry;
     const wrap = document.createElement('div');
-    invEntry = game.ui.openPanel({ title: 'Pockets & Bag', body: wrap, width: 760, onClose: () => { invEntry = null; } });
+    wrap.className = 'sp';
+    invEntry = game.ui.openPanel({ title: 'Pockets & Bag', body: wrap, width: 760, className: 'sp-modal inv-modal', onClose: () => { invEntry = null; } });
     invEntry.isInventory = true;
+    let descs = [];
     const render = () => {
       const p = st.p;
       const inv = Object.entries(p.inventory).filter(([, q]) => q > 0);
       const district = game.world?.districtAt?.(game.player.pos.x, game.player.pos.z) || 'downtown';
-      let html = `<div class="ui-row" style="margin-bottom:8px">
-        ${['items', 'drugs', 'weapons'].map((t) => `<button class="ui-btn ${t === tab ? 'primary' : ''}" data-tab="${t}">${{ items: 'Items', drugs: 'Contraband', weapons: 'Weapons' }[t]}</button>`).join('')}
-        <span style="flex:1"></span><span class="sys-hint">Cash ${fmtMoney(p.money)} · HP ${Math.ceil(p.hp)}/${p.maxHp} · Energy ${Math.floor(p.energy)}/${p.maxEnergy}</span></div>`;
+      descs = [];
+      const tile = ({ ic, name, q, chips = '', desc = '', btn = '', cls = '', color = '' }) => {
+        const i = descs.push(`<b>${name}</b> ${desc}`) - 1;
+        return `<div class="sp-item inv-tile ${cls}" data-dsc="${i}"><div class="sp-top"><span class="sp-ico"${color ? ` style="color:${color}"` : ''}>${icon(ic)}</span>${q != null ? `<span class="inv-q">×${q}</span>` : ''}</div>
+          <div class="sp-name">${name}</div>${chips ? `<div class="pm-chips">${chips}</div>` : ''}${btn ? `<div class="sp-btns">${btn}</div>` : ''}</div>`;
+      };
+      let html = `<div class="inv-head"><div class="tabs inv-tabs">
+        ${['items', 'drugs', 'weapons'].map((t) => `<button class="tab ${t === tab ? 'sel' : ''}" data-tab="${t}">${icon({ items: 'bag', drugs: 'pill', weapons: 'fist' }[t])} ${{ items: 'Items', drugs: 'Contraband', weapons: 'Weapons' }[t]}</button>`).join('')}</div>
+        <span class="pm-wallet">${chip('money', fmtMoney(p.money), 'cash', 'cash')}${chip('heart', `${Math.ceil(p.hp)}/${p.maxHp}`, 'muted', 'HP')}${chip('bolt', `${Math.floor(p.energy)}/${p.maxEnergy}`, 'muted', 'energy')}</span></div><div class="sp-scroll inv-scroll">`;
       if (tab === 'items') {
-        if (!inv.length) html += '<div class="ui-muted">Pocket lint, a bus transfer from 2009, and one (1) mystery pill that you decide not to take.</div>';
+        if (!inv.length) html += '<div class="cs-empty">Pocket lint, a bus transfer from 2009, and one (1) mystery pill that you decide not to take.</div>';
         const byCat = {};
         for (const [id, q] of inv) (byCat[ITEMS[id]?.cat || (String(id).startsWith('q_') ? 'quest' : 'misc')] ??= []).push([id, q]);
         for (const cat of ['quest', ...Object.keys(ITEM_CATS)]) {
           if (!byCat[cat]) continue;
-          html += `<div class="sys-sect">${ITEM_CATS[cat] ?? 'Quest Items'}</div><table class="sys-table">`;
+          html += `<div class="pm-sect"><span>${ITEM_CATS[cat] ?? 'Quest Items'}</span></div><div class="sp-grid">`;
           for (const [id, q] of byCat[cat]) {
             const d = ITEMS[id] || { name: items.name(id), desc: game.quests?.itemDesc?.(id) ?? 'Important-looking. Do not sell it. Do not eat it.' };
             const usable = d.fx && !d.noUse;
-            html += `<tr><td style="width:34%"><b>${d.name}</b> <span class="ui-muted">×${q}</span></td><td class="ui-muted" style="font-size:14px">${d.desc || ''}</td>
-              <td class="num" style="white-space:nowrap">${usable ? `<button class="ui-btn primary" data-use="${id}">Use</button>` : ''}</td></tr>`;
+            html += tile({ ic: cat === 'quest' ? 'key' : itemIcon(d.name, d.cat), name: d.name, q, chips: fxChips(d.fx), desc: d.desc || '', cls: cat === 'quest' ? 'owned' : '',
+              btn: usable ? `<button class="ui-btn primary" data-use="${id}">Use</button>` : '' });
           }
-          html += '</table>';
+          html += '</div>';
         }
       } else if (tab === 'drugs') {
         const total = st.totalDrugs();
-        html += `<div class="sys-hint">Carrying ${total} / ${capacity(p)} units. Prices shown for ${district}. Selling happens at dealers. Using your own supply is a classic rookie move.</div>`;
+        const add = p.sys.addiction?.level || 0;
+        html += `<div class="inv-bars"><span class="cs-vl">${icon('bag')}Bag</span>${meter(total, capacity(p), 'var(--toxic)')}<span class="cs-vn">${total}/${capacity(p)}</span>
+          <span class="cs-vl">${icon('pill')}Addiction</span>${meter(add, 100, add > 50 ? 'var(--blood-bright)' : 'var(--toxic)')}<span class="cs-vn">${Math.round(add)}%</span></div>
+          <div class="pm-notes"><span>Prices for ${district}. Sell at dealers.${add >= 25 ? ' Go a few hours without and the shakes kick in.' : ''}</span></div>`;
         const owned = DRUG_ORDER.filter((id) => (p.drugs[id] || 0) > 0);
-        if (!owned.length) html += '<div class="ui-muted" style="margin-top:8px">Nothing. Clean as a nun\'s browser history.</div>';
+        if (!owned.length) html += '<div class="cs-empty" style="margin-top:8px">Nothing. Clean as a nun\'s browser history.</div>';
         else {
-          html += '<table class="sys-table"><tr><th>Product</th><th class="num">Qty</th><th class="num">Street value</th><th></th></tr>';
+          html += '<div class="sp-grid" style="margin-top:8px">';
           for (const id of owned) {
             const pr = game.market?.price?.(id, district) ?? DRUGS[id].base;
-            html += `<tr><td><b style="color:${DRUGS[id].color}">${DRUGS[id].name}</b><div class="ui-muted" style="font-size:13px">${DRUGS[id].desc}</div></td><td class="num">${p.drugs[id]}</td><td class="num">${fmtMoney(pr)} ea</td>
-              <td class="num"><button class="ui-btn" data-drug="${id}">Sample</button></td></tr>`;
+            html += tile({ ic: 'pill', name: DRUGS[id].name, q: p.drugs[id], color: DRUGS[id].color, chips: chip('money', `${fmtMoney(pr)} ea`, 'cash', 'street value'), desc: DRUGS[id].desc, cls: 'drug',
+              btn: `<button class="ui-btn" data-drug="${id}">Sample</button>` });
           }
-          html += '</table>';
+          html += '</div>';
         }
-        const add = p.sys.addiction?.level || 0;
-        html += `<div style="margin-top:10px">Addiction ${meter(add, 100, add > 50 ? 'var(--blood-bright)' : 'var(--toxic)')} <span class="sys-hint">${Math.round(add)}% ${add >= 25 ? '— go a few hours without and the shakes kick in.' : ''}</span></div>`;
       } else {
-        html += '<table class="sys-table"><tr><th>Weapon</th><th class="num">Dmg</th><th>Ammo</th><th></th></tr>';
+        html += '<div class="sp-grid">';
         for (const id of p.weapons) {
           const w = WEAPONS[id];
           if (!w) continue;
-          const ammo = w.ammo ? `${p.ammo[w.ammo] || 0} ${w.ammo}` : '—';
-          html += `<tr><td><b>${w.name}</b>${p.weapon === id ? ' <span class="ui-good">(equipped)</span>' : ''}</td><td class="num">${w.damage}</td><td>${ammo}</td>
-            <td class="num">${p.weapon === id ? '' : `<button class="ui-btn" data-equip="${id}">Equip</button>`}</td></tr>`;
+          const eq = p.weapon === id;
+          html += tile({ ic: w.ammo ? 'gun' : /fist/i.test(w.name) ? 'fist' : /knife|blade|machete|shiv/i.test(w.name) ? 'knife' : 'wrench', name: w.name, cls: eq ? 'owned' : '',
+            chips: chip('fist', `${w.damage}`, 'muted', 'damage') + (w.ammo ? chip('ammo', `${p.ammo[w.ammo] || 0}`, (p.ammo[w.ammo] || 0) > 0 ? 'muted' : 'cost', w.ammo) : '') + (eq ? chip('', 'equipped', 'gain') : ''),
+            desc: w.desc || '', btn: eq ? '' : `<button class="ui-btn" data-equip="${id}">Equip</button>` });
         }
-        html += '</table>';
+        html += '</div>';
       }
+      html += '</div><div class="sp-detail"><span class="ui-muted">Hover or tap something for details.</span></div>';
       wrap.innerHTML = html;
     };
+    const showDesc = (e) => {
+      const t = e.target.closest?.('[data-dsc]');
+      const d = wrap.querySelector('.sp-detail');
+      if (t && d) d.innerHTML = descs[Number(t.dataset.dsc)] || '';
+    };
+    wrap.addEventListener('mouseover', showDesc);
+    wrap.addEventListener('focusin', showDesc);
     wrap.addEventListener('click', (e) => {
       const b = e.target.closest('button');
-      if (!b) return;
+      if (!b) { showDesc(e); return; }
       if (b.dataset.tab) { tab = b.dataset.tab; render(); return; }
       if (b.dataset.use) { items.use(b.dataset.use); }
       if (b.dataset.drug) { game.market?.use?.(b.dataset.drug); }
@@ -271,26 +291,28 @@ export function installItems(game) {
     const edu = Object.entries(p.education || {}).filter(([id]) => COURSES[id]);
     const dates = Object.entries(p.dating || {}).filter(([, d]) => d.rel > 0);
     const fxList = (p.effects || []).map((e) => e.label);
-    let html = `<div class="ui-section">Life</div><table class="ui-table">
-      <tr><td>Job</td><td>${job ? `${job.title} @ ${JOBS[job.id]?.name} (${fmtMoney(job.pay)}/hr${JOBS[job.id]?.kind === 'delivery' ? ' per drop' : ''}) — ${job.shifts} shifts at this rank` : '<span class="ui-muted">Unemployed. Your mom is so proud.</span>'}</td></tr>
-      <tr><td>Home</td><td>${g.locations.get(p.home)?.name ?? p.home}</td></tr>
-      <tr><td>Drug bag</td><td>${g.state.totalDrugs()} / ${capacity(p)} units · Addiction ${Math.round(p.sys.addiction.level)}%</td></tr>
-      <tr><td>Partner</td><td>${p.sys.partner ? (g.sysDating?.name?.(p.sys.partner) ?? p.sys.partner) : '<span class="ui-muted">Forever alone (for now)</span>'}</td></tr>
-      ${p.sys.loan ? `<tr><td>Loan</td><td class="ui-bad">${fmtMoney(p.sys.loan.amount)} owed to First Bank</td></tr>` : ''}
-      ${fxList.length ? `<tr><td>Effects</td><td>${fxList.join(', ')}</td></tr>` : ''}
-    </table>`;
+    const card = (ic, k, v, extra = '') => `<div class="life-card"><span class="cs-si">${icon(ic)}</span><span class="life-t"><small>${k}</small><b>${v}</b>${extra}</span></div>`;
+    let html = `<div class="pm-sect cs-h">${icon('home')}<span>Life</span></div><div class="life-grid">
+      ${card('work', 'Job', job ? `${job.title} <span class="ui-muted">@ ${JOBS[job.id]?.name}</span>` : '<span class="ui-muted">Unemployed. Your mom is so proud.</span>', job ? `<span class="pm-chips">${chip('money', `${fmtMoney(job.pay)}/${JOBS[job.id]?.kind === 'delivery' ? 'drop' : 'hr'}`, 'cash')}${chip('clock', `${job.shifts} shifts`, 'muted')}</span>` : '')}
+      ${card('home', 'Home', g.locations.get(p.home)?.name ?? p.home)}
+      ${card('pill', 'Drug bag', `${g.state.totalDrugs()} / ${capacity(p)}`, `${meter(g.state.totalDrugs(), capacity(p), 'var(--toxic)')}${p.sys.addiction.level >= 1 ? `<span class="pm-chips">${chip('pill', `addiction ${Math.round(p.sys.addiction.level)}%`, p.sys.addiction.level >= 25 ? 'cost' : 'muted')}</span>` : ''}`)}
+      ${card('heart', 'Partner', p.sys.partner ? (g.sysDating?.name?.(p.sys.partner) ?? p.sys.partner) : '<span class="ui-muted">Forever alone (for now)</span>')}
+      ${p.sys.loan ? card('money', 'Loan', `<span class="ui-bad">${fmtMoney(p.sys.loan.amount)}</span> <span class="ui-muted">owed to First Bank</span>`) : ''}
+    </div>
+    ${fxList.length ? `<div class="pm-chips" style="margin-top:6px">${fxList.map((l) => chip('bolt', l, 'muted')).join('')}</div>` : ''}`;
     if (edu.length) {
-      html += '<div class="ui-section">Education</div><table class="ui-table">';
+      html += `<div class="pm-sect cs-h">${icon('school')}<span>Education</span></div><div class="life-grid">`;
       for (const [id, e] of edu) {
         const c = COURSES[id];
-        html += `<tr><td>${c.short}</td><td>${hasCourse(p, id) ? '<span class="ui-good">GRADUATED</span>' : `${e.sessions || 0}/${c.sessions} sessions`}</td></tr>`;
+        const done = hasCourse(p, id);
+        html += card('book', c.short, done ? '<span class="ui-good">Graduated</span>' : `${e.sessions || 0}/${c.sessions} sessions`, done ? '' : meter(e.sessions || 0, c.sessions, 'var(--xp)'));
       }
-      html += '</table>';
+      html += '</div>';
     }
     if (dates.length) {
-      html += '<div class="ui-section">Romance</div><table class="ui-table">';
-      for (const [id, d] of dates) html += `<tr><td>${g.sysDating?.name?.(id) ?? id}</td><td style="width:60%">${meter(d.rel, 100, '#d84a8a')}</td><td>${d.partner ? '❤ partner' : Math.round(d.rel) + '%'}</td></tr>`;
-      html += '</table>';
+      html += `<div class="pm-sect cs-h">${icon('heart')}<span>Romance</span></div><div class="life-grid">`;
+      for (const [id, d] of dates) html += card('heart', g.sysDating?.name?.(id) ?? id, d.partner ? '❤ partner' : Math.round(d.rel) + '%', meter(d.rel, 100, '#d84a8a'));
+      html += '</div>';
     }
     html += `<div class="ui-row" style="margin-top:10px"><button class="ui-btn primary" data-sys-inv="items">Open inventory (I)</button><button class="ui-btn" data-sys-inv="drugs">Contraband</button><button class="ui-btn" data-sys-news="1">Today's paper</button></div>`;
     return html;

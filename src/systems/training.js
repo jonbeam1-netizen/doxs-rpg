@@ -90,11 +90,11 @@ export function installTraining(game) {
         out.push({ label: 'Monthly membership', hint: '$150 / 30 days', run: () => { if (st.spend(150, 'gym')) { p.sys.gym.until = game.time.day + 29; game.ui.toast('Member! You get a keycard and a free towel (used).', 'good'); } } });
       }
       if (!p.sys.gym.lifetime) out.push({ label: 'Lifetime membership', hint: '$2,500', run: () => { if (st.spend(2500, 'gym')) { p.sys.gym.lifetime = true; game.ui.toast('LIFETIME MEMBER. Brick gives you a hug. Three ribs crack. Worth it.', 'good', 3500); } } });
-      out.push({ label: 'Pump iron', hint: `1h · -12 energy${sh('str')}`, disabled: !m, run: () => workout('lift') });
-      out.push({ label: 'Heavy session with Brick', hint: `3h · -34 energy${sh('str')}`, disabled: !m, run: () => workout('heavy') });
-      out.push({ label: 'Treadmill', hint: '1h · -10 energy · stamina', disabled: !m, run: () => workout('cardio') });
-      out.push({ label: 'Spar in the ring', hint: p.str < 15 ? 'needs STR 15' : `1h · -16 energy · hurts${sh('str')}`, disabled: !m || p.str < 15, run: () => workout('spar') });
-      out.push({ label: 'Gym showers', hint: 'free', disabled: !m, run: () => { g.time.advance(15); game.sysFx.add({ id: 'fresh', min: 360, temp: { cha: 1 } }); return say(g, 'Gym Showers', pick(['Three naked old men discuss the stock market. You learn about bonds. You did not want to learn about bonds.', 'The water is cold. The floor is warm. You don\'t want to know why.'])); } });
+      out.push({ label: 'Pump iron', hint: `1h · -12 energy${sh('str')}`, disabled: !m, reason: m ? '' : 'members only', run: () => workout('lift') });
+      out.push({ label: 'Heavy session with Brick', hint: `3h · -34 energy${sh('str')}`, disabled: !m, reason: m ? '' : 'members only', run: () => workout('heavy') });
+      out.push({ label: 'Treadmill', hint: '1h · -10 energy · stamina', disabled: !m, reason: m ? '' : 'members only', run: () => workout('cardio') });
+      out.push({ label: 'Spar in the ring', hint: p.str < 15 ? 'needs STR 15' : `1h · -16 energy · hurts${sh('str')}`, disabled: !m || p.str < 15, reason: !m ? 'members only' : '', run: () => workout('spar') });
+      out.push({ label: 'Gym showers', hint: 'free', disabled: !m, reason: m ? '' : 'members only', run: () => { g.time.advance(15); game.sysFx.add({ id: 'fresh', min: 360, temp: { cha: 1 } }); return say(g, 'Gym Showers', pick(['Three naked old men discuss the stock market. You learn about bonds. You did not want to learn about bonds.', 'The water is cold. The floor is warm. You don\'t want to know why.'])); } });
       out.push({ label: 'Juice bar', run: () => shopPanel(g, { title: 'Juice Bar', speaker: 'Brick Mastodon', intro: '"Protein! PROTEIN! Your body is a temple. A temple made of chicken."', sections: [{ products: [
         { name: 'Swole Sludge Protein', desc: game.items.def('protein_shake').desc, price: 12, qty: true, buy: (q) => game.items.buy('protein_shake', q, 12) },
         { name: 'Kardiak Arrest Energy', desc: game.items.def('energy_drink').desc, price: 6, qty: true, buy: (q) => game.items.buy('energy_drink', q, 6) },

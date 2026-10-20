@@ -6,6 +6,9 @@
 //   meter(value, max, color)    little progress bar html
 import { fmtMoney, esc, clamp } from '../core/util.js';
 import { isOpen, hoursLabel, reqCheck, reqHtml } from './common.js';
+import { icon, TYPE_ICON } from '../present/icons.js';
+import { chip, hintChips, classify, GROUP_NAMES, plain, itemIcon, fxChips } from '../ui/visual.js';
+import { ITEMS } from '../data/items.js';
 
 let stylesInjected = false;
 export function injectStyles() {
@@ -108,7 +111,7 @@ export function meter(value, max = 100, color = 'var(--blood-bright)') {
 
 export function cashLine(game, extra = '') {
   const p = game.state.p;
-  return `<div class="sys-cashline"><span>Cash <b>${fmtMoney(p.money)}</b> · Bank ${fmtMoney(p.bank)} · Energy ${Math.floor(p.energy)}/${p.maxEnergy}</span><span>${game.time.label()}${extra ? ' · ' + extra : ''}</span></div>`;
+  return `<div class="sys-cashline"><span class="pm-wallet">${chip('money', fmtMoney(p.money), 'cash', 'cash')}${chip('hall', fmtMoney(p.bank), 'muted', 'bank')}${chip('bolt', `${Math.floor(p.energy)}/${p.maxEnergy}`, 'muted', 'energy')}</span><span class="pm-wallet">${chip('clock', esc(game.time.label().replace(/^Day \d+ · /, '')), 'muted', 'time')}${extra ? `<span class="sys-hint">${extra}</span>` : ''}</span></div>`;
 }
 
 // A building's menu loop. Re-opens after each action until the player leaves.
@@ -130,16 +133,101 @@ export function installAbortHook(game) {
   game.bus.on('player:arrested', () => { abortGen++; });
 }
 
+// Visual building menu: header (portrait / place icon, name, who + hours, short flavor), grouped action
+// cards with icon chips for cost / effects, disabled cards with a reason badge, wallet footer.
+// Resolves to the ORIGINAL option index (or null). Keys 1-9 pick cards in the order shown.
+export function placeDialog(game, { title = '', loc = null, speaker = '', flavor = '', options = [], hours = null, closed = false, leaveLabel = 'Leave', width = 680 }) {
+  const ui = game.ui;
+  return new Promise((resolve) => {
+    const p = game.state.p;
+    // flavor: status lines (.sys-hint) become a quiet note row under the blurb
+    const tmp = document.createElement('div');
+    tmp.innerHTML = flavor || '';
+    const notes = [...tmp.querySelectorAll('.sys-hint')].map((n) => { const h = n.innerHTML; n.remove(); return h; }).filter((h) => plain(h).trim());
+    let fl = tmp.innerHTML.replace(/^(\s|<br\s*\/?>)+|(\s|<br\s*\/?>)+$/gi, '').replace(/(<br\s*\/?>\s*){2,}/gi, '<br>');
+    // order: groups in order of first appearance, cards keep their order within a group
+    const items = options.map((o, i) => ({ o, i, ...classify(o.label, o) })).filter((x) => !x.o.leave);
+    const leave = options.findIndex((o) => o.leave);
+    // lone cards from minor groups collect under "More" (fewer one-card headers); colors keep their group
+    for (const it of items) it.sect = it.group;
+    const count = (g) => items.filter((x) => x.sect === g).length;
+    if (items.length > 4) for (const it of items) if (it.sect !== 'work' && it.sect !== 'other' && count(it.sect) === 1) it.sect = 'other';
+    const order = [];
+    for (const it of items) if (!order.includes(it.sect) && it.sect !== 'other') order.push(it.sect);
+    if (items.some((x) => x.sect === 'other')) order.push('other');
+    const showHeads = items.length > 4 && order.length > 1;
+    const display = [];
+    let body = '';
+    for (const g of order) {
+      const list = items.filter((x) => x.sect === g);
+      if (showHeads) body += `<div class="pm-sect">${icon(classify('', { group: g }).icon)}<span>${GROUP_NAMES[g] || g}</span></div>`;
+      for (const it of list) {
+        const n = display.push(it);
+        const { chips, reason } = hintChips(it.o.hint, it.o.disabled);
+        const why = it.o.disabled ? (it.o.reason || reason || '') : '';
+        body += `<button class="ui-opt pm-card g-${it.group}${it.o.disabled ? ' disabled' : ''}" data-d="${n - 1}"${it.o.hint ? ` title="${esc(plain(it.o.hint))}"` : ''}>
+          <span class="k">${n <= 9 ? n : ''}</span><span class="pm-ico">${icon(it.icon)}</span>
+          <span class="pm-main"><span class="pm-label">${it.o.label}</span>${chips || why || (!it.o.disabled && reason) ? `<span class="pm-chips">${chips}${!it.o.disabled && reason ? chip('lock', esc(reason), 'reason') : ''}${why ? chip('lock', esc(why), 'reason') : ''}</span>` : ''}</span>
+        </button>`;
+      }
+    }
+    if (!items.length) body = `<div class="pm-empty">${closed ? 'Nothing to do here until it opens.' : 'Nothing to do here right now.'}</div>`;
+    const hrs = hoursLabel(hours).replace(/^Open /, '');
+    const face = (() => {
+      try { return speaker ? game.present?.portrait?.(speaker) : null; } catch { return null; }
+    })();
+    const wrap = document.createElement('div');
+    wrap.className = 'pm' + (closed ? ' closed' : '');
+    wrap.innerHTML = `
+      <div class="pm-head">
+        <div class="pm-face${face ? '' : ' ico'}">${face ? '' : icon(TYPE_ICON[loc?.type] || 'door')}</div>
+        <div class="pm-id">
+          <div class="pm-name">${title}</div>
+          <div class="pm-sub">${speaker ? `<span class="pm-who">${speaker}</span>` : ''}<span class="pm-hours ${closed ? 'shut' : 'open'}">${closed ? 'Closed' : 'Open'} · ${hrs}</span></div>
+          ${fl ? `<div class="pm-flavor">${fl}</div>` : ''}
+          ${notes.length ? `<div class="pm-notes">${notes.map((n) => `<span>${n}</span>`).join('')}</div>` : ''}
+        </div>
+      </div>
+      <div class="pm-grid">${body}</div>
+      <div class="pm-foot">
+        <span class="pm-wallet">${chip('money', fmtMoney(p.money), 'cash', 'cash')}${chip('hall', fmtMoney(p.bank), 'muted', 'bank')}${chip('bolt', `${Math.floor(p.energy)}/${p.maxEnergy}`, 'muted', 'energy')}${chip('clock', esc(game.time.label().replace(/^Day \d+ · /, '')), 'muted', 'time')}</span>
+        <button class="ui-btn pm-leave">${icon('exit')}<span>${leaveLabel}</span><kbd>Esc</kbd></button>
+      </div>`;
+    if (face) wrap.querySelector('.pm-face').appendChild(face);
+    const flEl = wrap.querySelector('.pm-flavor');
+    let done = false;
+    const entry = ui.openPanel({ title: '', body: wrap, width, className: 'pm-modal', onClose: () => { if (!done) { done = true; resolve(null); } } });
+    const finish = (v) => { if (done) return; done = true; entry.onClose = null; entry.close(); resolve(v); };
+    entry.isDialog = true;
+    entry.isPlace = true;
+    entry.choose = (d) => {
+      const it = display[d];
+      if (!it || it.o.disabled) return;
+      finish(it.i);
+    };
+    wrap.addEventListener('click', (e) => {
+      const b = e.target.closest('.pm-card');
+      if (b) { entry.choose(Number(b.dataset.d)); return; }
+      if (e.target.closest('.pm-leave')) { finish(leave >= 0 ? leave : null); return; }
+      if (flEl && e.target.closest('.pm-flavor') && flEl.classList.contains('clip')) flEl.classList.toggle('open');
+    });
+    // long blurbs clamp to a few lines; click to read the rest
+    if (flEl) requestAnimationFrame(() => { if (flEl.scrollHeight > flEl.clientHeight + 2) flEl.classList.add('clip'); });
+  });
+}
+
 export async function placeMenu(game, loc, def) {
   const ui = game.ui;
   const gen = abortGen;
   const title = def.title ?? loc?.name ?? '';
-  const hoursOk = () => isOpen(game, typeof def.hours === 'function' ? def.hours(game, loc) : def.hours);
+  const hrs = () => (typeof def.hours === 'function' ? def.hours(game, loc) : def.hours);
+  const hoursOk = () => isOpen(game, hrs());
+  const spk = () => { try { return typeof def.speaker === 'function' ? def.speaker(game, loc) : def.speaker; } catch { return ''; } };
   if (!hoursOk()) {
     const extra = (def.closedOptions?.(game, loc) || []).filter(Boolean);
-    const closedText = def.closed?.(game, loc) ?? `The door is locked. A sign says <em>${hoursLabel(def.hours)}</em>. Someone has drawn a crude picture on it.`;
+    const closedText = def.closed?.(game, loc) ?? 'The door is locked. Someone has drawn a crude picture on it.';
     const opts = [...extra, { label: 'Leave', leave: true }];
-    const i = await ui.dialog({ title, html: closedText + `<div class="sys-hint" style="margin-top:8px">${hoursLabel(typeof def.hours === 'function' ? def.hours(game, loc) : def.hours)} · now ${game.time.label()}</div>`, options: opts.map(strip) });
+    const i = await placeDialog(game, { title, loc, speaker: '', flavor: closedText, options: opts.map(strip), hours: hrs(), closed: true, width: def.width ?? 600 });
     if (i == null || opts[i].leave) return;
     try { await opts[i].run?.(); } catch (e) { console.error('[systems] closed option failed', e); }
     return;
@@ -150,8 +238,7 @@ export async function placeMenu(game, loc, def) {
     opts.push({ label: def.leaveLabel ?? 'Leave', leave: true });
     let html = '';
     try { html = def.text ? def.text(game, loc) : ''; } catch (e) { console.error('[systems] text failed', e); }
-    const sp = typeof def.speaker === 'function' ? def.speaker(game, loc) : def.speaker;
-    const i = await ui.dialog({ title, speaker: sp, html: html + cashLine(game), options: opts.map(strip), width: def.width ?? 600 });
+    const i = await placeDialog(game, { title, loc, speaker: spk(), flavor: html, options: opts.map(strip), hours: hrs(), leaveLabel: def.leaveLabel ?? 'Leave', width: Math.max(640, def.width ?? 0) });
     if (i == null || opts[i].leave) return;
     let r;
     try { r = await opts[i].run?.(); } catch (e) { console.error('[systems] action failed', opts[i].label, e); ui.toast('That broke. Smells like a bug.', 'bad'); }
@@ -165,7 +252,7 @@ export async function placeMenu(game, loc, def) {
 }
 
 function strip(o) {
-  return { label: o.label, hint: o.hint, disabled: o.disabled };
+  return { label: o.label, hint: o.hint, disabled: o.disabled, leave: o.leave, group: o.group, icon: o.icon, reason: o.reason };
 }
 
 // Simple wrapper: show a result message and wait for "OK".
@@ -181,6 +268,15 @@ export async function choose(game, { title = '', speaker = '', html = '', text =
   return choices[i].value ?? i;
 }
 
+let itemByName = null;
+function ITEM_BY_NAME() {
+  if (!itemByName) {
+    itemByName = new Map();
+    for (const it of Object.values(ITEMS)) if (it?.name) itemByName.set(it.name.toLowerCase(), it);
+  }
+  return itemByName;
+}
+
 // Generic store. def: {
 //   title, speaker, intro (html), width,
 //   sections: () => [{ name, products: [{ key, name, desc, price, priceLabel, req, owned, ownedLabel, tag,
@@ -189,42 +285,74 @@ export async function choose(game, { title = '', speaker = '', html = '', text =
 export function shopPanel(game, def) {
   return new Promise((resolve) => {
     const wrap = document.createElement('div');
-    const entry = game.ui.openPanel({ title: def.title, body: wrap, width: def.width ?? 760, onClose: () => resolve() });
+    wrap.className = 'sp';
+    const entry = game.ui.openPanel({ title: '', body: wrap, width: def.width ?? 760, className: 'sp-modal', onClose: () => resolve() });
     let products = [];
+    let face = null;
+    try { face = def.speaker ? game.present?.portrait?.(plain(def.speaker)) : null; } catch { face = null; }
+    const detail = (pr) => {
+      const d = wrap.querySelector('.sp-detail');
+      if (!d) return;
+      if (!pr) { d.innerHTML = '<span class="ui-muted">Hover or tap an item for details.</span>'; return; }
+      d.innerHTML = `<b>${pr.name}</b>${pr.desc ? ` <span>${pr.desc}</span>` : ''}${pr.req ? ` <span class="sp-req">${reqHtml(game, pr.req)}</span>` : ''}`;
+    };
     const render = () => {
       const p = game.state.p;
       let sections;
       try { sections = typeof def.sections === 'function' ? def.sections(game) : def.sections; } catch (e) { console.error(e); sections = []; }
       products = [];
-      let html = `${def.speaker ? `<div class="ui-speaker">${def.speaker}</div>` : ''}${def.intro ? `<div class="sys-intro">${typeof def.intro === 'function' ? def.intro(game) : def.intro}</div>` : ''}${cashLine(game)}`;
+      const intro = def.intro ? (typeof def.intro === 'function' ? def.intro(game) : def.intro) : '';
+      let html = `<div class="pm-head sp-head">
+          <div class="pm-face${face ? '' : ' ico'}">${face ? '' : icon('bag')}</div>
+          <div class="pm-id"><div class="pm-name">${def.title || ''}</div>
+            ${def.speaker ? `<div class="pm-sub"><span class="pm-who">${def.speaker}</span></div>` : ''}
+            ${intro ? `<div class="pm-flavor">${intro}</div>` : ''}</div>
+        </div><div class="sp-scroll">`;
       for (const sec of sections) {
         if (!sec || !sec.products?.length) continue;
-        if (sec.name) html += `<div class="sys-sect">${sec.name}</div>`;
-        html += '<div class="sys-shop">';
+        if (sec.name) html += `<div class="pm-sect"><span>${sec.name}</span></div>`;
+        html += '<div class="sp-grid">';
         for (const pr of sec.products) {
           const idx = products.push(pr) - 1;
           const req = pr.req ? reqCheck(game, pr.req) : { ok: true };
           const afford = pr.price == null || p.money >= pr.price;
           const dis = pr.disabled || !req.ok || (!pr.owned && !afford) || (pr.owned && !pr.ownedAction);
-          const cls = pr.owned ? 'owned' : !req.ok ? 'locked' : '';
+          const cls = pr.owned ? 'owned' : !req.ok ? 'locked' : !afford ? 'broke' : '';
           const btnLabel = pr.owned ? (pr.ownedAction ?? pr.ownedLabel ?? 'Owned') : (pr.btn ?? 'Buy');
-          html += `<div class="sys-item ${cls}">
-            <h4><span>${pr.name}</span><span class="pr">${pr.priceLabel ?? (pr.price != null ? fmtMoney(pr.price) : '')}</span></h4>
-            ${pr.desc ? `<div class="d">${pr.desc}</div>` : '<div class="d"></div>'}
-            ${pr.tag ? `<div class="tag">${pr.tag}</div>` : ''}
-            ${pr.req ? `<div>${reqHtml(game, pr.req)}</div>` : ''}
-            <div class="btns"><button class="ui-btn ${pr.owned ? '' : 'primary'}" data-i="${idx}" ${dis ? 'disabled' : ''}>${btnLabel}</button>
-            ${pr.qty && !pr.owned ? `<button class="ui-btn" data-q="${idx}" ${dis ? 'disabled' : ''}>×N</button>` : ''}</div>
+          const it = ITEM_BY_NAME().get(plain(pr.name).replace(/\s*×\s*\d+\s*$/, '').trim().toLowerCase());
+          const fx = pr.fx ?? it?.fx;
+          const ic = pr.icon ?? itemIcon(pr.name, it?.cat);
+          const missing = req.ok ? '' : (req.parts || []).filter((x) => !x.ok).map((x) => plain(x.label)).join(', ');
+          const priceTxt = pr.priceLabel ?? (pr.price != null ? fmtMoney(pr.price) : '');
+          html += `<div class="sp-item ${cls}" data-p="${idx}">
+            <div class="sp-top"><span class="sp-ico">${icon(ic)}</span>${priceTxt ? `<span class="sp-price">${priceTxt}</span>` : ''}</div>
+            <div class="sp-name">${pr.name}</div>
+            <div class="pm-chips">${fxChips(fx)}${pr.tag ? chip('', pr.tag, 'muted') : ''}${pr.owned ? chip('', pr.ownedLabel && !pr.ownedAction ? pr.ownedLabel : 'owned', 'gain') : ''}${missing ? chip('lock', esc(missing), 'reason') : ''}</div>
+            <div class="sp-btns"><button class="ui-btn ${pr.owned ? '' : 'primary'}" data-i="${idx}" ${dis ? 'disabled' : ''}>${btnLabel}</button>
+            ${pr.qty && !pr.owned ? `<button class="ui-btn sp-n" data-q="${idx}" ${dis ? 'disabled' : ''} title="Buy several">×N</button>` : ''}</div>
           </div>`;
         }
         html += '</div>';
       }
-      if (def.footer) html += `<div class="sys-hint" style="margin-top:10px">${typeof def.footer === 'function' ? def.footer(game) : def.footer}</div>`;
+      html += '</div>';
+      html += `<div class="sp-detail"></div>`;
+      html += `<div class="pm-foot"><span class="pm-wallet">${chip('money', fmtMoney(p.money), 'cash', 'cash')}${chip('hall', fmtMoney(p.bank), 'muted', 'bank')}${chip('bolt', `${Math.floor(p.energy)}/${p.maxEnergy}`, 'muted', 'energy')}</span>
+        ${def.footer ? `<span class="sp-foot">${typeof def.footer === 'function' ? def.footer(game) : def.footer}</span>` : ''}
+        <button class="ui-btn pm-leave sp-close">${icon('exit')}<span>Done</span><kbd>Esc</kbd></button></div>`;
+      const sc = wrap.querySelector('.sp-scroll')?.scrollTop || 0;
       wrap.innerHTML = html;
+      const s2 = wrap.querySelector('.sp-scroll'); if (s2) s2.scrollTop = sc;
+      if (face) wrap.querySelector('.pm-face')?.appendChild(face);
+      detail(null);
     };
+    const hover = (e) => { const c = e.target.closest?.('.sp-item'); if (c) detail(products[Number(c.dataset.p)]); };
+    wrap.addEventListener('mouseover', hover);
+    wrap.addEventListener('focusin', hover);
     wrap.addEventListener('click', async (e) => {
+      if (e.target.closest('.sp-close')) { entry.close(); return; }
       const b = e.target.closest('button');
-      if (!b || b.disabled) return;
+      if (!b) { hover(e); return; }
+      if (b.disabled) return;
       const pr = products[Number(b.dataset.i ?? b.dataset.q)];
       if (!pr) return;
       let qty = 1;

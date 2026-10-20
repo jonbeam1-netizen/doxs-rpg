@@ -2,6 +2,7 @@ import { esc, fmtMoney, pick, chance } from '../core/util.js';
 import { DISTRICTS } from '../data/locations.js';
 import { DRUGS, DRUG_ORDER } from '../data/drugs.js';
 import { CHARACTERS, QUESTS } from '../data/quests.js';
+import { icon } from '../present/icons.js';
 
 // The in-game smartphone ("Grimphone 3"). Key: O.
 // Apps: Map, Bank, Stats, Contacts (taxi / dealer / lawyer / mom / quest characters), Texts,
@@ -40,14 +41,14 @@ const MOM_LINES = [
 const TAXI_LINES = ['Piss Cab Co. — "We smell like it so you don\'t have to."', 'Your driver Vlad has 2.1 stars. That\'s up from yesterday.', 'Please do not ask about the stain.'];
 
 const APPS = [
-  { id: 'map', name: 'Map', icon: '🗺', color: '#3e5a2a' },
-  { id: 'bank', name: 'Bank', icon: '$', color: '#2e5a3a' },
-  { id: 'stats', name: 'Stats', icon: '▲', color: '#2c3b4a' },
-  { id: 'contacts', name: 'Contacts', icon: '✆', color: '#5b4a2a' },
-  { id: 'texts', name: 'Texts', icon: '✉', color: '#4a2a4a' },
-  { id: 'radio', name: 'Radio', icon: '♫', color: '#6a2a1a' },
-  { id: 'camera', name: 'Camera', icon: '◉', color: '#3a3a3a' },
-  { id: 'settings', name: 'Settings', icon: '⚙', color: '#444038' },
+  { id: 'map', name: 'Map', icon: 'map', color: '#3e5a2a' },
+  { id: 'bank', name: 'Bank', icon: 'money', color: '#2e5a3a' },
+  { id: 'stats', name: 'Stats', icon: 'person', color: '#2c3b4a' },
+  { id: 'contacts', name: 'Contacts', icon: 'phone', color: '#5b4a2a' },
+  { id: 'texts', name: 'Texts', icon: 'talk', color: '#4a2a4a' },
+  { id: 'radio', name: 'Radio', icon: 'music', color: '#6a2a1a' },
+  { id: 'camera', name: 'Camera', icon: 'eye', color: '#3a3a3a' },
+  { id: 'settings', name: 'Settings', icon: 'wrench', color: '#444038' },
 ];
 
 export async function installPhone(game) {
@@ -129,7 +130,10 @@ export async function installPhone(game) {
     app = a;
     const el = document.createElement('div');
     el.className = 'phone';
-    entry = game.ui.openPanel({ body: el, width: 360, className: 'phone-modal', onClose: () => { game.audio?.ui?.('close'); entry = null; } });
+    // The phone is an overlay, not a menu: you can still walk and fight with it out (attacking puts it away).
+    // With a controller it stays modal so the d-pad can drive it; trouble still yanks it away.
+    const pad = padConnected();
+    entry = game.ui.openPanel({ body: el, width: 360, className: 'phone-modal', nonBlocking: !pad, onClose: () => { game.audio?.ui?.('close'); entry = null; } });
     entry.isPhone = true;
     el.addEventListener('click', onClick);
     el.addEventListener('input', onInput);
@@ -137,6 +141,9 @@ export async function installPhone(game) {
     render();
   }
   function close() { if (isOpen()) entry.close(); }
+  function padConnected() {
+    try { return [...(navigator.getGamepads?.() || [])].some((p) => p && p.connected !== false); } catch { return false; }
+  }
 
   function render() {
     if (!isOpen()) return;
@@ -158,8 +165,8 @@ export async function installPhone(game) {
     const p = st.p;
     switch (app) {
       case 'home':
-        return `<div class="ph-wall">${esc(p.name)}</div><div class="ph-grid">${APPS.map((a) => `<button class="ph-app" data-nav="${a.id}"><span class="ph-ico" style="background:${a.color}">${a.icon}${a.id === 'texts' && n ? `<i class="ph-badge">${n}</i>` : ''}</span><span>${a.name}</span></button>`).join('')}</div>
-          <div class="ph-tip">Tip: <kbd>O</kbd> opens and closes the phone.</div>`;
+        return `<div class="ph-wall">${esc(p.name)}</div><div class="ph-grid">${APPS.map((a) => `<button class="ph-app" data-nav="${a.id}"><span class="ph-ico" style="background:${a.color}">${icon(a.icon)}${a.id === 'texts' && n ? `<i class="ph-badge">${n}</i>` : ''}</span><span>${a.name}</span></button>`).join('')}</div>
+          <div class="ph-tip">Attack<span class="kb-only"> or <kbd>O</kbd></span> to put it away</div>`;
       case 'bank':
         return `<div class="ph-card"><div class="ui-muted">Cash</div><div class="ph-big ui-good">${fmtMoney(p.money)}</div>
             <div class="ui-muted" style="margin-top:6px">First Bank of Rotwell</div><div class="ph-big">${fmtMoney(p.bank)}</div></div>
@@ -169,17 +176,12 @@ export async function installPhone(game) {
           <div class="ph-tip">Mobile banking: like real banking, but you can do it on the toilet.</div>`;
       case 'stats': {
         const pk = game.perks;
-        return `<div class="ph-card"><b>${esc(p.name)}</b> — Level ${p.level}<div class="ui-muted">${p.xp} XP into this level</div></div>
-          <table class="ui-table ph-table">
-            <tr><td>HP</td><td>${Math.ceil(p.hp)} / ${p.maxHp}</td></tr><tr><td>Energy</td><td>${Math.floor(p.energy)} / ${p.maxEnergy}</td></tr>
-            <tr><td>STR / INT / CHA</td><td>${Math.floor(p.str)} / ${Math.floor(p.int)} / ${Math.floor(p.cha)}</td></tr>
-            <tr><td>Karma</td><td>${p.karma}</td></tr><tr><td>Heat</td><td>${'★'.repeat(p.heat | 0) || 'none'}</td></tr>
-            <tr><td>Perk points</td><td>${pk ? pk.points() : 0}</td></tr>
-            <tr><td>Achievements</td><td>${game.achievements ? `${game.achievements.count()} / ${game.achievements.list.length}` : '-'}</td></tr>
-            <tr><td>Days survived</td><td>${game.time.day}</td></tr><tr><td>Earned (lifetime)</td><td>${fmtMoney(p.totals.earned)}</td></tr>
-            <tr><td>Fights W/L</td><td>${p.totals.fightsWon} / ${p.totals.fightsLost}</td></tr><tr><td>Arrests</td><td>${p.totals.arrests}</td></tr>
-          </table>
-          <button class="ui-btn ph-wide" data-act="perks">Open perks &amp; achievements</button>`;
+        const ach = game.achievements ? `${game.achievements.count()}/${game.achievements.list.length}` : '-';
+        const rec = (ic, label, v) => `<span class="cs-rec">${icon(ic)}<b>${v}</b><small>${label}</small></span>`;
+        return `<div class="ph-card"><b>${esc(p.name)}</b> <span class="ui-muted">· Level ${p.level}</span>${(p.heat | 0) > 0 ? ` <span class="ui-bad">${'★'.repeat(p.heat | 0)}</span>` : ''}</div>
+          ${game.ui.statsBlock?.({ compact: true }) || ''}
+          <div class="cs-record">${rec('star', 'perk pts', pk ? pk.points() : 0)}${rec('trophy', 'achieve', ach)}${rec('clock', 'days', game.time.day)}${rec('money', 'earned', fmtMoney(p.totals.earned))}${rec('fist', 'W–L', `${p.totals.fightsWon}–${p.totals.fightsLost}`)}${rec('badge', 'arrests', p.totals.arrests)}</div>
+          <button class="ui-btn ph-wide" data-act="perks">Perks &amp; achievements</button>`;
       }
       case 'contacts': {
         const quest = questContacts();
@@ -273,7 +275,9 @@ export async function installPhone(game) {
         const dep = act === 'dep';
         const max = dep ? p.money - 2 : p.bank;
         if (max < (dep ? 1 : 3)) { game.ui.toast(dep ? "You can't even cover the $2 fee. Impressive." : 'Your account has less in it than the fee. Bold.', 'bad'); return; }
+        if (entry) entry.holdOpen = true;
         const n = await game.ui.promptNumber({ title: dep ? 'Deposit' : 'Withdraw', text: '$2 convenience fee. Because capitalism.', max, min: 0 });
+        if (entry) entry.holdOpen = false;
         if (!n || (!dep && n < 3)) { render(); return; }
         if (dep) { p.bank += n; st.addMoney(-(n + 2), 'deposit'); }
         else { p.bank -= n; st.addMoney(n - 2, 'withdraw'); }
@@ -419,6 +423,11 @@ export async function installPhone(game) {
         const top = game.ui.top();
         if (top?.isPhone) close();
         else if (!game.ui.isBlocking()) open('home');
+      }
+      // Swinging, kicking or rolling puts the phone away (the move still happens).
+      if (isOpen() && entry.nonBlocking && !game.ui.isBlocking()) {
+        const inp = game.input;
+        if (inp.mouseClicked(0) || inp.mouseClicked(2) || inp.wasPressed('KeyB') || inp.wasPressed('KeyZ') || inp.wasPressed('KeyF')) close();
       }
       if (isOpen() && app === 'home') {
         // keep the clock fresh

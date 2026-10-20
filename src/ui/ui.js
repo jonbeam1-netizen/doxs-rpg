@@ -1,6 +1,8 @@
 import { fmtMoney, esc } from '../core/util.js';
 import { xpForLevel } from '../core/state.js';
 import { openHowTo } from './howto.js';
+import { icon } from '../present/icons.js';
+import { chip, bar, plain, itemIcon } from './visual.js';
 
 // DOM overlay UI: HUD, dialogs, panels, toasts.
 //
@@ -35,7 +37,10 @@ export class UI {
     game.bus.on('state:change', refresh);
     game.bus.on('state:reset', refresh);
     game.bus.on('time:change', refresh);
+    // the STR/INT/CHA/KARMA row only shows up for a few seconds when one of them changes
+    game.bus.on('stat:gain', ({ stat } = {}) => { if (/^(str|int|cha|karma)$/.test(stat)) this._peekStats(); });
     addEventListener('keydown', (e) => this._onKey(e));
+    this._installGuard();
   }
 
   // ---------------- HUD ----------------
@@ -88,6 +93,13 @@ export class UI {
     let r = (vis(tr) ? tr.getBoundingClientRect().bottom : 12) + 12;
     set('--hud-r1', r);
     const qt = document.getElementById('q-tracker');
+    // the quest tracker folds to title + one line once you've had time to read it; any change opens it again
+    if (qt) {
+      const txt = qt.textContent;
+      const now = performance.now();
+      if (txt !== this._qtTxt) { this._qtTxt = txt; this._qtT = now; qt.classList.remove('qt-min'); }
+      else if (now - (this._qtT ?? now) > 12000) qt.classList.add('qt-min');
+    }
     if (vis(qt) && qt.textContent.trim()) r = qt.getBoundingClientRect().bottom + 12;
     set('--hud-r2', r);
     // first-time tip (src/ui/coach.js) sits right under the tracker; toasts go below it
@@ -158,6 +170,7 @@ export class UI {
     h.xp.style.width = `${(100 * p.xp) / xpForLevel(p.level)}%`;
     h.cash.textContent = fmtMoney(p.money);
     h.bank.textContent = fmtMoney(p.bank);
+    h.bank.parentElement?.classList.toggle('hidden', !(p.bank > 0));
     h.str.textContent = Math.floor(p.str);
     h.int.textContent = Math.floor(p.int);
     h.cha.textContent = Math.floor(p.cha);
@@ -165,6 +178,14 @@ export class UI {
     h.clock.textContent = this.game.time.label();
     const heat = p.heat | 0;
     this.setHud('heat', heat > 0 ? '★'.repeat(heat) + '<span style="opacity:.25">' + '★'.repeat(5 - heat) + '</span>' : '');
+  }
+
+  _peekStats(ms = 5000) {
+    const tl = this.hudEl.querySelector('.hud-tl');
+    if (!tl) return;
+    tl.classList.add('stats-on');
+    clearTimeout(this._statsT);
+    this._statsT = setTimeout(() => tl.classList.remove('stats-on'), ms);
   }
 
   flashMoney(n) {
@@ -207,7 +228,8 @@ export class UI {
     el.innerHTML = msg;
     el._msg = msg; el._kind = kind;
     this.toastsEl.appendChild(el);
-    for (let i = 0; i < live.length + 1 - 4; i++) this._toastOut(live[i], true);
+    // one quiet stack: at most 3 on screen, the oldest folds away
+    for (let i = 0; i < live.length + 1 - 3; i++) this._toastOut(live[i], true);
     el._t = setTimeout(() => this._toastOut(el), ms);
   }
 
@@ -235,12 +257,71 @@ export class UI {
   }
 
   // ---------------- Modals ----------------
-  isBlocking() { return this.stack.length > 0; }
+  // Non-blocking overlays (the phone) sit in the stack for Esc / focus, but don't lock controls.
+  isBlocking() { return this.stack.some((e) => !e.nonBlocking); }
   top() { return this.stack[this.stack.length - 1]; }
 
-  openPanel({ title = '', body = '', width = 560, closable = true, onClose = null, className = '' } = {}) {
+  // Info panels that are safe to yank away when trouble starts (never dialogs, shops, minigames).
+  _isSoft(e) {
+    if (!e || e.closed || e.isDialog) return false;
+    if (e.soft || e.isPhone || e.isSheet || e.isHelp) return true;
+    if (/\b(map-modal|perk-modal|howto-modal|coop-crew)\b/.test(e.el?.className || '')) return true;
+    return /^(Quest Log|Pockets &(amp;)? Bag|Sound|The Crew)$/.test(String(e.title || '').trim());
+  }
+
+  // Trouble: close the phone + info panels and flash a warning. kind: 'hit' | 'near'.
+  threat(kind = 'hit') {
+    const soft = this.stack.filter((e) => this._isSoft(e));
+    // only when the soft panels are what's on screen (a shop or dialog above them stays put)
+    if (!soft.length || !this._isSoft(this.top())) return false;
+    for (const e of soft.reverse()) { try { e.close(); } catch (err) { console.error(err); } }
+    this._threatFlash(kind);
+    return true;
+  }
+
+  _threatFlash(kind) {
+    let f = document.getElementById('threat-flash');
+    if (!f) {
+      f = document.createElement('div');
+      f.id = 'threat-flash';
+      f.innerHTML = '<div class="tf-edge"></div><div class="tf-tag"></div>';
+      document.getElementById('ui-root')?.appendChild(f);
+    }
+    f.querySelector('.tf-tag').innerHTML = `<b>⚠</b> ${kind === 'near' ? 'Trouble incoming' : 'Under attack'}`;
+    f.classList.remove('on'); void f.offsetWidth; f.classList.add('on');
+    clearTimeout(this._tfT);
+    this._tfT = setTimeout(() => f.classList.remove('on'), 1400);
+  }
+
+  _installGuard() {
+    const g = this.game;
+    const CALM = /^(drugs|overdose|blackout|item|food|hunger|withdrawal|work)$/i;
+    g.bus.on('player:damaged', (d) => { if (d && d.amount > 0 && !CALM.test(String(d.source || ''))) this.threat('hit'); });
+    // a hostile stepping inside ~8 m (edge-triggered: you can reopen a panel on purpose afterwards)
+    let near = false, acc = 0;
+    const sys = {
+      name: 'ui-guard',
+      update: (dt) => {
+        acc += dt;
+        if (acc < 0.2) return;
+        acc = 0;
+        const pp = g.player?.pos;
+        if (!g.started || g.player?.dead || !pp || !g.npcs?.near) { near = false; return; }
+        let now = false;
+        try { now = g.npcs.near(pp.x, pp.z, 8).some((n) => n && n.hostile && !n.dead); } catch { now = false; }
+        if (now && !near) this.threat('near');
+        near = now;
+      },
+    };
+    if (typeof g.addSystem === 'function' && Array.isArray(g.systems)) g.addSystem(sys);
+    else g.bus.on('game:start', () => { if (!g.systems?.includes(sys)) g.addSystem(sys); });
+  }
+
+  openPanel({ title = '', body = '', width = 560, closable = true, onClose = null, className = '', nonBlocking = false } = {}) {
+    // a real panel replaces a non-blocking overlay (the phone) unless that overlay asked to stay underneath
+    if (!nonBlocking) for (const e of [...this.stack]) if (e.nonBlocking && !e.holdOpen) e.close();
     const el = document.createElement('div');
-    el.className = 'ui-modal ' + className;
+    el.className = 'ui-modal ' + className + (nonBlocking ? ' ui-overlay' : '');
     el.innerHTML = `<div class="ui-panel" style="max-width:${width}px">
         ${title ? `<div class="ui-title">${title}</div>` : ''}
         <div class="ui-body"></div>
@@ -250,18 +331,18 @@ export class UI {
     if (typeof body === 'string') bodyEl.innerHTML = body;
     else if (body) bodyEl.appendChild(body);
     const entry = {
-      el, body: bodyEl, closable, onClose, closed: false,
+      el, body: bodyEl, closable, onClose, closed: false, title, nonBlocking,
       close: () => {
         if (entry.closed) return;
         entry.closed = true;
         entry.onClosed?.();
         // Fade out; anything that opens right after (dialog chains) removes it at once instead.
         el.classList.add('ui-closing');
-        el._rm = setTimeout(() => el.remove(), 150);
-        this._lastClose = performance.now();
+        el._rm = setTimeout(() => el.remove(), nonBlocking ? 260 : 150);
+        if (!nonBlocking) this._lastClose = performance.now();
         const i = this.stack.indexOf(entry);
         if (i >= 0) this.stack.splice(i, 1);
-        if (!this.stack.length) this.game.bus.emit('ui:close');
+        if (!nonBlocking && !this.isBlocking()) this.game.bus.emit('ui:close');
         const cb = entry.onClose; entry.onClose = null;
         cb?.();
       },
@@ -270,13 +351,18 @@ export class UI {
     // Transitions: a fresh panel fades/rises in; a panel replacing one that just closed (the next page
     // of a conversation, a sub-menu) only cross-fades, so chains don't flicker the backdrop.
     let chained = false;
-    for (const old of this.layer.querySelectorAll(':scope > .ui-closing')) { clearTimeout(old._rm); old.remove(); chained = true; }
-    if (performance.now() - (this._lastClose ?? -1e9) < 120 || this.stack.length) chained = true;
-    el.classList.add(chained ? 'ui-chain' : 'ui-enter');
+    for (const old of this.layer.querySelectorAll(':scope > .ui-closing:not(.ui-overlay)')) { clearTimeout(old._rm); old.remove(); chained = true; }
+    if (performance.now() - (this._lastClose ?? -1e9) < 120 || this.isBlocking()) chained = true;
+    el.classList.add(nonBlocking ? 'ui-enter' : chained ? 'ui-chain' : 'ui-enter');
     this.layer.appendChild(el);
     this.stack.push(entry);
-    this.game.input?.releasePointer();
-    this.game.bus.emit('ui:open');
+    if (nonBlocking) {
+      // free the cursor so you can tap apps, but keep held movement keys: you can walk while texting
+      if (document.pointerLockElement) document.exitPointerLock();
+    } else {
+      this.game.input?.releasePointer();
+      this.game.bus.emit('ui:open');
+    }
     return entry;
   }
 
@@ -375,7 +461,7 @@ export class UI {
     if (top?.isDialog && /^Digit[1-9]$/.test(e.code)) { top.choose(Number(e.code.slice(5)) - 1); return; }
     if (e.code === 'Tab') {
       e.preventDefault();
-      if (!top) this.openCharacterSheet();
+      if (!top || top.nonBlocking) this.openCharacterSheet();
       else if (top.isSheet) top.close();
     }
   }
@@ -481,35 +567,64 @@ export class UI {
     return entry;
   }
 
+  // Vitals + stat tiles, shared by the character sheet and the phone's Stats app.
+  statsBlock({ compact = false } = {}) {
+    const g = this.game, p = g.state.p;
+    const xpNeed = xpForLevel(p.level);
+    const tile = (ic, name, v, max, cls) => `<div class="cs-tile ${cls}"><span class="cs-ti">${icon(ic)}</span><span class="cs-tv">${v}</span><span class="cs-tn">${name}</span>${max ? bar(Math.max(0, Number(v) || 0), max, cls) : ''}</div>`;
+    const karmaWord = p.karma >= 25 ? 'saint-ish' : p.karma >= 5 ? 'decent' : p.karma <= -25 ? 'monster' : p.karma <= -5 ? 'shady' : 'neutral';
+    return `<div class="cs-vitals${compact ? ' compact' : ''}">
+        <div class="cs-vrow"><span class="cs-vl">${icon('heart')}HP</span>${bar(p.hp, p.maxHp, 'hp')}<span class="cs-vn">${Math.ceil(p.hp)}/${p.maxHp}</span></div>
+        <div class="cs-vrow"><span class="cs-vl">${icon('bolt')}Energy</span>${bar(p.energy, p.maxEnergy, 'en')}<span class="cs-vn">${Math.floor(p.energy)}/${p.maxEnergy}</span></div>
+        <div class="cs-vrow"><span class="cs-vl">${icon('star')}XP</span>${bar(p.xp, xpNeed)}<span class="cs-vn">${Math.floor(p.xp)}/${xpNeed}</span></div>
+      </div>
+      <div class="cs-tiles">
+        ${tile('gym', 'Strength', Math.floor(p.str), 100, 'str')}
+        ${tile('bulb', 'Smarts', Math.floor(p.int), 100, 'int')}
+        ${tile('smile', 'Charm', Math.floor(p.cha), 100, 'cha')}
+        <div class="cs-tile karma"><span class="cs-ti">${icon('scale')}</span><span class="cs-tv">${p.karma}</span><span class="cs-tn">Karma · ${karmaWord}</span><span class="cs-karma"><i style="left:${Math.max(0, Math.min(100, 50 + p.karma))}%"></i></span></div>
+      </div>`;
+  }
+
   openCharacterSheet() {
     const g = this.game, p = g.state.p;
-    const inv = Object.entries(p.inventory);
-    const drugs = Object.entries(p.drugs);
+    const inv = Object.entries(p.inventory || {}).filter(([, q]) => q > 0);
+    const drugs = Object.entries(p.drugs || {}).filter(([, q]) => q > 0);
     const itemName = (id) => g.items?.name?.(id) ?? id;
     const drugName = (id) => g.market?.name?.(id) ?? id;
+    const cat = (id) => { try { return g.items?.def?.(id)?.cat; } catch { return null; } };
+    const slot = (ic, name, q, cls = '') => `<div class="cs-slot ${cls}" title="${esc(plain(name))}"><span class="cs-si">${icon(ic)}</span><span class="cs-sn">${name}</span><b class="cs-sq">×${q}</b></div>`;
+    const job = (() => { try { return g.jobs?.current?.(); } catch { return null; } })();
+    const rec = (ic, label, v) => `<span class="cs-rec" title="${label}">${icon(ic)}<b>${v}</b><small>${label}</small></span>`;
     let html = `
-      <div class="ui-grid">
-        <div class="ui-card"><h4>Strength</h4>${Math.floor(p.str)}</div>
-        <div class="ui-card"><h4>Intelligence</h4>${Math.floor(p.int)}</div>
-        <div class="ui-card"><h4>Charm</h4>${Math.floor(p.cha)}</div>
-        <div class="ui-card"><h4>Karma</h4>${p.karma}</div>
-        <div class="ui-card"><h4>Cash</h4>${fmtMoney(p.money)}</div>
-        <div class="ui-card"><h4>Bank</h4>${fmtMoney(p.bank)}</div>
+      <div class="cs-top">
+        <div class="pm-face cs-face"></div>
+        <div class="cs-who">
+          <div class="pm-name">${esc(p.name)}</div>
+          <div class="pm-sub"><span class="pm-who">Level ${p.level}</span>${job?.title ? `<span>${esc(job.title)}</span>` : '<span>Unemployed</span>'}<span>Day ${g.time.day}</span></div>
+          <div class="pm-wallet cs-wallet">${chip('money', fmtMoney(p.money), 'cash', 'cash')}${chip('hall', fmtMoney(p.bank), 'muted', 'bank')}${(p.heat | 0) > 0 ? chip('star', '★'.repeat(p.heat | 0), 'cost', 'wanted') : ''}</div>
+        </div>
       </div>
-      <div class="ui-section">Inventory</div>
-      ${inv.length ? `<div class="ui-grid">${inv.map(([id, q]) => `<div class="ui-card">${itemName(id)} <span class="ui-muted">×${q}</span></div>`).join('')}</div>` : '<div class="ui-muted">Pocket lint. A single, sad Tic Tac.</div>'}
-      <div class="ui-section">Stash</div>
-      ${drugs.length ? `<div class="ui-grid">${drugs.map(([id, q]) => `<div class="ui-card">${drugName(id)} <span class="ui-muted">×${q}</span></div>`).join('')}</div>` : '<div class="ui-muted">Clean as a whistle. For now.</div>'}
-      <div class="ui-section">Record</div>
-      <table class="ui-table">
-        <tr><td>Days survived</td><td>${g.time.day}</td><td>Money earned</td><td>${fmtMoney(p.totals.earned)}</td></tr>
-        <tr><td>Fights won</td><td>${p.totals.fightsWon}</td><td>Fights lost</td><td>${p.totals.fightsLost}</td></tr>
-        <tr><td>Drugs sold</td><td>${p.totals.drugsSold}</td><td>Arrests</td><td>${p.totals.arrests}</td></tr>
-      </table>`;
+      ${this.statsBlock()}
+      <div class="pm-sect cs-h">${icon('bag')}<span>Pockets</span><small class="kb-only">${inv.length ? 'I to use' : ''}</small></div>
+      ${inv.length ? `<div class="cs-slots">${inv.map(([id, q]) => slot(itemIcon(itemName(id), cat(id)), itemName(id), q)).join('')}</div>` : '<div class="cs-empty">Pocket lint. A single, sad Tic Tac.</div>'}
+      ${drugs.length ? `<div class="pm-sect cs-h">${icon('pill')}<span>Stash</span></div><div class="cs-slots">${drugs.map(([id, q]) => slot('pill', drugName(id), q, 'drug')).join('')}</div>` : ''}
+      <div class="pm-sect cs-h">${icon('trophy')}<span>Record</span></div>
+      <div class="cs-record">
+        ${rec('clock', 'days', g.time.day)}${rec('money', 'earned', fmtMoney(p.totals?.earned || 0))}
+        ${rec('fist', 'fights', `${p.totals?.fightsWon || 0}–${p.totals?.fightsLost || 0}`)}${rec('pill', 'sold', p.totals?.drugsSold || 0)}${rec('badge', 'arrests', p.totals?.arrests || 0)}
+      </div>`;
+    let extra = '';
     for (const fn of this.sheetSections) {
-      try { html += fn(g) || ''; } catch (e) { console.error('[ui] sheet section failed', e); }
+      try { extra += fn(g) || ''; } catch (e) { console.error('[ui] sheet section failed', e); }
     }
-    const entry = this.openPanel({ title: `${esc(p.name)} — Level ${p.level}`, body: html, width: 720 });
+    if (extra) html += `<div class="cs-extra">${extra}</div>`;
+    const entry = this.openPanel({ title: '', body: html, width: 720, className: 'cs-modal' });
+    try {
+      const face = g.present?.portrait?.(p.name, { look: p.look || null });
+      const box = entry.body.querySelector('.cs-face');
+      if (face && box) box.appendChild(face); else box?.classList.add('ico'), box && (box.innerHTML = icon('person'));
+    } catch { /* cosmetic */ }
     entry.isSheet = true;
     this.game.bus.emit('ui:sheet-open', entry);
     return entry;
