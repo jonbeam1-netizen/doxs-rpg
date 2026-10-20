@@ -542,3 +542,109 @@ body.photo-mode #q-tracker, body.photo-mode #sys-hud { display: none !important;
   #toasts .toast { font-size: 19px; }
   #prompt { font-size: 22px; }
 }
+
+/* Character creator: drawbacks read as drawbacks */
+.cr-minus { color: var(--blood-bright) !important; }
+
+/* ======================= Touch & gamepad controls (src/touch) ======================= */
+#touch-ui {
+  position: fixed; inset: 0; z-index: 45; pointer-events: none;
+  touch-action: none; -webkit-touch-callout: none; -webkit-tap-highlight-color: transparent;
+  --tc-r: env(safe-area-inset-right, 0px); --tc-l: env(safe-area-inset-left, 0px); --tc-b: env(safe-area-inset-bottom, 0px); --tc-t: env(safe-area-inset-top, 0px);
+}
+#touch-ui > * { pointer-events: auto; }
+#touch-ui .tc-zone { position: absolute; top: 0; bottom: 0; touch-action: none; }
+#touch-ui .tc-move { left: 0; width: 45%; }
+#touch-ui .tc-look { right: 0; width: 55%; }
+#touch-ui .tc-stick {
+  position: absolute; width: calc(var(--tc-stick, 116px)); height: calc(var(--tc-stick, 116px)); transform: translate(-50%, -50%);
+  border-radius: 50%; border: 2px solid rgba(230,223,207,0.35); background: radial-gradient(circle, rgba(20,17,14,0.35), rgba(20,17,14,0.55));
+  pointer-events: none; box-shadow: 0 0 0 1px rgba(0,0,0,0.4);
+}
+#touch-ui .tc-stick.idle { left: calc(24px + var(--tc-l) + var(--tc-stick, 116px) / 2); top: auto; bottom: calc(24px + var(--tc-b) - var(--tc-stick, 116px) / 2); opacity: 0.45; }
+#touch-ui .tc-stick.run { border-color: var(--blood-bright); }
+#touch-ui .tc-knob {
+  position: absolute; left: 50%; top: 50%; width: 48%; height: 48%; border-radius: 50%; transform: translate(-50%, -50%);
+  background: rgba(230,223,207,0.75); box-shadow: 0 2px 8px rgba(0,0,0,0.6);
+}
+#touch-ui .tc-stick.run .tc-knob { background: var(--blood-bright); }
+
+#touch-ui .tc-btn {
+  position: absolute; display: flex; align-items: center; justify-content: center; padding: 0;
+  width: 58px; height: 58px; border-radius: 50%; touch-action: none; cursor: pointer;
+  background: rgba(16,14,12,0.62); color: var(--bone); border: 2px solid rgba(230,223,207,0.38);
+  font-family: var(--font-body); font-weight: 800; font-size: 14px; letter-spacing: 0.5px; text-transform: uppercase;
+  text-shadow: 1px 1px 0 #000; box-shadow: 0 3px 10px rgba(0,0,0,0.5); -webkit-user-select: none; user-select: none;
+}
+#touch-ui .tc-btn.on { background: rgba(179,38,30,0.75); border-color: var(--blood-bright); transform: scale(0.94); }
+#touch-ui .tc-btn.hot { border-color: var(--toxic); box-shadow: 0 0 0 3px rgba(165,194,52,0.35), 0 3px 10px rgba(0,0,0,0.5); }
+#touch-ui .tc-cluster { position: absolute; right: calc(10px + var(--tc-r)); bottom: calc(10px + var(--tc-b)); width: 200px; height: 190px; pointer-events: none; }
+#touch-ui .tc-cluster > * { pointer-events: auto; }
+#touch-ui .tc-attack { right: 6px; bottom: 6px; width: 84px; height: 84px; font-size: 16px; background: rgba(110,22,16,0.62); border-color: rgba(226,64,47,0.7); }
+#touch-ui .tc-jump { right: 100px; bottom: 4px; }
+#touch-ui .tc-use { right: 18px; bottom: 102px; }
+#touch-ui .tc-car { right: 88px; bottom: 76px; width: 52px; height: 52px; }
+body.tc-prompt-tagged #prompt { display: none; }
+#touch-ui .tc-cluster .tc-usetag.car { right: 70px; }
+#touch-ui .tc-usetag {
+  position: absolute; right: 0; bottom: 166px; max-width: min(56vw, 250px); padding: 4px 10px;
+  background: rgba(10,9,8,0.85); border: 1px solid var(--toxic); font-size: 15px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; pointer-events: none;
+}
+#touch-ui .tc-sys { position: absolute; right: calc(12px + var(--tc-r)); bottom: calc(206px + var(--tc-b)); display: flex; gap: 10px; pointer-events: none; }
+#touch-ui .tc-sys > * { pointer-events: auto; }
+#touch-ui .tc-small { position: static; width: 44px; height: 44px; font-size: 13px; }
+#touch-ui .tc-small.sel { border-color: var(--toxic); color: var(--toxic); }
+#touch-ui .tc-tray {
+  position: absolute; right: calc(12px + var(--tc-r)); bottom: calc(260px + var(--tc-b));
+  display: grid; grid-template-columns: repeat(6, 52px); gap: 8px; padding: 8px;
+  background: rgba(12,10,9,0.8); border: 1px solid var(--panel-edge); box-shadow: 0 6px 24px rgba(0,0,0,0.6);
+}
+#touch-ui .tc-tray .tc-btn { position: static; width: 52px; height: 52px; border-radius: 10px; font-size: 12px; line-height: 1.05; text-align: center; }
+#touch-ui.photo .tc-cluster, #touch-ui.photo .tc-tray, #touch-ui.photo .tc-stick, #touch-ui.photo [data-id="more"] { display: none; }
+
+/* make room for the controls: HUD corners move up, the prompt clears the buttons */
+body.touch-ui .hud-br { bottom: calc(250px + env(safe-area-inset-bottom, 0px)); }
+body.touch-ui .hud-bl { bottom: calc(150px + env(safe-area-inset-bottom, 0px)); }
+body.touch-ui #prompt { bottom: calc(150px + env(safe-area-inset-bottom, 0px)); max-width: 60vw; font-size: 17px; }
+
+/* landscape phones: tray beside the buttons, smaller HUD */
+@media (max-height: 520px) {
+  body.touch-ui { --hud-auto-scale: 0.72; }
+  body.touch-ui #minimap { width: 120px; height: 120px; }
+  #touch-ui .tc-sys { bottom: calc(10px + var(--tc-b)); right: calc(220px + var(--tc-r)); flex-direction: column-reverse; }
+  #touch-ui .tc-tray { bottom: calc(10px + var(--tc-b)); right: calc(276px + var(--tc-r)); grid-template-columns: repeat(6, 48px); gap: 6px; }
+  #touch-ui .tc-tray .tc-btn { width: 48px; height: 48px; }
+  body.touch-ui .hud-br { bottom: calc(112px + env(safe-area-inset-bottom, 0px)); right: calc(214px + env(safe-area-inset-right, 0px)); }
+  body.touch-ui .hud-bl { bottom: calc(140px + env(safe-area-inset-bottom, 0px)); }
+  body.touch-ui #prompt { bottom: calc(14px + env(safe-area-inset-bottom, 0px)); max-width: 36vw; font-size: 15px; }
+  body.tc-prompt-tagged #prompt { display: block; }
+  #touch-ui .tc-usetag { display: none; }
+  body.touch-ui #hud #q-tracker { top: calc(8px + env(safe-area-inset-top, 0px)); right: calc(150px + env(safe-area-inset-right, 0px)); width: min(240px, 32vw); }
+}
+/* narrow portrait phones */
+@media (max-width: 520px) {
+  #touch-ui .tc-tray { grid-template-columns: repeat(5, 52px); }
+}
+
+/* dialogs / panels: finger-sized targets on touch screens */
+@media (pointer: coarse) {
+  .ui-opt, .ui-btn, .ph-row, .tab, .chip { min-height: 44px; }
+  .ui-x { width: 44px; height: 44px; top: 6px; right: 6px; font-size: 20px; }
+  .ui-title { padding-right: 46px; }
+  .sw { width: 40px; height: 40px; }
+  .hud-bubble { min-height: 40px; }
+  .ph-back { min-width: 44px; min-height: 44px; }
+}
+body.touch-ui .ui-opt, body.touch-ui .ui-btn, body.touch-ui .ph-row, body.touch-ui .tab, body.touch-ui .chip { min-height: 44px; }
+body.touch-ui .ui-x { width: 44px; height: 44px; top: 6px; right: 6px; font-size: 20px; }
+body.touch-ui .ui-title { padding-right: 46px; }
+@media (max-width: 700px), (max-height: 520px) {
+  .ui-modal { padding: max(8px, env(safe-area-inset-top, 0px)) max(8px, env(safe-area-inset-right, 0px)) max(8px, env(safe-area-inset-bottom, 0px)) max(8px, env(safe-area-inset-left, 0px)); }
+  .ui-panel { max-height: 100%; padding: 14px 14px 12px; -webkit-overflow-scrolling: touch; overscroll-behavior: contain; touch-action: pan-y; }
+  .ui-title { font-size: 23px; }
+  .ui-body canvas { max-width: 100%; height: auto !important; }
+}
+
+/* gamepad focus ring (menus / dialogs) */
+.pad-focus { outline: 3px solid var(--toxic) !important; outline-offset: 2px; box-shadow: 0 0 0 6px rgba(165,194,52,0.25) !important; }
+.ui-opt.pad-focus, .ui-btn.pad-focus { background: #2a231b; border-color: var(--rust); }
