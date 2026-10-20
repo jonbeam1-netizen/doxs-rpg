@@ -3,7 +3,9 @@
 // Everything here is original Rotwell flavor: crude, sleazy, R-rated comedy.
 //
 // Kinds: ped, thug, cop, hobo, drunk, dealer, rich, worker, biker, gang_rats,
-//        gang_syndicate, flirt, scared, victory, taunt
+//        gang_syndicate, flirt, scared, victory, taunt, snob, shady
+// Context kinds (chosen by bark() via setBarkContext): rain, fog, smog, night, rich_snob, tourist,
+//        islander, famous ({title} = your latest ending), wanted, cop_mayor
 // Aliases: gang -> gang_rats, static -> ped, fighter -> taunt.
 
 export const BARKS = {
@@ -532,12 +534,146 @@ export const BARKS = {
     "I'm gonna fold you up and mail you to Hilltop with postage due.",
     "Is that blood or ketchup? Let's find out!",
   ],
+
+  // ---- context kinds (picked automatically by bark() from weather / time / district / fame) ----
+  snob: [
+    "Ew. Are you... from below the hill?",
+    "Daddy says people like you are a 'tax write-off'.",
+    'Please stand downwind of me. Further. Further. Perfect, now stay there forever.',
+    "I'm not a snob. I simply have standards, and you are beneath all of them.",
+    "Is that your real face or are you wearing it ironically?",
+    "I'd shake your hand, but I just had it moisturized by a professional.",
+    "Mother warned me about men who walk places.",
+    "I only speak to people with a net worth. Yours is a net loss.",
+  ],
+  shady: [
+    'Psst. You wanna buy a watch? Very real. Extremely real. Do not get it wet.',
+    'I got stuff. Stuff that fell off a truck. The truck is also for sale.',
+    "Don't look at me. Look at that pigeon. Act natural. Natural like a pigeon.",
+    "I'm not here. You didn't see me. If anybody asks, I was at my mother's. She'll lie. She's great.",
+    'Need anything? Batteries? Kidneys? A slightly used alibi?',
+    "Whatever you're into, I know a guy. I AM the guy. I'm also the guy's cousin.",
+  ],
+  rain: [
+    'Great. Rain. Rotwell rain. It stains. My last umbrella dissolved.',
+    "The rain here is warm. Nobody talks about why it's warm.",
+    "Don't open your mouth when it rains. You'll taste the Rustyards.",
+    "My basement is flooded again. My basement is also my bedroom. And my kitchen.",
+    'Rain means the gutters back up. Rain means the rats come UP. Rain means I sleep standing.',
+    "Somebody said rain washes the city clean. Somebody was a liar from out of town.",
+    'Puddle-dodging is the only cardio I do.',
+    "It's raining so hard the pigeons are walking. They look ashamed.",
+  ],
+  fog: [
+    "Can't see my own hand. Hope it's still mine.",
+    "Fog like this, anybody could be anybody. I could be a cop. I'm not. Probably.",
+    "I walked into a lamppost and apologized. The lamppost didn't apologize back. Typical.",
+    'This fog smells like cabbage and secrets.',
+    "On fog days the foghorn on the island goes all night. HAAAAWN. It's in my dreams now.",
+  ],
+  smog: [
+    "Smog alert. That means 'breathe less'. I'm trying. It's hard.",
+    "You can chew the air today. Tastes like a bus.",
+    "The sky's the color of a dirty sock. Same as yesterday. Comforting, honestly.",
+    'My lungs filed for divorce. They want the house.',
+    "Grimco says the smog is 'mostly vapor'. Mostly. They didn't say of what.",
+  ],
+  night: [
+    "Nothing good happens after 2 AM. I'm here at 2 AM. Draw your own conclusions.",
+    "Walk faster. The night shift muggers are meaner than the day shift.",
+    "Night in Rotwell: the neon flickers, the rats get brave, and the cops go to sleep in their cars.",
+    "I'm not out late. I'm out EARLY. For tomorrow. Leave me alone.",
+    "The streetlight's out again. It's been out since the mayor's second term.",
+    "Every dog in Gutterside barks at midnight. Even the ones that died.",
+    "Hear that? That's either a cat or a guy losing a bet. Either way, keep walking.",
+  ],
+  rich_snob: [
+    "A pedestrian? On HILLTOP? Somebody call the HOA.",
+    "Our gated community has a gate for the gate.",
+    'I had my driveway heated. And my moat. The swans demanded it.',
+    "Hilltop is lovely this time of year. Every time of year. Because we pay it to be.",
+    "Is that sweat? Do you SWEAT? I've only read about it.",
+    "We don't have crime in Hilltop. We have 'quarterly results'.",
+  ],
+  tourist: [
+    "Excuse me, which way to the nice part? ...This IS the nice part?",
+    "The guidebook said Rotwell was 'gritty'. It didn't say the grit would be in my teeth.",
+    "I've been here three days. I can't find the exit. Highway 9 keeps bringing me back.",
+    "Is it always this... brown? The sky, I mean. And the water. And the people.",
+    "I bought a souvenir. It's a brick. The man said it was 'authentic'.",
+  ],
+  islander: [
+    "Mainlanders. Comin' over the bridge, smellin' like cars.",
+    "Don't eat the glowin' fish. Don't touch the clown. Don't ride the wheel. Welcome to Blackwater.",
+    "The fog comes in, the big ones come up. Old Rustjaw's out there. Watchin'.",
+    "Toll Troll Terry charged me five bucks to walk HOME. I live here. I was born here.",
+    "Funland closed eleven years ago. The wheel still turns. Nobody pays the power bill.",
+    "The Pen's got better food than the mainland. I'd know. I've been to both.",
+    "Mama Barnacle's chowder had a button in it. Lucky button now. Never leaves my pocket.",
+    "Eddie Two-Boats? Good kid. Sells guns to pirates. Calls his mother.",
+  ],
+  famous: [
+    "Wait... are you THE {title}? Can you sign my arm? I won't wash it. I don't wash it anyway.",
+    "Mom! MOM! It's the {title}! ...She can't hear me. She's in Gutterside. I'll tell her later.",
+    "You're the {title} from the news! The news is a guy who yells on the corner, but still!",
+    "Hey, {title}! I named my rat after you! He's a good rat. He bites.",
+    "I'd ask for a selfie but my phone's a brick. Literally. I paint numbers on it.",
+    "Big shot {title} walkin' among the little people. Respect. Also, got a dollar?",
+    "My cousin says you're a legend. My cousin also says the moon is a Grimco billboard. So.",
+  ],
+  wanted: [
+    "I didn't see you. I didn't see ANYTHING. I'm blind. Since birth. Since right now.",
+    "The cops are lookin' for somebody who looks EXACTLY like you. Weird coincidence. Bye.",
+    "Don't stand near me, I got warrants of my own.",
+    "Psst. The sirens? They're for you, buddy. Just sayin'.",
+  ],
+  cop_mayor: [
+    "M-Mayor! Your Honor! I'm not doing anything wrong! For once!",
+    "Mayor on the street! Look busy! Look honest! Look... less like us!",
+    "Chief Thorne says we gotta salute you now. *He salutes with a donut.*",
+  ],
 };
 
 // Aliases so other modules can ask for kinds that share lines.
-const ALIASES = { gang: 'gang_rats', rats: 'gang_rats', syndicate: 'gang_syndicate', static: 'ped', fighter: 'taunt', defeated: 'victory', mugger: 'thug' };
+const ALIASES = { gang: 'gang_rats', rats: 'gang_rats', syndicate: 'gang_syndicate', static: 'ped', fighter: 'taunt', defeated: 'victory', mugger: 'thug', swat: 'cop' };
+
+// Context hook: the quests module registers a function returning
+// { weather, night, district, famous, title, heat, mayor } so street one-liners react to the world.
+let ctxFn = null, ctxCache = null, ctxT = -1e9;
+export function setBarkContext(fn) { ctxFn = typeof fn === 'function' ? fn : null; ctxT = -1e9; }
+export function barkContext() { return context(); }
+function context() {
+  if (!ctxFn) return null;
+  const now = (typeof performance !== 'undefined' ? performance.now() : Date.now());
+  if (now - ctxT > 1000) { try { ctxCache = ctxFn() || null; } catch { ctxCache = null; } ctxT = now; }
+  return ctxCache;
+}
+const STREET = new Set(['ped', 'worker', 'snob', 'rich', 'shady', 'hobo', 'drunk', 'static', 'biker']);
+const pickFrom = (list) => list[Math.floor(Math.random() * list.length)];
+
+// Which context kinds could replace a plain street bark right now, with their odds.
+export function contextKinds(kind, c = context()) {
+  if (!c) return [];
+  const out = [];
+  if (kind === 'cop' || kind === 'swat') { if (c.mayor) out.push(['cop_mayor', 0.35]); return out; }
+  if (!STREET.has(kind)) return out;
+  if (c.famous) out.push(['famous', 0.16]);
+  if ((c.heat || 0) >= 2) out.push(['wanted', 0.3]);
+  if (c.district === 'blackwater') out.push(['islander', 0.45]);
+  if (c.weather === 'rain' || c.weather === 'storm') out.push(['rain', 0.3]);
+  if (c.weather === 'fog') out.push(['fog', 0.25]);
+  if (c.weather === 'smog') out.push(['smog', 0.2]);
+  if (c.night) out.push(['night', 0.2]);
+  if (c.district === 'hilltop' && (kind === 'ped' || kind === 'snob' || kind === 'rich')) out.push(['rich_snob', 0.3]);
+  if (c.district === 'downtown' && kind === 'ped' && !c.night) out.push(['tourist', 0.1]);
+  return out;
+}
+
+const fill = (s, c) => String(s).replace(/\{title\}/g, (c && c.title) || 'the Plunger');
 
 export function bark(kind) {
+  const c = context();
+  for (const [k, p] of contextKinds(kind, c)) if (BARKS[k] && Math.random() < p) return fill(pickFrom(BARKS[k]), c);
   const list = BARKS[kind] || BARKS[ALIASES[kind]] || BARKS.ped;
-  return list[Math.floor(Math.random() * list.length)];
+  return fill(pickFrom(list), c);
 }

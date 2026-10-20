@@ -252,7 +252,7 @@ export function installCivic(game) {
       const p = st.p;
       const job = p.job?.id === 'cop';
       if (p.heat >= 3 && !job) return 'You walk into a police station with a warrant out. Bold. Stupid, but bold. Sgt. Mulligan doesn\'t look up from his donut. "Fill out a form. Or pay up. Your choice, genius."';
-      return job ? pick(['Officers nod at you. One slaps your back. One slaps your butt. You file a complaint. It\'s filed in the trash.', 'The precinct smells like burnt coffee and paperwork. Chief Hamhock yells "WHO ATE MY BEAR CLAW."'])
+      return job ? pick(['Officers nod at you. One slaps your back. One slaps your butt. You file a complaint. It\'s filed in the trash.', 'The precinct smells like burnt coffee and paperwork. Chief Lardner yells "WHO ATE MY BEAR CLAW."'])
         : pick([
           'Sgt. Mulligan is eating a donut so slowly it\'s a power move. "Yeah? You here to confess or complain?"',
           'A guy in cuffs is yelling about his rights. Another guy is yelling about his lefts. Mulligan sighs.',

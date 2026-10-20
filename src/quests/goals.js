@@ -74,6 +74,13 @@ export function suggestions(g) {
   if (ends.length) {
     const left = PATHS.filter((x) => !ends.includes(x.ending));
     if (left.length) push(`Remaining endings: ${left.map((x) => ENDINGS[x.ending].title).join(', ')}. See "The five doors" below.`, 'Each new ending: +2 perk points.');
+    // Post-game: epilogue chapters for the endings you've seen, then the secret one.
+    for (const id of ['epi_kingpin', 'epi_corp', 'epi_mayor', 'epi_escape', 'epi_hobo', 'secret_plunger']) {
+      const d = q.def(id);
+      if (!d || q.get(id)) continue;
+      let ok = false; try { ok = !!d.available?.(g); } catch { ok = false; }
+      if (ok) push(`${id === 'secret_plunger' ? 'Secret' : 'Epilogue'}: "${d.title}" — talk to ${CHARACTERS[d.giver]?.name || d.giver}.`, id === 'secret_plunger' ? 'Three doors opened. Something is still holding the jar.' : 'What happens after the credits.');
+    }
   }
   const tracked = q.trackedId();
   if (tracked) push(`${q.def(tracked)?.title}: ${q.objectiveText(tracked)}`, 'Your tracked quest (gold beacon).');

@@ -79,7 +79,7 @@ export function installJobs(game) {
       if (p.job?.id !== id) return;
       if (d.kind === 'delivery') return game.sysDelivery?.start();
       if (!isOpen(game, d.hours)) { await say(game, d.name, `No shifts starting now. ${hoursLabel(d.hours)}.`); return; }
-      if (id === 'cop' && p.heat > 0) { await say(game, d.name, `Chief Hamhock squints. "Funny thing. There's a warrant out for a guy who looks EXACTLY like you. Clear that up first." (Pay off your heat.)`, 'Chief Hamhock'); return; }
+      if (id === 'cop' && p.heat > 0) { await say(game, d.name, `Chief Lardner squints. "Funny thing. There's a warrant out for a guy who looks EXACTLY like you. Clear that up first." (Pay off your heat.)`, 'Chief Lardner'); return; }
       if (p.sys.drunk >= 3) { await say(game, d.name, `${d.boss}: "You're hammered. Go home. And don't throw up on the—" You throw up on the thing.`, d.boss); return; }
       const r = d.ranks[p.job.rank];
       const hours = await choose(game, {
@@ -122,7 +122,7 @@ export function installJobs(game) {
     conveyor: 'The belt groans to life. Foreman Gristle cracks his knuckles, then somebody else\'s. "Good meat in the box. Gross stuff in the bin. Hot dogs get the rest."',
     email: 'Your inbox has 4,000 unread emails and one of them is just the word "hey". Mr. Grimsby wants Inbox Zero by lunch. It is 12:58.',
     mixdrink: 'One-Eyed Sal slides you the recipe book. It\'s mostly stains. "Customers order by name. You find the name. You pour. You don\'t ask what Gristle\'s Gargle is for."',
-    lineup: 'Chief Hamhock drops a stack of witness statements on your desk. One is written on a napkin, in mustard. "Find the perp. Any perp. THE perp, ideally."',
+    lineup: 'Chief Lardner drops a stack of witness statements on your desk. One is written on a napkin, in mustard. "Find the perp. Any perp. THE perp, ideally."',
     idcheck: 'The line around Club Velvet reaches the next zip code. Vince hands you a flashlight. "21 and up. Valid ID. And for the love of God, check the SHOES."',
     scrapsort: 'Scrapper Pete fires up the big magnet. Mr. Chompers watches you from atop a dead minivan. "Copper\'s money. Steel\'s money. Trash is trash. Don\'t sort Chompers."',
     gutfish: 'Mama Barnacle hands you a knife older than you. "Cut on the lines, sweetie. Hit the bile sac and you\'re mopping it with your tongue."',
@@ -242,7 +242,7 @@ export function installJobs(game) {
       factory: 'Foreman Gristle hands you a rubber apron that is already wet. "Don\'t ask what it\'s wet with. Lockers are in the back. Don\'t open locker 13."',
       office: 'Mr. Grimsby shakes your hand without looking up. "Welcome to the Grimco family. Families don\'t unionize."',
       bartender: 'One-Eyed Sal tosses you a rag. "Wipe the bar. Wipe the glasses. Never wipe the stool by the bathroom. Ever."',
-      cop: 'Chief Hamhock pins a badge on you. It goes through your shirt and into your nipple. "Welcome to the force, rookie."',
+      cop: 'Chief Lardner pins a badge on you. It goes through your shirt and into your nipple. "Welcome to the force, rookie."',
       bouncer: 'Velvet Vince looks at your arms and nods. "Rule one: nobody in sneakers. Rule two: unless they tip. Rule three: always tip Vince."',
       scrapper: 'Scrapper Pete spits. "You\'re hired. Mr. Chompers hasn\'t bitten you yet so you\'re already doin\' better than the last guy."',
     }[id] || 'You\'re hired.';

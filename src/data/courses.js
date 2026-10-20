@@ -90,7 +90,7 @@ export const QUIZ = {
     { q: 'You have the right to remain:', a: ['Silent', 'Sexy', 'In the cruiser', 'Kinda chatty'] },
     { q: 'What does a cop need to search your house?', a: ['A warrant', 'A good vibe', 'A ladder', 'Your mom\'s permission'] },
     { q: '"Innocent until proven ___."', a: ['Guilty', 'Rich', 'Annoying', 'Ugly'] },
-    { q: 'Evidence found in Chief Hamhock\'s desk is mostly:', a: ['Donuts', 'Fingerprints', 'Confessions', 'Other cops'] },
+    { q: 'Evidence found in Chief Lardner\'s desk is mostly:', a: ['Donuts', 'Fingerprints', 'Confessions', 'Other cops'] },
     { q: 'A suspect says "I want a lawyer." You should:', a: ['Stop questioning them', 'Get them a lawyer costume', 'Ask "a lawyer for WHAT?"', 'Laugh menacingly'] },
     { q: 'What is "probable cause"?', a: ['A reasonable basis to believe a crime happened', 'When someone looks shifty', 'A ska band', 'Gristle\'s nickname'] },
   ],

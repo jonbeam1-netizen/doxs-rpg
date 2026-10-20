@@ -1495,7 +1495,7 @@ export const QUESTS = {
     kind: 'side', title: '30 Minutes or It\'s Free', giver: 'gary',
     summary: 'Tony Butt of Pizza Butt needs a delivery driver. Two pizzas, two addresses, two time limits. Late pizza is free pizza, and free pizza comes out of YOUR pay.',
     offer: [
-      { who: 'nar', t: ['> A man in a Pizza Butt uniform with a name tag that reads GARY BUTT. Yes, that\'s his real name. Yes, he named the restaurant after himself. No, he does not get the joke.'] },
+      { who: 'nar', t: ['> A man in a Pizza Butt uniform with a name tag that reads TONY BUTT. Yes, that\'s his real name. Yes, he named the restaurant after himself. No, he does not get the joke.'] },
       'My delivery guy quit. Then he died. Then he un-died and quit again. I need a driver. Two pizzas, two addresses, two time limits. Pizza Butt: We Put the Cheese in Places.',
     ],
     reward: { money: 200, items: { q_pizza_tag: 1 }, xp: 150 }, rewardText: '$200 + tips, Employee of the Minute',

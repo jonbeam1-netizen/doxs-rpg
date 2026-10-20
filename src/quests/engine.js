@@ -1,6 +1,7 @@
 import { CHARACTERS, QUESTS, QUEST_ITEMS, FACTIONS } from '../data/quests.js';
 import { WEAPONS } from '../data/weapons.js';
 import { esc, fmtMoney, clamp, pick } from '../core/util.js';
+import './content/index.js'; // merges the expansion quests/characters into the tables above
 
 // Quest state machine. Persistent progress lives in game.state.p.quests as
 // plain JSON: { [id]: { step, done, data:{}, sd:{} (per-step data), t: dayStarted } }.
@@ -8,7 +9,8 @@ import { esc, fmtMoney, clamp, pick } from '../core/util.js';
 
 const EVENT_TYPES = ['drug:sold', 'drug:bought', 'race:won', 'job:promoted', 'job:worked', 'job:hired', 'home:bought', 'car:entered', 'car:bought',
   'casino:result', 'brawl:won', 'npc:killed', 'course:completed', 'date:result', 'item:bought', 'item:used',
-  'stat:gain', 'money:change', 'home:slept', 'location:enter', 'heist:completed', 'skate:trick'];
+  'stat:gain', 'money:change', 'home:slept', 'location:enter', 'heist:completed', 'skate:trick',
+  'island:fish', 'island:fish-sold', 'island:prize', 'island:smuggle', 'heist:failed', 'ending:reached', 'interact:tag', 'interact:dive'];
 
 // XP paid for finishing a quest step (on top of any explicit reward), so every
 // story beat feels like progress. Steps can override with `xp: n`.
@@ -297,7 +299,29 @@ export class QuestEngine {
     const c = CHARACTERS[id];
     return c ? this.locPos(c.loc) : null;
   }
-  districtName(d) { return { downtown: 'Downtown', hilltop: 'Hilltop Heights', rustyards: 'the Rustyards', gutterside: 'Gutterside', dustbowl: 'the Dustbowl' }[d] || d; }
+  districtName(d) { return { downtown: 'Downtown', hilltop: 'Hilltop Heights', rustyards: 'the Rustyards', gutterside: 'Gutterside', dustbowl: 'the Dustbowl', blackwater: 'Blackwater Isle' }[d] || d; }
+
+  // Rumor leads (from asking pedestrians around): { charId: dayHeard }. Shown on the map until the
+  // quest is taken or the lead goes stale (2 days).
+  leads() {
+    const L = this.g.state.getFlag('leads', null);
+    const out = {};
+    if (!L || typeof L !== 'object') return out;
+    for (const [cid, day] of Object.entries(L)) if (this.g.time.day - day <= 2 && this.offersFor(cid).length) out[cid] = day;
+    return out;
+  }
+  addLead(charId) {
+    const L = { ...this.leads() };
+    L[charId] = this.g.time.day;
+    this.g.state.setFlag('leads', L);
+    this.changed();
+  }
+  // A side quest you could pick up right now, for rumor dialog: [{ def, charId }]
+  openRumors() {
+    const out = [];
+    for (const cid of Object.keys(CHARACTERS)) for (const d of this.offersFor(cid)) if (d.rumor && d.kind !== 'main') out.push({ def: d, charId: cid });
+    return out;
+  }
 
   // A walkable-ish point inside a district.
   districtPoint(d) {
@@ -562,6 +586,12 @@ export class QuestEngine {
     opts.push({ label: 'Leave' });
     let line = null;
     try { line = c.after?.(g) || null; } catch { line = null; }
+    if (!line) {
+      // The world remembers: recurring characters react to your gang, endings and discoveries.
+      let r = [];
+      try { r = (c.react?.(g) || []).filter(Boolean); } catch { r = []; }
+      if (r.length && Math.random() < 0.6) line = pick(r);
+    }
     line = line || pick(c.idle || ['...']);
     if (!hooks.length && !offers.length) {
       const locked = Object.values(this.defs).find((d) => d.giver === charId && !this.store[d.id] && d.lockedText);

@@ -105,7 +105,7 @@ export const JOBS = {
     ],
   },
   cop: {
-    name: 'Rotwell PD', loc: 'rotwell_pd', boss: 'Chief Hamhock', hours: null, energy: 11, gain: { str: 0.08, int: 0.06 },
+    name: 'Rotwell PD', loc: 'rotwell_pd', boss: 'Chief Lardner', hours: null, energy: 11, gain: { str: 0.08, int: 0.06 },
     ranks: [
       { title: 'Cadet', pay: 16, req: { karma: 10, str: 20, int: 20 }, shifts: 6 },
       { title: 'Patrol Officer', pay: 28, req: { karma: 15, str: 35, int: 35 }, shifts: 10 },

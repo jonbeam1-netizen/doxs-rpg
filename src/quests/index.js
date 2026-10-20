@@ -20,6 +20,10 @@ import { QuestPanels } from './panels.js';
 import { installPlaces } from './places.js';
 import { installStreetEvents } from './street.js';
 import { esc } from '../core/util.js';
+import { setBarkContext } from '../data/barks.js';
+
+// Short fame titles for street barks ("Hey, {title}!") after an ending.
+export const FAME_TITLES = { kingpin: 'King of the Gutter', corporate: 'CEO of Rot', mayor: 'Mayor', escape: 'Lid-Lifter', hobo: 'King of the Crust' };
 
 export async function installQuests(game) {
   const engine = new QuestEngine(game);
@@ -43,6 +47,19 @@ export async function installQuests(game) {
     respawn: () => world.spawnAll(),
   };
   game.quests = engine;
+
+  // Street one-liners react to weather, time, district, heat and fame (see data/barks.js).
+  setBarkContext(() => {
+    if (!game.started || !game.player) return null;
+    const pp = game.player.group.position;
+    const ends = game.state.getFlag('endings', []) || [];
+    let district = null; try { district = game.world?.districtAt?.(pp.x, pp.z) || null; } catch { /* ignore */ }
+    return {
+      weather: game.world?.weather || 'overcast', night: !!game.time?.isNight, district,
+      famous: ends.length > 0, title: ends.length ? FAME_TITLES[ends[ends.length - 1]] : null,
+      heat: game.state.p.heat || 0, mayor: !!game.state.getFlag('ending_mayor'),
+    };
+  });
 
   game.addSystem({
     name: 'quests',
@@ -70,6 +87,24 @@ export async function installQuests(game) {
         game.state.setFlag('intro_done', true);
       }
     } catch (e) { console.error('[quests] game:start failed', e); }
+  });
+
+  // Post-game: point at the epilogue chapter (and the secret one at 3+ endings) once the credits close.
+  const EPI = { kingpin: 'epi_kingpin', corporate: 'epi_corp', mayor: 'epi_mayor', escape: 'epi_escape', hobo: 'epi_hobo' };
+  game.bus.on('ending:reached', ({ id } = {}) => {
+    const off = game.bus.on('ui:close', () => {
+      if (game.ui.isBlocking()) return;
+      off();
+      setTimeout(() => {
+        try {
+          const d = engine.def(EPI[id]);
+          if (d && !engine.get(d.id)) game.ui.toast(`<b>EPILOGUE UNLOCKED:</b> "${esc(d.title)}" — talk to ${esc(engine.charPos(d.giver)?.label || d.giver)}.`, 'good', 6500);
+          const s = engine.def('secret_plunger');
+          if (s && !engine.get('secret_plunger') && s.available?.(game)) setTimeout(() => game.ui.toast('<b>???:</b> Three doors opened. Under the overpass, Crusty Reg has taken off his crown. He wants to talk.', 'good', 7000), 2500);
+          engine.changed();
+        } catch (e) { console.error('[quests] epilogue hint failed', e); }
+      }, 6800);
+    });
   });
 
   // Co-op: brag to friends when someone hits an ending.

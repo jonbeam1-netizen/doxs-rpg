@@ -65,6 +65,13 @@ export class QuestWorld {
   // ------------------------------------------------------------ characters
   _placeFor(c) {
     const g = this.g;
+    // Optional fixed spot (e.g. out on a pier where the door offset would land in the water).
+    if (typeof c.spot === 'function') {
+      try {
+        const s = c.spot(g);
+        if (s && Number.isFinite(s.x) && !g.physics.pointBlocked(s.x, s.z)) return { x: s.x, z: s.z, facing: s.facing ?? 0 };
+      } catch { /* fall back to the door */ }
+    }
     const loc = g.locations.get(c.loc);
     if (!loc) return null;
     const dx0 = loc.doorX ?? loc.x, dz0 = loc.doorZ ?? loc.z;
@@ -197,16 +204,23 @@ export class QuestWorld {
       let h = null; try { h = q.hint(); } catch { /* ignore */ }
       (h?.targets || []).forEach((t, i) => want.set(`hint:${i}`, { ...t, color: KIND_COLORS.main, title: h.title, tracked: false, kind: 'main' }));
     }
+    // rumor leads (heard from pedestrians): map markers only, no sky beacon
+    let leads = {};
+    try { leads = q.leads(); } catch { leads = {}; }
+    for (const cid of Object.keys(leads)) {
+      const p = q.charPos(cid);
+      if (p) want.set(`lead:${cid}`, { x: p.x, z: p.z, color: KIND_COLORS.side, title: 'Rumor', label: CHARACTERS[cid]?.name || cid, tracked: false, kind: 'side', lead: true });
+    }
     // beacons
-    for (const [k, b] of this.beacons) if (!want.has(k)) { this.root.remove(b.group); this.beacons.delete(k); }
-    for (const [k, t] of want) this._beacon(k, t, t.color, t.tracked);
+    for (const [k, b] of this.beacons) if (!want.has(k) || want.get(k).lead) { this.root.remove(b.group); this.beacons.delete(k); }
+    for (const [k, t] of want) if (!t.lead) this._beacon(k, t, t.color, t.tracked);
     // minimap markers
     const markers = g.world ? (g.world.markers instanceof Map ? g.world.markers : (g.world.markers = new Map())) : null;
     if (markers) {
       for (const k of this.markerKeys) if (!want.has(k)) markers.delete('quest:' + k);
       this.markerKeys = new Set(want.keys());
       for (const [k, t] of want) {
-        markers.set('quest:' + k, { x: t.x, z: t.z, color: t.color, label: `${t.title}: ${t.label || ''}`, icon: t.kind === 'main' ? '★' : t.kind === 'job' ? '$' : '!', quest: true, tracked: t.tracked });
+        markers.set('quest:' + k, { x: t.x, z: t.z, color: t.color, label: `${t.title}: ${t.label || ''}`, icon: t.lead ? '?' : t.kind === 'main' ? '★' : t.kind === 'job' ? '$' : '!', quest: true, tracked: t.tracked });
       }
     }
     // indicator sprites

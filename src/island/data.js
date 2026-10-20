@@ -125,7 +125,7 @@ export const INMATES = [
 
 export const KEEPER_LORE = [
   { key: 'island', label: 'Ask about the island', text: '"Blackwater? Used to be a resort. Ferris wheel, saltwater taffy, a bandstand. Then the meat plant upriver started dumpin\' and the fish grew extra eyes. Tourists stopped comin\'. The prison came next, then the smugglers. Now it\'s us. The leftovers."' },
-  { key: 'bridge', label: 'Ask about the bridge', text: '"Mayor Sludgeworth built that drawbridge with \'leftover funds\'. Leftover from what, nobody asked. It\'s gone up exactly once — to let his yacht through. Then it stuck. Then they fixed it. With duct tape and prayer."' },
+  { key: 'bridge', label: 'Ask about the bridge', text: '"Mayor Swindell built that drawbridge with \'leftover funds\'. Leftover from what, nobody asked. It\'s gone up exactly once — to let his yacht through. Then it stuck. Then they fixed it. With duct tape and prayer."' },
   { key: 'funland', label: 'Ask about Funland', text: '"Funland shut down after the Incident. The fog was thick that night. The wheel kept turnin\' with nobody drivin\' it. Mr. Giggles was on the speaker, laughin\'. They locked him up in the Pen, but the wheel... it still turns. Ain\'t nobody paid the power bill in eleven years."' },
   { key: 'fog', label: 'Ask about the fog', text: '"The fog ain\'t weather, kid. It\'s the island exhalin\'. When it rolls in, the big ones come up to feed. Old Rustjaw. Bigger than a man, older than me. Hubcap in his jaw from \'87. You want him? Fish when it\'s foggy, cast long, and pray."' },
 ];
