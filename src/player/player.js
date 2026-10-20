@@ -212,7 +212,7 @@ export class CameraRig {
     // Teleports / target swaps snap; otherwise the look point eases vertically so
     // jumps, curbs and car suspension don't jitter the whole view.
     const jumped = this._lt !== t || !this._lp || Math.hypot(tp.x - this._lp.x, tp.z - this._lp.z) > 12;
-    if (jumped) { this._lt = t; this._lp = { x: tp.x, z: tp.z }; this._ly = tp.y; this.lift = 0; this.curDist = this.distOverride ?? this.dist; }
+    if (jumped) { this._lt = t; this._lp = { x: tp.x, z: tp.z }; this._ly = tp.y; this.lift = 0; this._ceil = null; this.curDist = this.distOverride ?? this.dist; }
     this._lp.x = tp.x; this._lp.z = tp.z;
     const inCar = t !== g.player?.group;
     this._ly += (tp.y - this._ly) * (1 - Math.exp(-(inCar ? 9 : 22) * dt));
@@ -228,8 +228,15 @@ export class CameraRig {
     const d = this._probe(look, dx, dy, dz, want);
     let dBase = d;
     if (lift > 0.01) { const cb = Math.cos(this.pitch); dBase = this._probe(look, Math.sin(this.yaw) * cb, Math.sin(this.pitch), Math.cos(this.yaw) * cb, want); }
-    const liftWant = want > 2.4 ? clamp((2.4 - dBase) / 1.4, 0, 1) : 0;
-    this.lift = lift + (liftWant - lift) * (1 - Math.exp(-(liftWant > lift ? 6 : 2.5) * dt));
+    let liftWant = want > 2.4 ? clamp((2.4 - dBase) / 1.4, 0, 1) : 0;
+    // Under a ceiling (gas canopy, overpass, porch roof) rising only buries the camera in it and ends in a
+    // top-down view of the player's scalp: if the lifted ray is shorter than the level one, settle back down.
+    // (remembered until the player moves on a couple of metres, so it can't flutter frame to frame)
+    if (lift > 0.01 && d < dBase - 0.25) this._ceil = { x: tp.x, z: tp.z };
+    if (this._ceil && Math.hypot(tp.x - this._ceil.x, tp.z - this._ceil.z) > 2.5) this._ceil = null;
+    const ceiling = !!this._ceil;
+    if (ceiling) liftWant = 0;
+    this.lift = lift + (liftWant - lift) * (1 - Math.exp(-(liftWant > lift ? 6 : ceiling ? 8 : 2.5) * dt));
     // pull in instantly (never show the inside of a wall), ease back out
     this.curDist = d < this.curDist ? d : lerp(this.curDist, d, 1 - Math.exp(-3.2 * dt));
 

@@ -2,8 +2,15 @@ import { lin, mulCol } from './geo.js';
 import { districtAt, WATER_X, HALF } from './layout.js';
 import * as P from './props.js';
 import { mulberry32 } from '../core/util.js';
+import { SPOTS } from './island-layout.js';
 
 const { Y } = P;
+
+// Island entrances (see island.js: funland arcade, Rusty Hook) — known up front so street posts avoid them.
+const ISLE_DOORS = [
+  [SPOTS.funland.x0 - 1.6, SPOTS.arcade.cz],
+  [SPOTS.rustyHook.cx - SPOTS.rustyHook.d / 2 - 1.6, SPOTS.rustyHook.cz - 4],
+];
 
 // Island edges draw from their own RNG so adding Blackwater never reshuffles the city.
 const isleRng = mulberry32(0xB1AC_3A7E);
@@ -253,7 +260,12 @@ function edgeProps(C, e, nodes, ei) {
     const sides = (e.kind === 'ring' || e.kind === 'main') ? [1, -1] : [k % 2 ? 1 : -1];
     for (const side of sides) {
       const lf = locFronts.find((f) => f.side === side && Math.abs(f.s - s0) < 3);
-      const s = lf ? (s0 < lf.s ? lf.s - 3.5 : lf.s + 3.5) : s0;
+      let s = lf ? (s0 < lf.s ? lf.s - 3.5 : lf.s + 3.5) : s0;
+      // island entrances aren't in L.placed (built later from SPOTS): keep posts out of their doorways too
+      for (const [hx, hz] of ISLE_DOORS) {
+        const [lx0, lz0] = at(s, (e.hw + 0.6) * side);
+        if (Math.hypot(lx0 - hx, lz0 - hz) < 4) { const hs = (hx - A.x) * dx + (hz - A.z) * dz; s = s < hs ? hs - 4.5 : hs + 4.5; }
+      }
       if (desert) {
         if (side === 1 && k % 2 === 0) { const [x, z] = at(s, (e.hw + 2.2) * side); P.woodPole(C, x, z, Math.atan2(-px * side, -pz * side), { lamp: true }); }
         continue;
@@ -301,8 +313,10 @@ function edgeProps(C, e, nodes, ei) {
   // --- one trash can per side at mid-block (by the curb)
   for (const side of [1, -1]) {
     if ((dist === 'hilltop' || dist === 'rustyards') && side === -1) continue;
-    for (const s of [(c0 + c1) / 2 + 2 * side, (c0 + c1) / 2 + 6 * side]) {
+    for (const s of [(c0 + c1) / 2 + 2 * side, (c0 + c1) / 2 + 6 * side, (c0 + c1) / 2 + 10 * side]) {
       if (!ok(side, s, 0.6)) continue;
+      // mid-block is exactly where most shop doors are: never park a bin in front of an entrance
+      if (locFronts.some((f) => f.side === side && Math.abs(f.s - s) < 3.6)) continue;
       const [x, z] = at(s, curbOff * side); P.trashCan(C, x, z); take(side, s, 0.6); break;
     }
   }

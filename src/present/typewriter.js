@@ -19,14 +19,24 @@ export function typewrite(el, { cps = 95, maxSec = 2.2, onChar = null, onDone = 
     rest.textContent = full;
     n.nodeValue = '';
     n.parentNode.insertBefore(rest, n.nextSibling);
-    return { n, rest, full };
+    // Boxed inline bits (<kbd> key chips, badges) would show an empty box before their text is typed:
+    // keep them invisible (layout kept) until their first character lands.
+    const boxes = [];
+    for (let a = n.parentNode; a && a !== el; a = a.parentNode) {
+      if (a.nodeType !== 1) continue;
+      let boxed = a.tagName === 'KBD';
+      if (!boxed) { try { const cs = getComputedStyle(a); boxed = !/rgba\(0, 0, 0, 0\)|transparent/.test(cs.backgroundColor) || parseFloat(cs.borderTopWidth) > 0; } catch { /* ignore */ } }
+      if (boxed && a.style.visibility !== 'hidden') { a.style.visibility = 'hidden'; boxes.push(a); }
+    }
+    return { n, rest, full, boxes };
   });
+  const reveal = (p) => { if (p.boxes.length) { for (const b of p.boxes) b.style.visibility = ''; p.boxes.length = 0; } };
   // long speeches type faster so nothing takes more than ~maxSec
   const rate = Math.max(cps, total / maxSec * 1.25);
   let pi = 0, ci = 0, budget = 0, last = performance.now(), timer = 0;
   const api = { typing: total > 0, finish, total };
 
-  function flush(p, k) { p.n.nodeValue = p.full.slice(0, k); p.rest.textContent = p.full.slice(k); }
+  function flush(p, k) { if (k > 0) reveal(p); p.n.nodeValue = p.full.slice(0, k); p.rest.textContent = p.full.slice(k); }
 
   function step() {
     const now = performance.now();
@@ -47,7 +57,7 @@ export function typewrite(el, { cps = 95, maxSec = 2.2, onChar = null, onDone = 
 
   function end() {
     clearInterval(timer); timer = 0;
-    for (const p of parts) { p.n.nodeValue = p.full; p.rest.remove(); }
+    for (const p of parts) { reveal(p); p.n.nodeValue = p.full; p.rest.remove(); }
     if (!api.typing) return;
     api.typing = false;
     try { onDone?.(); } catch { /* ignore */ }

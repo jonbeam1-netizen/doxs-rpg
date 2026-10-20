@@ -756,3 +756,23 @@ body.pr-cine-on #hud, body.pr-cine-on #prompt { opacity: 0; }
 }
 .npc-bubble { transition: opacity 0.3s; }
 body.pr-card-on .npc-bubble { opacity: 0 !important; }
+
+/* ======================= QA pass: phone vs. HUD ======================= */
+/* The phone slides up over the right HUD column: hide what it would half-cover, keep toasts readable beside it. */
+#hud .hud-tr, #hud #q-tracker { transition: opacity 0.2s; }
+body:has(.phone-modal) #hud .hud-tr, body:has(.phone-modal) #hud #q-tracker { opacity: 0; }
+body:has(.phone-modal) #ui-root #toasts { right: 400px; }
+@media (max-width: 700px) { body:has(.phone-modal) #ui-root #toasts { right: auto; } }
+
+/* Dialogs/panels sit above every in-world overlay that modules append to #ui-root later in the DOM
+   (heist HUD, boss bar, wanted stars, district card, job HUD, chat): nothing prints across an open panel. */
+#ui-root #dialog-layer { position: absolute; inset: 0; z-index: 10; pointer-events: none; }
+#ui-root #dialog-layer > * { pointer-events: auto; }
+#ui-root .ach-toast { z-index: 11; }
+
+/* Touch layouts: the district title card clears the button cluster (and its "Enter ..." tag) */
+body.touch-ui #district-card { top: auto !important; bottom: calc(292px + env(safe-area-inset-bottom, 0px)) !important; }
+@media (max-height: 520px) { body.touch-ui #district-card { top: 14% !important; bottom: auto !important; } }
+/* an achievement popping on the ending screen must not sit on the ending's title */
+body:has(.q-ending) #ui-root .ach-toast { top: auto; bottom: 24px; }
+@media (max-width: 600px) { .creator-title { font-size: clamp(20px, 7vw, 30px); } }

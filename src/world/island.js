@@ -759,7 +759,9 @@ function beachShack(C) {
   g.frame(B.cx, B.cz, FACE.n); g.translate(0, 0.24, B.d / 2);
   P.doorway(C, 0, 1.3, 2.3, 0, { lamp: true, lampColor: '#ffc080' });
   g.frame(B.cx, B.cz, FACE.n);
-  locSign(C, { d: B.d }, 'driftwood', 'DRIFTWOOD SHACK · OCEAN VIEW (SMELL INCLUDED)', { w: 9, h: 0.9, y: 3.8, bg: '#3a5a6a', fg: '#f0e8d0', gain: 0.8, font: 'Barlow Condensed' });
+  // the eave hides anything on the wall above the door: the sign stands on the ridge instead
+  for (const s of [-2.6, 2.6]) g.box('wood', s, 0.24 + 3.2 + 1.2 + 0.3, -0.1, 0.14, 0.9, 0.14, { color: '#3a2e22' });
+  locSign(C, { d: 0 }, 'driftwood', 'DRIFTWOOD SHACK · OCEAN VIEW (SMELL INCLUDED)', { w: 7.4, h: 0.85, y: 0.24 + 3.2 + 1.2 + 0.95, z: 0, bg: '#3a5a6a', fg: '#f0e8d0', gain: 1.1, font: 'Barlow Condensed' });
   // hammock + tiki torches + a beached rowboat out back
   g.frame(B.cx, B.cz - 0, FACE.n);
   for (const s of [-1, 1]) { g.box('wood', s * 4, 1.2, -B.d / 2 - 3, 0.2, 2.4, 0.2, { color: '#4a3a28' }); }

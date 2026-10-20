@@ -389,6 +389,16 @@ export class Avatars {
     this._syncWeapon(rp);
     rp.ping = this.game.net.ping?.get?.(rp.id) ?? null;
     rp._tag.set(rp.name, rp.hp, rp.maxHp, { dead: rp.dead, host: rp.id === this.game.net.hostId });
+    // Tag readability: fade out when the friend is right next to the camera (it would fill the screen and
+    // sit across the HUD), and grow a little with distance so it stays legible across a block.
+    const cam = this.game.camera?.position;
+    if (cam) {
+      const d = Math.hypot(p.x - cam.x, p.y + 2.4 - cam.y, p.z - cam.z);
+      rp._tag.sprite.material.opacity = Math.max(0, Math.min(1, (d - 3) / 4));
+      const s = Math.max(1, Math.min(2.2, d / 28));
+      rp._tag.sprite.scale.set(1.9 * s, 0.594 * s, 1);
+      rp._tag.sprite.position.y += (s - 1) * 0.3; // keep the bigger tag clear of the head
+    }
     // forget ghosts that went silent for a long time without a proper goodbye
     if (now - rp.lastSeen > 45000) this.remove(rp.id);
   }

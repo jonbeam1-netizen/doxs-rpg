@@ -119,8 +119,10 @@ export class MapSystem {
   _makeCard() {
     const el = document.createElement('div');
     el.id = 'district-card';
-    el.style.cssText = 'position:absolute;left:50%;top:max(13%, var(--hud-c1, 0px));transform:translateX(-50%);width:max-content;max-width:min(620px, 60vw);text-align:center;pointer-events:none;opacity:0;transition:opacity .8s;z-index:5;text-shadow:3px 3px 0 #000,0 0 18px rgba(0,0,0,.8)';
-    document.getElementById('ui-root')?.appendChild(el);
+    el.style.cssText = 'position:absolute;left:50%;top:max(13%, var(--hud-c1, 0px));transform:translateX(-50%);width:max-content;max-width:min(620px, 60vw);text-align:center;pointer-events:none;opacity:0;transition:opacity .8s;text-shadow:3px 3px 0 #000,0 0 18px rgba(0,0,0,.8)';
+    // below the dialog layer: a district title must never print across an open panel
+    const root = document.getElementById('ui-root');
+    root?.insertBefore(el, document.getElementById('dialog-layer'));
     return el;
   }
 
@@ -255,14 +257,14 @@ export class MapSystem {
     const g = this.game;
     if (this.panel && !this.panel.closed) { this.panel.close(); return; }
     const asp = this.mw / this.mh;
-    const cw = Math.round(Math.max(420, Math.min(innerWidth - 80, (innerHeight - 170) * asp, 1240)));
+    const cw = Math.round(Math.max(300, Math.min(innerWidth - 80, (innerHeight - 150) * asp, 1240)));
     const ch = Math.round(cw / asp);
     const size = cw;
     const wrap = document.createElement('div');
     wrap.innerHTML = `<canvas width="${cw * 2}" height="${ch * 2}" style="width:${cw}px;height:${ch}px;display:block;margin:0 auto;cursor:crosshair;border:2px solid #3b342b;background:#0d0c0b"></canvas>
       <div style="text-align:center;margin-top:6px;font-size:14px;opacity:.75">Click to set a waypoint · right-click to clear · M / Esc to close</div>`;
     const cv = wrap.querySelector('canvas');
-    this.fullCanvas = cv; this.fullSize = cw * 2; this.fullH = ch * 2;
+    this.fullCanvas = cv; this.fullSize = cw * 2; this.fullH = ch * 2; this.fullCss = cw;
     this.panel = g.ui.openPanel({ title: `${CITY_NAME} — City Map`, body: wrap, width: size + 60, onClose: () => { this.panel = null; } });
     const E = this.ext;
     const toWorld = (ev) => { const r = cv.getBoundingClientRect(); return [((ev.clientX - r.left) / r.width) * this.mw + E.minX, ((ev.clientY - r.top) / r.height) * this.mh + E.minZ]; };
@@ -290,11 +292,13 @@ export class MapSystem {
       const D = DISTRICTS[id]; const [sx, sy] = P(wx, wz);
       if (!D) continue;
       x.font = `${Math.round(NH / 30)}px "Special Elite", monospace`;
-      x.lineWidth = 6; x.strokeStyle = 'rgba(0,0,0,0.85)'; x.strokeText(D.name.toUpperCase(), sx, sy);
-      x.fillStyle = D.palette.accent; x.fillText(D.name.toUpperCase(), sx, sy);
+      x.lineWidth = 6; x.strokeStyle = 'rgba(0,0,0,0.5)'; x.strokeText(D.name.toUpperCase(), sx, sy);
+      // a quiet watermark under the pins, so the names never fight the icons for attention
+      x.globalAlpha = 0.5; x.fillStyle = D.palette.accent; x.fillText(D.name.toUpperCase(), sx, sy); x.globalAlpha = 1;
     }
     // locations
-    const fs = Math.round(NH / 72);
+    const names = (this.fullCss ?? 999) >= 560;
+    const fs = Math.round(Math.max(NH / 72, names ? 20 : 13)); // canvas is 2x: names never below ~10 CSS px
     for (const l of g.locations.list) {
       const [sx, sy] = P(l.doorX ?? l.x, l.doorZ ?? l.z);
       const [ch, col] = TYPE_ICON[l.type] ?? ['•', '#ccc'];
@@ -302,6 +306,7 @@ export class MapSystem {
       x.strokeStyle = col; x.lineWidth = 2; x.stroke();
       x.font = `bold ${fs}px "Barlow Condensed", sans-serif`; x.fillStyle = col; x.fillText(ch, sx, sy + 1);
       x.font = `${Math.round(fs * 0.95)}px "Barlow Condensed", sans-serif`;
+      if (!names) continue; // phone-sized map: icons only (the names would pile into an unreadable heap)
       x.lineWidth = 4; x.strokeStyle = 'rgba(0,0,0,0.9)'; x.strokeText(l.name, sx, sy + fs * 1.6);
       x.fillStyle = '#e8dcc0'; x.fillText(l.name, sx, sy + fs * 1.6);
     }

@@ -191,7 +191,7 @@ Also owns `src/data/barks.js` (`bark(kind)` one-liners).
 - Skateboard (src/skate): G mount, W push, Space ollie, left click kickflip. Unlocked via Skidmark Kev's quest
   (level 3+). Save: `p.skate`. Net message `{t:'skate', on, board, trick}`.
 - Keys in use: WASD Shift Space E F G Q R H N O P V X I B C Z Y Tab J M T Esc F1 1-9 , . arrows, LMB (tap combo/hold heavy), RMB tap or B kick, C block/parry, Z roll, Y quick-heal, MMB tap lock-on, MMB/RMB drag camera. Heists: V mask, X drop bag.
-- `?dev` / `?mute` sessions are silent and never save.
+- `?dev` sessions are silent and never save; `?mute` sessions are silent but DO save (use them to test save/load on a dev origin).
 - `game.police` (src/npc/police.js + src/vehicles/police.js): wanted level, cruisers (2+ stars), roadblocks (4),
   helicopter (5), line-of-sight evasion. Net: police:snap, police:hit, police:steal, police:tire, police:heat.
 - Ambient crowd (src/npc/crowd.js): sidewalk-only peds, seated/idle/leaning/hobo behaviors via world.seats/wallSpots.

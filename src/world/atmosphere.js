@@ -193,7 +193,7 @@ export class Atmosphere {
     g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
     g.setAttribute('aSeed', new THREE.BufferAttribute(seed, 3));
     const m = new THREE.ShaderMaterial({
-      uniforms: { uCam: { value: new THREE.Vector3() }, uTime: { value: 0 }, uAmt: { value: 0 }, uScale: { value: 400 } },
+      uniforms: { uCam: { value: new THREE.Vector3() }, uTime: { value: 0 }, uAmt: { value: 0 }, uScale: { value: 400 }, uCol: { value: new THREE.Color(0.7, 0.74, 0.78) } },
       vertexShader: `attribute vec3 aSeed; uniform vec3 uCam; uniform float uTime, uAmt, uScale; varying float vA, vL;
         float h(float n){ return fract(sin(n) * 43758.5453); }
         void main(){
@@ -207,7 +207,7 @@ export class Atmosphere {
           vL = life; vA = step(aSeed.z, uAmt) * (1.0 - life);
           gl_PointSize = (0.14 + life * 0.3) * uScale / -mv.z;
         }`,
-      fragmentShader: `varying float vA, vL; void main(){ vec2 c = gl_PointCoord - 0.5; float d = length(vec2(c.x, (c.y + 0.25) * 2.6)); float ring = (1.0 - smoothstep(0.35, 0.5, d)) * smoothstep(0.15 + vL * 0.2, 0.3 + vL * 0.2, d); if (ring * vA < 0.02) discard; gl_FragColor = vec4(0.7, 0.74, 0.78, ring * vA * 0.32); }`,
+      fragmentShader: `uniform vec3 uCol; varying float vA, vL; void main(){ vec2 c = gl_PointCoord - 0.5; float d = length(vec2(c.x, (c.y + 0.25) * 2.6)); float ring = (1.0 - smoothstep(0.35, 0.5, d)) * smoothstep(0.15 + vL * 0.2, 0.3 + vL * 0.2, d); if (ring * vA < 0.02) discard; gl_FragColor = vec4(uCol, ring * vA * 0.32); }`,
       transparent: true, depthWrite: false, fog: false,
     });
     const p = new THREE.Points(g, m);
@@ -242,6 +242,7 @@ export class Atmosphere {
 
   // Desired weather parameters for the current time.
   _target(t) {
+    if (this.force && WEATHER[this.force]) return this.force; // dev: window.__weather(kind)
     const day = t.day, hour = t.minuteOfDay / 60;
     const today = weatherForDay(day);
     const yest = weatherForDay(day - 1);
@@ -269,11 +270,12 @@ export class Atmosphere {
     const kind = this._target(t);
     if (kind !== this.weather) { this.weather = kind; this.game.bus.emit('weather:change', { kind, label: WEATHER_LABEL[kind] }); }
     const W = WEATHER[kind];
-    const k = 1 - Math.exp(-dt * 0.35);
+    let k = 1 - Math.exp(-dt * 0.35);
+    if (this.snapWeather) { k = 1; this.snapWeather = false; }
     const c = this.cur;
     c.cloud += (W.cloud - c.cloud) * k; c.sunK += (W.sunK - c.sunK) * k;
     c.fogNear += (W.fogNear - c.fogNear) * k; c.fogFar += (W.fogFar - c.fogFar) * k;
-    c.rain += (W.rain - c.rain) * k * 1.4; c.haze += (W.haze - c.haze) * k;
+    c.rain += (W.rain - c.rain) * Math.min(1, k * 1.4); c.haze += (W.haze - c.haze) * k;
     c.tintK += ((W.tintK ?? 0) - c.tintK) * k; if (W.tint) c.tint.lerp(W.tint, k);
 
     // sun / moon
@@ -358,6 +360,8 @@ export class Atmosphere {
     for (const o of [this.rain, this.splash]) { o.material.uniforms.uCam.value.copy(cam); o.material.uniforms.uTime.value = el; o.material.uniforms.uAmt.value = rainAmt; }
     this.splash.material.uniforms.uScale.value = g.renderer.domElement.height / (2 * Math.tan((g.camera.fov * Math.PI) / 360));
     this.rain.material.uniforms.uCol.value.setScalar(0.35 + dayK * 0.35 + this.night * 0.1);
+    // splash rings dim with the light (at night full-bright rings read as confetti on the black asphalt)
+    this.splash.material.uniforms.uCol.value.setRGB(0.7, 0.74, 0.78).multiplyScalar(0.45 + dayK * 0.55);
     // streets get wet fast and dry slowly
     this.wet = this.wet ?? 0;
     if (rainAmt > 0.05) this.wet = Math.min(1, this.wet + dt * 0.08 * rainAmt);

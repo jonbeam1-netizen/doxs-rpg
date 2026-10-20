@@ -275,6 +275,8 @@ export const LANDMARKS = {
     for (let i = 0; i < 3; i++) g.box('props', 0, 0.1 + i * 0.12, 4.0 - i * 0.6, W - 4, 0.2 + i * 0.24, 0.6, { color: '#a8a498' });
     const door = entrance(C, lot, 0, { z: D / 2 - 4, w: 2.6, h: 4, door: 7, color: '#ffd890' });
     H.f(); locSign(C, lot, loc.id, 'FIRST BANK OF ROTWELL', { w: W - 6, h: 0.62, y: 11.4, z: D / 2 + 0.5, bg: '#2a2620', fg: '#e8c870', gain: 1.4, board: false });
+    // eye-level name plate over the doors (the entablature inscription sits above the gameplay camera's view)
+    H.f(); locSign(C, lot, loc.id + '_door', 'FIRST BANK', { w: 5.2, h: 1.0, y: 5.25, z: D / 2 - 4 + 0.02, bg: '#2a2620', fg: '#e8c870', border: '#8a7440', gain: 1.8 });
     // ATM
     H.f(); g.box('metal', 4, 1.0, D / 2 - 3.7, 1.2, 2, 0.6, { color: '#3a4048' }); g.box('lamp', 4, 1.4, D / 2 - 3.38, 0.8, 0.5, 0.02, { color: '#60c0ff', faces: 'f' });
     C.obbLocal(lot, 0, -2, W, D - 4, top);
@@ -411,6 +413,7 @@ export const LANDMARKS = {
     for (let i = 0; i < 2; i++) g.box('props', 0, 0.1 + i * 0.12, 2.6 - i * 0.5, 14, 0.2 + i * 0.24, 0.5, { color: '#a8a498' });
     const door = entrance(C, lot, 0, { z: D / 2 - 3, w: 2.4, h: 3.4, door: 7, color: '#ffe0a0' });
     H.f(); locSign(C, lot, loc.id, 'ROTWELL PUBLIC LIBRARY', { w: 13, h: 0.55, y: 9.3, z: D / 2 - 1.4, bg: '#2a2620', fg: '#e8dcc0', gain: 1.2, board: false });
+    H.f(); locSign(C, lot, loc.id + '_door', 'LIBRARY', { w: 3.0, h: 0.75, y: 4.6, z: D / 2 - 3 + 0.02, bg: '#2a2620', fg: '#e8dcc0', border: '#7a6a50', gain: 1.6 });
     C.obbLocal(lot, 0, -1.5, W, D - 3, top);
     for (let i = 0; i < 4; i++) C.obbLocal(lot, -6 + i * 4, D / 2 - 1.4, 1, 1, 9);
     return { door: [0, D / 2] };
@@ -435,6 +438,7 @@ export const LANDMARKS = {
     for (let i = 0; i < 4; i++) g.box('props', 0, 0.06 + i * 0.1, 5.6 - i * 0.6, 22, 0.12 + i * 0.2, 0.6, { color: '#a8a498' });
     const door = entrance(C, lot, 0, { z: D / 2 - 6, w: 3, h: 4.2, door: 7, color: '#ffe0a0' });
     H.f(); locSign(C, lot, loc.id, 'CITY HALL', { w: 9, h: 0.8, y: 12.5, z: D / 2, bg: '#2a2620', fg: '#f0e0b0', gain: 1.2, board: false });
+    H.f(); locSign(C, lot, loc.id + '_door', 'CITY HALL', { w: 3.2, h: 0.85, y: 5.4, z: D / 2 - 6 + 0.02, bg: '#2a2620', fg: '#f0e0b0', border: '#7a6a50', gain: 1.6 });
     C.obbLocal(lot, 0, -3, W, D - 6, top);
     for (let i = 0; i < 6; i++) C.obbLocal(lot, -10 + i * 4, D / 2 - 3, 1.4, 1.4, 12);
     return { door: [0, D / 2] };
@@ -457,8 +461,9 @@ export const LANDMARKS = {
   rotwell_u(C, lot, loc) {
     const g = C.geo, H = helpers(C, lot), W = lot.w, D = lot.d;
     H.f();
-    const top = mass(C, { W, D, H: 4 * FLOOR + 1, facade: 'brick_red', tint: '#e0c8b8', cornice: true, parapet: 1 });
-    g.gable('shingle', 0, top, 0, W, 5, D, { color: '#6a7a8a', endMat: 'w_brick_red', uvScale: 3 });
+    // main hall set back so the clock tower (and the entrance at its foot) stands proud of the facade
+    const top = mass(C, { W, D: D - 6, z: -3, H: 4 * FLOOR + 1, facade: 'brick_red', tint: '#e0c8b8', cornice: true, parapet: 1 });
+    g.gable('shingle', 0, top, -3, W, 5, D - 6, { color: '#6a7a8a', endMat: 'w_brick_red', uvScale: 3 });
     // clock tower (plain brick shaft, entrance at its foot)
     H.f(); g.translate(0, 0, D / 2 - 4);
     g.box('w_brick_red', 0, 14, 0, 7, 28, 7, { uvScale: [12, 14], color: '#d8c0b0' });
@@ -467,7 +472,7 @@ export const LANDMARKS = {
     for (let k = 0; k < 4; k++) { g.push(); g.rotY(k * PI / 2); g.cyl('lamp', 0, 24, 3.53, 1.8, 1.8, 0.04, 16, { color: '#fff0c0' }); g.push(); g.translate(0, 24, 3.6); g.rotZ(0.6); g.box('props', 0, 0.7, 0, 0.12, 1.4, 0.04, { color: '#111' }); g.pop(); g.push(); g.translate(0, 24, 3.6); g.rotZ(2.4); g.box('props', 0, 0.5, 0, 0.12, 1.0, 0.04, { color: '#111' }); g.pop(); g.pop(); }
     const door = entrance(C, lot, 0, { z: D / 2 - 0.5, w: 2.6, h: 3.6, door: 7, color: '#ffe0a0' });
     H.f(); locSign(C, lot, loc.id, 'ROTWELL UNIVERSITY', { w: 6.4, h: 1.1, y: 5.4, z: D / 2 - 0.5, bg: '#3a1a1a', fg: '#f0e0c0', gain: 1.2 });
-    C.obbLocal(lot, 0, 0, W, D, top + 4);
+    C.obbLocal(lot, 0, -3, W, D - 6, top + 4);
     C.obbLocal(lot, 0, D / 2 - 4, 7, 7, 30);
     return { door };
   },
@@ -617,6 +622,8 @@ export const LANDMARKS = {
     for (const x of [-W / 4, W / 4 - 2]) { g.wall('doors', x - 3, 0.02, x + 3, 5.2, D / 2 + 0.05, { uvRect: [0.754, 0.504, 0.996, 0.996] }); g.box('lamp', x, 5.38, D / 2 + 0.3, 0.6, 0.1, 0.4, { color: '#ffb060', faces: 'u' }); }
     const door = entrance(C, lot, W / 2 - 2.5, { w: 1.2, h: 2.4, door: 1, color: '#ffb060' });
     H.f(); locSign(C, lot, loc.id, 'CHOP CHOP CUSTOMS', { w: 12, h: 1.2, y: 6.45, bg: '#1a0e04', fg: '#ff9030', neon: '#ff7a10', gain: 2.2, font: 'Barlow Condensed' });
+    // the walk-in door is off to the side of the bays: give it its own plate so it reads as the entrance
+    H.f(); locSign(C, lot, loc.id + '_door', 'OFFICE', { w: 2.4, h: 0.6, x: W / 2 - 2.5, y: 3.45, bg: '#1a0e04', fg: '#ff9030', border: '#5a3010', gain: 1.8, font: 'Barlow Condensed' });
     C.obbLocal(lot, 0, 0, W, D, top);
     P.tires(C, ...H.wp(-W / 2 - 1.5, D / 2 - 2), 4);
     return { door };
@@ -647,6 +654,7 @@ export const LANDMARKS = {
     const H = helpers(C, lot);
     const h = warehouse(C, lot, { facade: 'corrugated', sign: false });
     H.f(); locSign(C, lot, loc.id, 'WAREHOUSE 13', { w: 10, h: 1.4, y: Math.min(h - 1.6, 7.2), x: 0, bg: '#2a2e2a', fg: '#f0f0e0', gain: 0.8, font: 'Barlow Condensed' });
+    H.f(); locSign(C, lot, loc.id + '_door', 'WAREHOUSE 13', { w: 2.8, h: 0.62, x: lot.w / 2 - 2.2, y: 3.5, bg: '#2a2e2a', fg: '#f0f0e0', gain: 1.0, font: 'Barlow Condensed' });
     return { door: [lot.w / 2 - 2.2, lot.d / 2] };
   },
 
@@ -669,7 +677,8 @@ export const LANDMARKS = {
     // false front (plain boards) carrying the sign
     g.box('w_wood', 0, 6, fz + 0.2, W, 3, 0.4, { uvScale: [12, 14], color: '#b89878' });
     g.box('wood', 0, 3.2, fz + 1.6, W, 0.15, 3.2, { color: '#6a5440' }); // porch roof
-    for (let x = -W / 2 + 0.3; x <= W / 2; x += W / 4) { g.box('wood', x, 1.6, fz + 3.0, 0.25, 3.2, 0.25, { color: '#5a4430' }); C.obbLocal(lot, x, fz + 3.0, 0.3, 0.3, 3.2); }
+    // symmetric porch posts, none in front of the door (x = 0)
+    for (const x of [-W / 2 + 0.3, -W / 4, W / 4, W / 2 - 0.3]) { g.box('wood', x, 1.6, fz + 3.0, 0.25, 3.2, 0.25, { color: '#5a4430' }); C.obbLocal(lot, x, fz + 3.0, 0.3, 0.3, 3.2); }
     g.box('wood', 0, 0.06, fz + 1.6, W, 0.12, 3.2, { color: '#6a5440' });
     const door = entrance(C, lot, 0, { z: fz, w: 2, h: 2.6, door: 0, color: '#ffa040' });
     H.f(); locSign(C, lot, loc.id, 'THE DIRTY SPUR', { w: 12, h: 2.0, y: 6.1, z: fz + 0.4, bg: '#2a1a0a', fg: '#ffb040', neon: '#ff9020', gain: 2.2 });

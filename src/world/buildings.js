@@ -62,7 +62,7 @@ export function mass(C, { W, D, H, y0 = 0, x = 0, z = 0, facade, store = null, d
   const gridH = H - base;
   const noGrid = gridH < 2.6; // too short for a row of windows: plain wall
   const fl = Math.max(1, Math.round(gridH / FLOOR));
-  const fh = gridH / fl;
+  const fh = gridH > 0.01 ? gridH / fl : FLOOR; // fascia-only shops have no grid: keep the UV scale finite (0 -> NaN UVs -> black walls)
   const sv = fh * 4;
   const yb0 = y0 + base; // window grid origin
   const ov = -yb0 / sv;

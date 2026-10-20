@@ -369,6 +369,10 @@ export async function installWorld(game, opts = {}) {
         return { missing, stale };
       };
       // Visual-check helpers (dev only): step frames while the tab is hidden, frame a shot.
+      window.__door = (id, o = {}) => { const l = game.locations.get(id); if (!l) return null; let nx = (l.doorX ?? l.x) - l.x, nz = (l.doorZ ?? l.z) - l.z; const n = Math.hypot(nx, nz) || 1; nx /= n; nz /= n; const off = o.off ?? 5; return window.__shot((l.doorX ?? l.x) + nx * off, (l.doorZ ?? l.z) + nz * off, Math.atan2(nx, nz) + (o.yo ?? 0), { h: o.h ?? 12, dist: o.dist ?? 7.5, pitch: o.pitch ?? 0.32, n: o.n ?? 14 }); };
+      window.__key = async (code, n = 6) => { for (const t of ['keydown', 'keyup']) { window.dispatchEvent(new KeyboardEvent(t, { code, key: code, bubbles: true })); if (t === 'keydown') game._frame(); } await window.__step(n); };
+      window.__noanim = () => { if (document.getElementById('qa-noanim')) return; const s = document.createElement('style'); s.id = 'qa-noanim'; s.textContent = '*,*::before,*::after{animation-duration:0s!important;animation-delay:0s!important;transition-duration:0s!important;transition-delay:0s!important}'; document.head.appendChild(s); };
+      window.__weather = (kind = null, snap = true) => { atmo.force = kind; if (snap && kind) atmo.snapWeather = true; return kind ?? atmo.weather; };
       window.__step = async (n = 10) => { for (let i = 0; i < n; i++) { await new Promise((r) => setTimeout(r, 16)); game._frame(); } };
       window.__shot = async (x, z, yaw, o = {}) => {
         game.ui.closeAll();
