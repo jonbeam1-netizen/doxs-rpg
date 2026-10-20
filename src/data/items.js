@@ -25,7 +25,7 @@ export const ITEMS = {
   diner_special: { name: 'Mystery Meat Platter', cat: 'food', price: 9, desc: "Marge won't say what animal. Marge won't say if it was an animal.", fx: { energy: 34, hp: 10 } },
   donut: { name: 'Glazed Donut', cat: 'food', price: 2, desc: 'Sticky, sweet, and accepted as legal tender by most of Rotwell PD.', fx: { energy: 8 } },
   steak: { name: 'An Actual Steak', cat: 'food', price: 40, desc: 'From a cow! Probably! Restores your faith in protein.', fx: { energy: 60, hp: 30 } },
-  protein_shake: { name: 'Swole Sludge Protein', cat: 'food', price: 12, desc: 'Chalky, beige, smells like a gym bag. Next 6 hours of lifting count 50% more.', fx: { energy: 10, effect: 'protein', min: 360 } },
+  protein_shake: { name: 'Swole Sludge Protein', cat: 'food', price: 12, desc: 'Chalky, beige, smells like a gym bag. Next 6 hours of lifting count 30% more.', fx: { energy: 10, effect: 'protein', min: 360 } },
   // ---------------- drinks ----------------
   coffee: { name: 'Burnt Coffee', cat: 'drink', price: 2, desc: 'Brewed in 2019, reheated hourly. Tastes like an ashtray\'s therapist.', fx: { energy: 12 } },
   energy_drink: { name: 'Kardiak Arrest Energy', cat: 'drink', price: 6, desc: 'Now with 40% more heart palpitations! Not FDA anything.', fx: { energy: 30, hp: -2 } },

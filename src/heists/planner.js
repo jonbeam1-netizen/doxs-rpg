@@ -1,4 +1,5 @@
-import { HEISTS, HEIST_ORDER, GEAR, GEAR_ORDER, MASKS, INTEL, PLANNER } from '../data/heists.js';
+import { HEISTS, HEIST_ORDER, GEAR, GEAR_ORDER, MASKS, INTEL, PLANNER, HOT_PISTOL, AMMO_BOX } from '../data/heists.js';
+import { WEAPONS } from '../data/weapons.js';
 import { createBoard } from './meshes.js';
 import { pick, fmtMoney, esc } from '../core/util.js';
 
@@ -78,6 +79,7 @@ export class Planner {
         <div class="d">${esc(d.blurb)}</div>
         <div class="r ${st.ok ? 'ok' : 'no'}">${st.ok ? `✔ Ready · ${Math.floor(d.time / 60)} min clock · ${d.bags.count} bags` : esc(st.why || d.reqText)}</div>
         <div class="d" style="font-size:13px">Needs: ${esc(d.reqText)}${h.done[id] ? ` · pulled ${h.done[id]}× · best ${fmtMoney(h.best[id] || 0)}` : ''}</div>
+        ${d.gearText ? `<div class="d" style="font-size:13px;opacity:.85">Recommended: ${esc(d.gearText)}</div>` : ''}
         <div class="btns">${st.ok ? `<button class="ui-btn primary" data-plan="${id}">Plan it</button>` : ''}
           ${needIntel ? `<button class="ui-btn" data-intel="${id}">Buy ${esc(INTEL[id].name)} (${fmtMoney(INTEL[id].price)})</button>` : ''}</div>
       </div>`;
@@ -141,15 +143,17 @@ export class Planner {
       }).join('\n');
       const missing = rec.filter((gid) => !((h.gear[gid] || 0) > 0 || (gid === 'getaway' && (h.gear.getaway_fast || 0) > 0)));
       const opts = missing.map((gid) => ({ label: `Buy ${GEAR[gid].name} (${fmtMoney(GEAR[gid].price)})`, hint: GEAR[gid].desc, disabled: !g.state.canAfford(GEAR[gid].price), _gid: gid }));
+      if (d.tier >= 2 && !this.hasGun()) opts.unshift({ label: `Buy Terry's used 9mm + ${HOT_PISTOL.ammo} rounds (${fmtMoney(HOT_PISTOL.price)})`, hint: HOT_PISTOL.desc, disabled: !g.state.canAfford(HOT_PISTOL.price), _hw: 'pistol' });
       opts.push({ label: 'Roll out', hint: missing.length ? 'Missing gear makes it slower and harder. Not impossible. Just dumber.' : 'Let\'s get rich or die embarrassed.' });
       opts.push({ label: 'Back out' });
       const gi = await g.ui.dialog({
         title: `${d.name} — ${approach === 'quiet' ? 'Quiet' : 'Loud'}`, speaker: PLANNER.name,
-        text: `Expected take: ~${fmtMoney(est)}\nRecommended kit:\n${lines || '(nothing worth buying for this one)'}\n\nMask: ${MASKS[h.mask].name}${missing.length ? `\n\n"${pick(PLANNER.noGear)}"` : ''}`,
+        text: `Expected take: ~${fmtMoney(est)}\nRecommended kit:\n${lines || '(nothing worth buying for this one)'}\n\nMask: ${MASKS[h.mask].name}${d.gearText ? `\n\nTerry's advice: ${d.gearText}\nYou: STR ${Math.floor(g.state.p.str)} · ${this.armsLine()}` : ''}${missing.length ? `\n\n"${pick(PLANNER.noGear)}"` : ''}`,
         options: opts,
       });
       if (gi == null || gi === opts.length - 1) return;
       if (gi === opts.length - 2) break;
+      if (opts[gi]._hw) { this.buyHardware(opts[gi]._hw); continue; }
       const gid = opts[gi]._gid;
       if (gid && g.state.spend(GEAR[gid].price, 'heist gear')) { h.gear[gid] = (h.gear[gid] || 0) + 1; g.state.changed('heists'); g.ui.toast(`Bought: ${esc(GEAR[gid].name)}`, 'good', 2000); }
     }
@@ -203,7 +207,14 @@ export class Planner {
           <div class="d">${esc(M.desc)}</div>
           <div class="btns">${have ? (h.mask === mid ? '' : `<button class="ui-btn" data-wear="${mid}">Use this one</button>`) : `<button class="ui-btn" data-mask="${mid}" ${g.state.canAfford(M.price) ? '' : 'disabled'}>Buy</button>`}</div></div>`;
       }).join('');
+      const hw = [
+        { id: 'pistol', name: `Used 9mm + ${HOT_PISTOL.ammo} rounds`, price: HOT_PISTOL.price, desc: HOT_PISTOL.desc, owned: this.hasPistol() },
+        { id: 'ammo', name: `Box of 9mm (${AMMO_BOX.qty})`, price: AMMO_BOX.price, desc: AMMO_BOX.desc, owned: false },
+      ].map((x) => `<div class="sys-item ${x.owned ? 'owned' : ''}"><h4><span>${esc(x.name)}</span><span class="pr">${x.owned ? 'owned' : fmtMoney(x.price)}</span></h4>
+          <div class="d">${esc(x.desc)}</div>
+          <div class="btns">${x.owned ? '' : `<button class="ui-btn" data-hw="${x.id}" ${g.state.canAfford(x.price) ? '' : 'disabled'}>Buy</button>`}</div></div>`).join('');
       return `<div class="sys-cashline"><span>Cash <b>${fmtMoney(g.state.p.money)}</b></span><span>Press <kbd>V</kbd> to put your mask on/off</span></div>
+        <div class="sys-sect">Hardware (no paperwork)</div><div class="sys-shop">${hw}</div>
         <div class="sys-sect">Tools of the trade</div><div class="sys-shop">${gear}</div>
         <div class="sys-sect">Masks</div><div class="sys-shop">${masks}</div>`;
     };
@@ -213,6 +224,8 @@ export class Planner {
       const buy = e.target.closest('[data-buy]')?.dataset.buy;
       const mk = e.target.closest('[data-mask]')?.dataset.mask;
       const wear = e.target.closest('[data-wear]')?.dataset.wear;
+      const hwId = e.target.closest('[data-hw]')?.dataset.hw;
+      if (hwId) { this.buyHardware(hwId); panel.body.innerHTML = render(); return; }
       if (buy && GEAR[buy] && g.state.spend(GEAR[buy].price, 'heist gear')) { h.gear[buy] = (h.gear[buy] || 0) + 1; g.ui.toast(`Bought: ${esc(GEAR[buy].name)}`, 'good', 2000); }
       else if (mk && MASKS[mk] && !h.masks.includes(mk) && g.state.spend(MASKS[mk].price, 'mask')) { h.masks.push(mk); h.mask = mk; g.ui.toast(`New face: ${esc(MASKS[mk].name)}. ${esc(MASKS[mk].desc)}`, 'good', 3000); mgr.onMaskChanged(); }
       else if (wear && h.masks.includes(wear)) { h.mask = wear; mgr.onMaskChanged(); }
@@ -220,5 +233,33 @@ export class Planner {
       g.state.changed('heists');
       panel.body.innerHTML = render();
     });
+  }
+
+  // ------------------------------------------------------------------ hardware (Terry's trunk)
+  hasPistol() { return (this.g.state.p.weapons || []).includes('pistol'); }
+  hasGun() { return (this.g.state.p.weapons || []).some((w) => WEAPONS[w]?.kind === 'gun'); }
+  armsLine() {
+    const p = this.g.state.p;
+    const guns = (p.weapons || []).filter((w) => WEAPONS[w]?.kind === 'gun');
+    const melee = (p.weapons || []).filter((w) => WEAPONS[w]?.kind === 'melee' && w !== 'fists').sort((a, b) => WEAPONS[b].damage - WEAPONS[a].damage)[0];
+    const ammo = guns.map((w) => (p.ammo?.[WEAPONS[w].ammo] || 0) + (p.mags?.[w] || 0)).reduce((a, b) => a + b, 0);
+    return `${melee ? WEAPONS[melee].name : 'bare fists'}${guns.length ? ` · ${WEAPONS[guns[0]].name} (${ammo} rounds)` : ' · no gun'}`;
+  }
+  buyHardware(id) {
+    const g = this.g;
+    if (id === 'pistol') {
+      if (this.hasPistol()) { g.ui.toast('You already have a 9mm. Terry only had the one. It was a little sticky.', 'info'); return false; }
+      if (!g.state.spend(HOT_PISTOL.price, 'heist gear')) return false;
+      g.combat?.giveWeapon?.('pistol', HOT_PISTOL.ammo);
+      g.ui.toast(`Bought a used 9mm and ${HOT_PISTOL.ammo} rounds. Press <kbd>Q</kbd> to switch to it. Serial number: "lol".`, 'good', 3500);
+      return true;
+    }
+    if (id === 'ammo') {
+      if (!g.state.spend(AMMO_BOX.price, 'ammo')) return false;
+      g.combat?.giveAmmo?.('light', AMMO_BOX.qty);
+      g.ui.toast(`+${AMMO_BOX.qty} 9mm rounds.`, 'good', 1800);
+      return true;
+    }
+    return false;
   }
 }

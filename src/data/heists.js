@@ -7,6 +7,9 @@
 //   quietBonus (payout multiplier when no alarm went off),
 //   unlock(game) -> { ok, why }      (level / stats / quest flags / faction rep)
 //   guards: { quiet:[weapon...], loud:[weapon...] }, waves: { every (s), count, max, weapons }
+//     (a quiet job that goes loud gets lighter waves: every x1.4, one fewer per wave, max -2)
+//   guard: { hp, acc (hit-chance mult), shooters (gunners allowed to fire at one target at once) }
+//   gearText: the planner's "recommended gear / STR" line
 //   objectives: { quiet:[...], loud:[...] }   objective specs (see below)
 //   uses: gear ids that get consumed when you bring them
 //   civ: optional flavor civilian { name, color, hat, lines[] }
@@ -26,6 +29,10 @@ export const GEAR = {
   getaway:      { name: 'Beige Getaway Sedan', price: 800, car: 'commuter', desc: 'Waiting by the target. Nobody has ever looked twice at a beige sedan. One job.' },
   getaway_fast: { name: 'Thunderhog Getaway', price: 2600, car: 'thunderhog', desc: 'Waiting by the target, keys in the visor. Fast, loud, extremely suspicious. One job.' },
 };
+// Terry's trunk also has "hardware": a fair-priced starter gun for heists (the gun shop wants $1,200
+// and paperwork). The pistol is the intended answer to guards who hang back and shoot.
+export const HOT_PISTOL = { price: 450, ammo: 24, desc: 'A 9mm that fell off a cop. Comes with two mags. Cheaper than Bang Bang Bros. because it\'s "pre-owned" and "pre-evidence".' };
+export const AMMO_BOX = { price: 60, qty: 30, desc: 'Thirty rounds of 9mm in a cereal box. Same price as the gun shop, fewer questions.' };
 export const GEAR_ORDER = ['picks', 'hacker', 'drill', 'thermite', 'spikes', 'getaway', 'getaway_fast'];
 
 // Masks: cosmetic, but you can't do crimes with your bare face hanging out.
@@ -57,7 +64,9 @@ export const HEISTS = {
     reqText: 'Anyone with a mask and a pulse',
     unlock: () => ({ ok: true }),
     guards: { quiet: ['baton'], loud: ['baton', 'bat'] },
+    guard: { hp: 80, acc: 0.8, shooters: 1 },
     waves: null,
+    gearText: 'Fists work. A bat ($250, Bang Bang Bros.) makes it a joke. Bring a bandage.',
     uses: ['drill'],
     civ: { name: 'Dwayne the Night Clerk', color: '#7a1f2b', hat: 'cap', hatColor: '#c9a227', lines: [
       'Take the scratch-offs too, man. I don\'t get paid enough.',
@@ -97,8 +106,10 @@ export const HEISTS = {
     reqText: 'Level 3 · pulled the Gas-N-Gulp job',
     unlock: (g) => (lvl(g) < 3 ? { ok: false, why: 'Level 3 needed. Terry doesn\'t work with infants.' }
       : !done(g, 'gas') ? { ok: false, why: 'Prove yourself on the Gas-N-Gulp first.' } : { ok: true }),
-    guards: { quiet: ['pistol', 'baton'], loud: ['pistol', 'shotgun', 'pistol'] },
-    waves: { every: 45, count: 2, max: 7, weapons: ['pistol', 'shotgun'] },
+    guards: { quiet: ['pistol', 'baton'], loud: ['pistol', 'shotgun', 'baton'] },
+    guard: { hp: 95, acc: 0.8, shooters: 1 },
+    waves: { every: 55, count: 2, max: 5, weapons: ['baton', 'pistol', 'baton'] },
+    gearText: 'STR 18+ and a bat, plus a 9mm for the guards who hang back (Terry sells a used one). 2-3 bandages.',
     uses: ['spikes', 'thermite'],
     objectives: {
       quiet: [
@@ -133,7 +144,9 @@ export const HEISTS = {
     unlock: (g) => (lvl(g) < 5 ? { ok: false, why: 'Level 5 needed. Banks have, like, rules.' }
       : !done(g, 'truck') ? { ok: false, why: 'Hit the armored truck first. Terry needs to see you can handle a moving target.' } : { ok: true }),
     guards: { quiet: ['pistol', 'baton', 'pistol'], loud: ['pistol', 'pistol', 'shotgun', 'baton'] },
-    waves: { every: 40, count: 2, max: 8, weapons: ['pistol', 'shotgun', 'smg'] },
+    guard: { hp: 110, acc: 0.9, shooters: 2 },
+    waves: { every: 45, count: 2, max: 6, weapons: ['pistol', 'baton', 'shotgun'] },
+    gearText: 'STR 25+ with a crowbar or bat, a 9mm with 2 boxes of rounds, 3+ bandages or painkillers.',
     uses: ['drill', 'thermite'],
     civ: { name: 'Teller Marjorie', color: '#4b2a52', hat: null, lines: [
       'I have been robbed nine times. I have a punch card. One more and I get a free scone.',
@@ -178,8 +191,10 @@ export const HEISTS = {
       if (rep(g, 'rats') >= 25 || rep(g, 'syndicate') >= 25 || g.state.p.heists?.intel?.casino) return { ok: true };
       return { ok: false, why: 'You need an inside line: Gutter Rats or Velvet Syndicate rep 25, or buy the floor plans from Terry.' };
     },
-    guards: { quiet: ['pistol', 'pistol', 'baton', 'smg'], loud: ['pistol', 'smg', 'shotgun', 'pistol', 'smg'] },
-    waves: { every: 35, count: 2, max: 9, weapons: ['smg', 'shotgun', 'pistol'] },
+    guards: { quiet: ['pistol', 'baton', 'pistol', 'baton'], loud: ['pistol', 'smg', 'shotgun', 'baton', 'pistol'] },
+    guard: { hp: 130, acc: 1, shooters: 2 },
+    waves: { every: 36, count: 2, max: 8, weapons: ['pistol', 'baton', 'smg'] },
+    gearText: 'STR 30+ and a crowbar, a 9mm with 3 boxes (shoot the SMG guys first), 4+ heals. Quiet is much safer.',
     uses: ['drill', 'thermite'],
     civ: { name: 'Pit Boss Vinnie', color: '#2a1030', hat: 'fedora', hatColor: '#141414', lines: [
       'You know whose money this is? ...Yeah, me neither, it changes hands a lot.',
@@ -225,8 +240,10 @@ export const HEISTS = {
       if ((p.inventory?.q_keycard_live || 0) > 0 || qDone(g, 'main_corp') || qDone(g, 'main_rats') || p.heists?.intel?.grimco) return { ok: true };
       return { ok: false, why: 'You need a way in: a working Grimco keycard, a finished faction storyline, or the penthouse codes from Terry.' };
     },
-    guards: { quiet: ['smg', 'pistol', 'smg', 'pistol', 'rifle'], loud: ['smg', 'smg', 'rifle', 'shotgun', 'smg', 'pistol'] },
-    waves: { every: 30, count: 3, max: 11, weapons: ['smg', 'rifle', 'shotgun'] },
+    guards: { quiet: ['smg', 'pistol', 'baton', 'pistol', 'rifle'], loud: ['smg', 'rifle', 'shotgun', 'smg', 'baton', 'pistol'] },
+    guard: { hp: 140, acc: 1, shooters: 2 },
+    waves: { every: 34, count: 2, max: 9, weapons: ['smg', 'pistol', 'baton', 'shotgun'] },
+    gearText: 'STR 40+ and a machete, a real gun with plenty of ammo, 5+ heals, a crew if you have one. The rifle guy hits like a truck: kill him first.',
     uses: ['drill', 'thermite'],
     civ: { name: 'Mr. Grimsby\'s Butler', color: '#141414', hat: 'tophat', hatColor: '#0a0a0a', lines: [
       'Master Grimsby will be most displeased. He will fire someone. Probably a whole town.',

@@ -1287,7 +1287,9 @@ export class Combat {
     let b = spec.boss && typeof spec.boss === 'object' ? { ...spec.boss } : null;
     if (!b && spec.boss === true) b = {};
     if (!b && spec.kind === 'fighter' && count === 1 && tier >= 2) b = { name: label.replace(/^The Pit:\s*/i, '') };
-    if (!b && count >= 3 && tier >= 2 && / & /.test(label)) b = { name: label.split(' & ')[0], moves: ['combo', 'charge', 'block'] };
+    // "<Name> & the <Goons>": the boss fights with brass knuckles (a random bat on a t3 boss was
+    // ~95 damage per combo and turned Two-Ton Tito into a coin flip)
+    if (!b && count >= 3 && tier >= 2 && / & /.test(label)) b = { name: label.split(' & ')[0], moves: ['combo', 'charge', 'block'], weapon: 'brass' };
     if (!b) return null;
     b.name = b.name || label.replace(/^The Pit:\s*/i, '') || 'The Big Cheese';
     if (!b.moves) {
@@ -1332,7 +1334,7 @@ export class Combat {
       if (isBoss && boss.weapon) weapon = boss.weapon;
       const baseHp = ({ drunk: 45, thug: 65, gang: 75, fighter: 70 })[kind];
       let hp = Math.round(baseHp * (1 + 0.42 * tier) * rand(0.9, 1.1) * (weapon === 'knife' || weapon === 'bottle' ? 0.88 : 1));
-      if (isBoss) hp = Math.round(boss.hp ?? baseHp * (1 + 0.42 * tier) * (count === 1 ? 2.5 : 1.8));
+      if (isBoss) hp = Math.round(boss.hp ?? baseHp * (1 + 0.42 * tier) * (count === 1 ? 2.5 : 1.6));
       const npc = this.ctx.npcs.spawn({
         kind: kind === 'fighter' ? 'fighter' : kind, role: kind, faction, x, z,
         facing: Math.atan2(tp.x - x, tp.z - z), hostile: true, networked: true, brawlId: id, wander: false, tier,
@@ -1443,7 +1445,7 @@ export class Combat {
       g.state.addXP(10 + 10 * (spec.tier || 0) + 3 * (spec.count || spec.npcIds?.length || 1) + (spec.boss ? 25 + 10 * (spec.tier || 0) : 0));
       g.ui.bigText('VICTORY', esc(pick(['Flawless. Ish.', 'Your knuckles will remember this.', 'The crowd goes mild!', 'Somebody call them a waaambulance.'])), 2200);
       g.state.changed('totals');
-      g.bus.emit('brawl:won', { id, label });
+      g.bus.emit('brawl:won', { id, label, tier: spec.tier || 0, count: spec.count || spec.npcIds?.length || 1, boss: !!spec.boss });
       try { spec.onWin?.(g); } catch (e) { console.error('[combat] onWin failed', e); }
     } else {
       if (!this.isDown) p.totals.fightsLost = (p.totals.fightsLost || 0) + 1;

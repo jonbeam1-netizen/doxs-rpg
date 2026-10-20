@@ -614,6 +614,8 @@ export class NPCManager {
       if (n.atk && n.target && !n.dead && n.atk.kind !== 'taser') { const k = this._tkey(n.target); atk.set(k, (atk.get(k) || 0) + 1); }
     }
 
+    // render LOD distances come from the graphics preset (world.quality); High = 140 / 35
+    const Q = g.world?.quality, visD = Q?.npcDist ?? 140, shD = Q?.npcShadowDist ?? 35;
     for (const npc of this.map.values()) {
       try {
         const dx = npc.pos.x - lp.x, dz = npc.pos.z - lp.z;
@@ -642,7 +644,7 @@ export class NPCManager {
         }
 
         // render LOD
-        const vis = d < 140;
+        const vis = d < visD;
         if (npc.group.visible !== vis) npc.group.visible = vis;
         // ambient body language: drop the pose the moment they do anything else
         if (npc.pose && (npc.dead || (npc.pose.walking ? !(npc.state === 'wander' || npc.state === 'idle') : npc.state !== 'pose'))) clearPose(npc);
@@ -653,7 +655,7 @@ export class NPCManager {
           if (npc.drunkWobble) npc.model.parts.hips.rotation.z = Math.sin(this.t * 2.3 + npc.drunkWobble) * 0.12;
           if (npc.pose?.walking) cartArms(npc);
         } else if (npc.dead) npc.model.animate(dt, 0, {});
-        const wantShadow = d < 35;
+        const wantShadow = d < shD;
         if (wantShadow !== npc.shadowOn) {
           npc.shadowOn = wantShadow;
           npc.group.traverse((o) => { if (o.isMesh) o.castShadow = wantShadow; });
@@ -1119,6 +1121,9 @@ export class NPCManager {
         const want = d < 7 ? -1.2 : d > 14 ? 0.6 : 0;
         npc.vx = (ux * want + -uz * side * 0.5) * npc.walk * 1.3;
         npc.vz = (uz * want + ux * side * 0.5) * npc.walk * 1.3;
+        // turn-taking: only a few gunners get a "volley" at the same target at once; the rest
+        // keep their sights on you and wait their turn (cops excluded: police balance their own fire).
+        if (npc.kind !== 'cop' && !inCar && !this._volleyTurn(npc)) { npc.sightT = 0; return; }
         // telegraph: a glint + "!" before the first shot of every volley
         if (!npc.sightT) {
           npc.sightT = this.t;
@@ -1199,6 +1204,28 @@ export class NPCManager {
   _maxAttackers(npc) {
     const t = npc.tier || 0;
     return t <= 1 ? 1 : t <= 4 ? 2 : 3;
+  }
+
+  // Gunners take turns too: a gunner fires in volleys of ~2-3 s, then hands the turn to someone
+  // else for a beat. At most `spec.shooters` (or 1 / 2 / 3 by tier) volleys at one target at once.
+  // Every new volley gets its own glint telegraph (sightT resets).
+  _volleyTurn(npc) {
+    const key = this._tkey(npc.target);
+    const now = this.t;
+    let set = (this.volleys ||= new Map()).get(key);
+    if (!set) this.volleys.set(key, set = new Set());
+    if (set.has(npc) && npc.volleyEnd <= now) {
+      set.delete(npc);
+      npc.volleyCd = now + rand(1.3, 2.4);
+      return false;
+    }
+    if (set.has(npc)) return true;
+    for (const o of set) if (o.dead || o.removed || o.volleyEnd <= now || this._tkey(o.target) !== key || !o.aiming) set.delete(o);
+    const max = npc.spec?.shooters ?? (npc.tier <= 1 ? 1 : npc.tier <= 4 ? 2 : 3);
+    if (set.size >= max || (npc.volleyCd || 0) > now) return false;
+    set.add(npc);
+    npc.volleyEnd = now + rand(2.0, 3.0);
+    return true;
   }
 
   // Waiting for a turn: strafe around the target at a ring distance, facing them.
@@ -1451,12 +1478,13 @@ export class NPCManager {
     fx.muzzle(muzzle.x, muzzle.y, muzzle.z, 0.5);
     fx.sfx.play(npc.weapon === 'smg' ? 'smg' : npc.weapon === 'rifle' || npc.weapon === 'revolver' ? 'biggun' : 'gun', { pos: npc.pos, vol: 0.8 });
     const moving = this._targetMoving(npc.target);
-    const p = clamp(0.8 - d / 45 - (moving ? 0.25 : 0) + (npc.kind === 'cop' && npc.role === 'swat' ? 0.1 : 0), 0.12, 0.85);
+    const p = clamp(0.8 - d / 45 - (moving ? 0.25 : 0) + (npc.kind === 'cop' && npc.role === 'swat' ? 0.1 : 0), 0.12, 0.85) * (npc.spec?.acc ?? 1);
     const hit = chance(p);
     const ox = hit ? 0 : rand(-1.6, 1.6), oz = hit ? 0 : rand(-1.6, 1.6);
     fx.tracer(muzzle.x, muzzle.y, muzzle.z, tp.x + ox, 1.2, tp.z + oz);
     if (hit) {
-      const dmg = Math.round(def.damage * npc.dmgMult * rand(0.8, 1.15) * (npc.tierMult || 1));
+      // bullets scale half as hard with brawl tier as fists do (a t3 goon's pistol was hitting for ~24)
+      const dmg = Math.round(def.damage * npc.dmgMult * rand(0.8, 1.15) * (1 + ((npc.tierMult || 1) - 1) * 0.5));
       const fleet = this.game.vehicles?.police;
       if (npc.kind === 'cop' && fleet && this._targetInVehicle(npc.target)) {
         // cops aim for the tires (and the paint job)

@@ -6,7 +6,7 @@ import { ensureState } from './common.js';
 
 // Named effects that items reference by id. Values merge into the effect record.
 export const EFFECT_DEFS = {
-  protein: { label: 'Protein-swole (+50% gym)', kind: 'good' },
+  protein: { label: 'Protein-swole (+30% gym)', kind: 'good' },
   roids: { label: 'Roided out (×2 gym)', kind: 'drug' },
   lucky: { label: 'Lucky rabbit foot', kind: 'good' },
   withdrawal: { label: 'WITHDRAWAL', kind: 'bad', speed: 0.88, temp: { str: -2, cha: -3 }, trip: { gray: 0.55 } },

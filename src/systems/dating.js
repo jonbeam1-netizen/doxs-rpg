@@ -1,16 +1,19 @@
 // Dating: five original characters around town, relationship meters, flirting, gifts, dates,
 // going steady (daily partner perks). Fade-to-black jokes only.
-// state.p.dating[id] = { rel, lastFlirt, lastGift, lastSeen, dates, partner }
+// state.p.dating[id] = { rel, lastFlirt, lastGift, lastSeen, dates, partner, warm, flirtDay, flirts }
+// First date: WARM_NEED "meaningful interactions" (a flirt that lands, a gift they don't hate) while you
+// meet their Charm bar. Up to 2 flirts + 1 gift a day, so a prepared player can get there on day one;
+// most take two visits. Every interaction says where you stand ("She's warming up to you: 2/4").
 // state.p.sys.partner = id | null
 // game.sysDating = { option(id, loc) -> menu option | null, name(id), menu(id), daily() }
 import { ITEMS } from '../data/items.js';
 import { fmtMoney, pick, chance, rand, clamp } from '../core/util.js';
-import { hasCourse, today, ensureState } from './common.js';
+import { hasCourse, today, ensureState, train } from './common.js';
 import { say, choose, meter } from './ui-kit.js';
 
 export const DATEABLES = {
   roxy: {
-    name: 'Roxy Vile', where: 'nightclub', hours: [21, 4], minCha: 15,
+    name: 'Roxy Vile', they: 'She', where: 'nightclub', hours: [21, 4], minCha: 15,
     desc: 'Bassist for the punk band "Diarrhea Planet II". Safety pins in places safety pins shouldn\'t go.',
     likes: ['whiskey', 'moonshine', 'cigs', 'beer', 'malt'], hates: ['flowers', 'teddy', 'book_cheese'],
     greet: ['Roxy flicks a cigarette at your shoes. "Oh. It\'s you. The stick that keeps staring."', 'Roxy is headbanging alone in the corner to a song that isn\'t playing.', '"If you\'re gonna hit on me, at least make it interesting. Last guy quoted Nickelback."'],
@@ -20,7 +23,7 @@ export const DATEABLES = {
     perk: '+25 energy every morning (she drags you to 6AM punk shows)', perkFx: (g) => g.state.addStat('energy', 25),
   },
   chad: {
-    name: 'Chad Brickman', where: 'gym', hours: [6, 20], minCha: 8,
+    name: 'Chad Brickman', they: 'He', where: 'gym', hours: [6, 20], minCha: 8,
     desc: 'Personal trainer. 4% body fat, 0% inner monologue. Calls everyone "chief".',
     likes: ['protein_shake', 'steak', 'energy_drink', 'steroids'], hates: ['book_dummies', 'book_anatomy', 'book_cheese', 'book_seduction', 'cigs'],
     greet: ['Chad flexes at you as a greeting. Then flexes at the mirror as a goodbye.', '"Chief! You\'re here! Wanna see my calves? They\'re named Thunder and Also Thunder."', 'Chad is doing curls with a smaller, weaker Chad.'],
@@ -30,7 +33,7 @@ export const DATEABLES = {
     perk: '+0.5 STR daily (couples workouts at 5AM)', perkFx: (g) => g.state.addStat('str', 0.5, 'partner'),
   },
   divina: {
-    name: 'Lady Divina Graves', where: 'casino', hours: [18, 4], minCha: 40,
+    name: 'Lady Divina Graves', they: 'She', where: 'casino', hours: [18, 4], minCha: 40,
     desc: 'Goth heiress to the Graves Funeral Home fortune. Wears black lace and an expression of eternal boredom.',
     likes: ['necklace', 'rolex', 'champagne', 'perfume', 'cigar'], hates: ['fake_rolex', 'flowers', 'chocolates', 'roller_dog'],
     greet: ['Divina doesn\'t look up from her roulette chips. "You\'re standing in my light. I prefer the dark."', '"Mother says I should meet new people. Mother is in a jar on my mantel."', 'Divina is betting her family\'s money on black. Always black.'],
@@ -40,7 +43,7 @@ export const DATEABLES = {
     perk: '$250 "allowance" every morning (she pities your finances)', perkFx: (g) => g.state.addMoney(250, 'partner'),
   },
   patty: {
-    name: 'Dr. Patty Melt', where: 'hospital', hours: [8, 20], minCha: 25,
+    name: 'Dr. Patty Melt', they: 'She', where: 'hospital', hours: [8, 20], minCha: 25,
     desc: 'Burnt-out ER doctor on her 30th straight hour. Survives on vending machine coffee and spite.',
     likes: ['coffee', 'energy_drink', 'mega_energy', 'chocolates', 'painkillers', 'wine_box'], hates: ['cigs', 'moonshine', 'cold_burrito'],
     greet: ['Dr. Patty yawns so wide you can see her soul. "If you\'re not bleeding, make it quick."', '"I just pulled a remote out of a man. Not his mouth. What do you want?"', 'Patty is asleep standing up, clutching a clipboard. She wakes up when you approach. "I\'m awake. I\'m a doctor."'],
@@ -50,7 +53,7 @@ export const DATEABLES = {
     perk: 'Free full heal every morning', perkFx: (g) => g.state.heal(9999),
   },
   gus: {
-    name: 'Gus "The Mustache" Romano', where: 'bar', locId: 'rusty_nail', hours: [17, 2], minCha: 5,
+    name: 'Gus "The Mustache" Romano', they: 'He', where: 'bar', locId: 'rusty_nail', hours: [17, 2], minCha: 5,
     desc: 'Washed-up lounge singer. Has one hit from 1983 ("Baby, Your Love Is Like Gravy"). Mustache is load-bearing.',
     likes: ['whiskey', 'cigar', 'flowers', 'teddy', 'wine_box'], hates: ['energy_drink', 'protein_shake'],
     greet: ['Gus serenades you with eight bars of "Baby, Your Love Is Like Gravy". Nobody asked. Everyone suffers.', '"Well, hel-LO there, sweet cheeks. Gus Romano. Maybe you heard of me. You haven\'t."', 'Gus is grooming his mustache with a tiny comb. It takes 20 minutes. It\'s worth it.'],
@@ -68,9 +71,34 @@ const DATES = [
   { id: 'yacht', label: 'Sunset yacht cruise', cost: 2500, rel: 35, minCha: 60, text: ['You rent a yacht. It\'s a large pontoon boat named "Ship Happens". The sunset over the oily harbor is weirdly beautiful.', 'Champagne, a string quartet, and only one person falls overboard. It\'s the violinist. He\'s fine.'] },
 ];
 
+export const WARM_NEED = 4;
+const FLIRTS_PER_DAY = 2;
+
 export function installDating(game) {
   const st = game.state;
-  const rec = (id) => (st.p.dating[id] ??= { rel: 0, lastFlirt: 0, lastGift: 0, lastSeen: 0, dates: 0, partner: false });
+  const rec = (id) => {
+    const r = (st.p.dating[id] ??= { rel: 0, lastFlirt: 0, lastGift: 0, lastSeen: 0, dates: 0, partner: false });
+    // old saves: anyone you'd already built up to date-level counts as warmed up
+    if (r.warm == null) r.warm = r.dates > 0 || r.rel >= 25 ? WARM_NEED : Math.min(WARM_NEED - 1, Math.floor((r.rel || 0) / 7));
+    return r;
+  };
+  const ready = (r) => r.partner || r.dates > 0 || r.warm >= WARM_NEED;
+  const flirtsToday = (r) => (r.flirtDay === game.time.day ? r.flirts || 0 : 0);
+  // "She's warming up to you: 2/4" (or "ready for a date")
+  const warmLine = (id) => {
+    const d = DATEABLES[id], r = rec(id);
+    if (r.partner || r.dates > 0) return '';
+    if (r.warm >= WARM_NEED) return `<b class="ui-good">${d.they}'s into you. Ask for a date! (${WARM_NEED}/${WARM_NEED})</b>`;
+    const bar = st.p.cha < d.minCha ? ` <span class="sys-hint">(nothing counts until you have ${d.minCha} Charm; you have ${Math.floor(st.p.cha)})</span>` : '';
+    return `${d.they}'s warming up to you: <b>${r.warm}/${WARM_NEED}</b>${bar}`;
+  };
+  // A meaningful interaction while you clear their Charm bar.
+  const warmUp = (id, n = 1) => {
+    const d = DATEABLES[id], r = rec(id);
+    if (r.partner || r.dates > 0) return '';
+    if (st.p.cha >= d.minCha && n > 0) r.warm = Math.min(WARM_NEED, r.warm + n);
+    return `<br>${warmLine(id)}`;
+  };
   const present = (id, loc) => {
     const d = DATEABLES[id];
     if (!d) return false;
@@ -88,6 +116,7 @@ export function installDating(game) {
     if (game.sysFx.has('fresh')) c += 0.08;
     if (st.p.look?.hat === 'fedora') c -= 0.1;
     c -= Math.max(0, (p.sys.drunk || 0) - 1) * 0.06;
+    try { const m = Number(game.perks?.mult?.('dateChance') ?? 1); if (Number.isFinite(m) && m > 0) c *= m; } catch { /* no perks */ }
     if (p.cha < d.minCha) c = Math.min(c, 0.15);
     return clamp(c, 0.05, 0.95);
   }
@@ -111,7 +140,8 @@ export function installDating(game) {
 
   async function flirt(id) {
     const d = DATEABLES[id], r = rec(id);
-    if (r.lastFlirt === game.time.day) return say(game, d.name, `"We already talked today. Don't be clingy." ${d.name.split(' ')[0]} is right. Be cool.`);
+    if (flirtsToday(r) >= FLIRTS_PER_DAY) return say(game, d.name, `"We already talked today. Twice. Don't be clingy." ${d.name.split(' ')[0]} is right. Be cool. Come back tomorrow.`);
+    r.flirts = flirtsToday(r) + 1; r.flirtDay = game.time.day;
     r.lastFlirt = game.time.day;
     r.lastSeen = game.time.day;
     game.time.advance(15);
@@ -120,10 +150,11 @@ export function installDating(game) {
     if (ok) {
       const gain = Math.round(rand(4, 9) * relMult());
       r.rel = clamp(r.rel + gain, 0, 100);
-      txt = `${pick(d.ok)}<br><br><span class="ui-good">+${gain} relationship</span>`;
+      txt = `${pick(d.ok)}<br><br><span class="ui-good">+${gain} relationship</span>${warmUp(id, 1)}`;
+      train(game, 'cha', 0.25, 'flirt', 50, { tiring: false });
     } else {
       r.rel = clamp(r.rel - 2, 0, 100);
-      txt = `${pick(d.fail)}<br><br><span class="ui-bad">-2 relationship</span>${st.p.cha < d.minCha ? `<br><span class="sys-hint">(${d.name.split(' ')[0]} is out of your league until ~${d.minCha} Charm.)</span>` : ''}`;
+      txt = `${pick(d.fail)}<br><br><span class="ui-bad">-2 relationship</span>${st.p.cha < d.minCha ? `<br><span class="sys-hint">(${d.name.split(' ')[0]} is out of your league until ~${d.minCha} Charm.)</span>` : ''}${warmUp(id, 0)}`;
     }
     txt += jealousy(id);
     st.changed('dating');
@@ -147,9 +178,10 @@ export function installDating(game) {
     else txt = pick(['"Oh. Thanks." They pocket it. Polite, but you\'re not getting a statue.', '"Aw, that\'s sweet." They mean it about 60%.']);
     val = Math.round(val * relMult());
     r.rel = clamp(r.rel + val, 0, 100);
+    const warmTxt = warmUp(id, d.hates.includes(k) ? 0 : d.likes.includes(k) ? 2 : 1);
     st.changed('dating');
     game.bus.emit('item:used', { id: k, qty: 1, gift: id });
-    return say(game, `Gift for ${d.name}`, `${txt}<br><br><span class="${val >= 0 ? 'ui-good' : 'ui-bad'}">${val >= 0 ? '+' : ''}${val} relationship</span>`, d.name);
+    return say(game, `Gift for ${d.name}`, `${txt}<br><br><span class="${val >= 0 ? 'ui-good' : 'ui-bad'}">${val >= 0 ? '+' : ''}${val} relationship</span>${warmTxt}`, d.name);
   }
 
   async function date(id) {
@@ -157,6 +189,7 @@ export function installDating(game) {
     const p = st.p;
     const t = today(game);
     if (t['date_' + id]) return say(game, d.name, '"One date a day, tiger. I have a life. Sort of."', d.name);
+    if (!ready(r)) return say(game, d.name, `"A date? I barely know you."<br><br>${warmLine(id)}`, d.name);
     const pickD = await choose(game, {
       title: `Take ${d.name.split(' ')[0]} out`, html: `Where to? Dates take 3 hours and 15 energy.`,
       choices: DATES.map((x) => ({ label: x.label, hint: `${fmtMoney(x.cost)}${x.minCha ? ` · CHA ${x.minCha}` : ''}`, disabled: p.money < x.cost || p.cha < x.minCha || p.energy < 15, value: x.id })),
@@ -175,6 +208,7 @@ export function installDating(game) {
       r.rel = clamp(r.rel + gain, 0, 100);
       r.dates++;
       txt += `<br><br><span class="ui-good">Great date! +${gain} relationship.</span>`;
+      train(game, 'cha', 0.5, 'date', 50, { tiring: false });
       if (r.rel >= 60 && (chance(0.6) || r.partner)) {
         txt += `<br><br><em>${d.nightcap}</em>`;
         if (st.hasItem('condom')) { st.removeItem('condom', 1); txt += '<br><span class="sys-hint">You came prepared. Responsible! The glow-in-the-dark part was a hit.</span>'; r.rel = clamp(r.rel + 3, 0, 100); }
@@ -216,16 +250,16 @@ export function installDating(game) {
       const p = st.p;
       const relTxt = r.partner ? '<b style="color:#d84a8a">❤ Your partner</b>' : r.rel >= 80 ? 'Totally into you' : r.rel >= 50 ? 'Crushing on you' : r.rel >= 25 ? 'Interested' : r.rel > 0 ? 'Barely knows you' : 'Stranger';
       const opts = [
-        { label: 'Flirt', hint: r.lastFlirt === game.time.day ? 'done today, come back tomorrow' : `${Math.round(chanceFor(id) * 100)}% chance`, disabled: r.lastFlirt === game.time.day, run: () => flirt(id) },
-        { label: 'Give a gift', run: () => gift(id) },
-        { label: 'Ask on a date', hint: r.rel < 25 ? 'needs relationship 25' : '3h', disabled: r.rel < 25, run: () => date(id) },
+        { label: flirtsToday(r) ? 'Keep flirting' : 'Flirt', hint: flirtsToday(r) >= FLIRTS_PER_DAY ? 'done today, come back tomorrow' : `${Math.round(chanceFor(id) * 100)}% chance · ${FLIRTS_PER_DAY - flirtsToday(r)} left today`, disabled: flirtsToday(r) >= FLIRTS_PER_DAY, run: () => flirt(id) },
+        { label: 'Give a gift', hint: r.lastGift === game.time.day ? 'done today' : 'something they like counts double', run: () => gift(id) },
+        { label: 'Ask on a date', hint: ready(r) ? '3h' : `warming up ${r.warm}/${WARM_NEED}`, disabled: !ready(r), run: () => date(id) },
       ];
       if (!r.partner) opts.push({ label: 'Ask them to go steady', hint: r.rel >= 90 && r.dates >= 3 ? '❤' : 'needs 90 rel & 3 great dates', disabled: !(r.rel >= 90 && r.dates >= 3), run: () => official(id) });
       else opts.push({ label: 'Break up', hint: 'cold', run: async () => { if (await game.ui.confirm(`Dump ${d.name}?`)) { r.rel = 20; breakUp(id, `You dumped ${d.name}. They took it... about as well as you'd expect. Your stuff is on the curb.`); } } });
       opts.push({ label: 'Walk away' });
       const i = await game.ui.dialog({
         title: d.name, speaker: d.name,
-        html: `${pick(d.greet)}<br><br><em>${d.desc}</em><br><br>Relationship: ${meter(r.rel, 100, '#d84a8a')} ${relTxt} (${Math.round(r.rel)}/100)${r.partner ? `<br><span class="sys-hint">Perk: ${d.perk}</span>` : ''}`,
+        html: `${pick(d.greet)}<br><br><em>${d.desc}</em><br><br>Relationship: ${meter(r.rel, 100, '#d84a8a')} ${relTxt} (${Math.round(r.rel)}/100)${warmLine(id) ? `<br>${warmLine(id)}` : ''}${r.partner ? `<br><span class="sys-hint">Perk: ${d.perk}</span>` : ''}`,
         options: opts.map((o) => ({ label: o.label, hint: o.hint, disabled: o.disabled })),
       });
       if (i == null || !opts[i].run) return;
@@ -238,7 +272,8 @@ export function installDating(game) {
     if (!present(id, loc)) return null;
     const d = DATEABLES[id];
     const r = st.p.dating?.[id];
-    return { label: `Talk to ${d.name}`, hint: r?.partner ? '❤ partner' : r?.rel ? `${Math.round(r.rel)}% rel` : 'dateable', run: () => menu(id) };
+    const w = r && !r.partner && !(r.dates > 0) && (r.warm ?? 0) < WARM_NEED ? ` · warming ${r.warm ?? 0}/${WARM_NEED}` : '';
+    return { label: `Talk to ${d.name}`, hint: r?.partner ? '❤ partner' : r?.rel ? `${Math.round(r.rel)}% rel${w}` : `dateable · CHA ${d.minCha}+`, run: () => menu(id) };
   }
 
   function daily() {

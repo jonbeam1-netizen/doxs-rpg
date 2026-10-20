@@ -3,7 +3,7 @@
 // state.p.sys.gym = { until (day), lifetime }
 import { COURSES } from '../data/courses.js';
 import { fmtMoney, pick, chance, randInt, clamp } from '../core/util.js';
-import { train, today, hasCourse, reqCheck, reqHtml, reqMissing, activity, hourName, byTime } from './common.js';
+import { train, today, hasCourse, reqCheck, reqHtml, reqMissing, activity, hourName, byTime, rest, soreHint, soreMult } from './common.js';
 import { placeMenu, say, choose, shopPanel } from './ui-kit.js';
 
 export function installTraining(game) {
@@ -11,20 +11,36 @@ export function installTraining(game) {
 
   // ================= GYM =================
   const member = () => st.p.sys.gym.lifetime || st.p.sys.gym.until >= game.time.day;
+  const sh = (stat) => { const h = soreHint(st.p, stat); return h ? ` · ${h}` : ''; };
+
+  // Soreness (the daily soft cap, see common.js): real sleep clears it, naps and new days ease it.
+  game.bus.on('home:slept', ({ minutes } = {}) => rest(st.p, minutes >= 360 ? 1 : minutes >= 120 ? 0.25 : 0));
+  game.bus.on('time:day', () => rest(st.p, 0.5));
+  // Doing things builds you up too (no soreness): winning fights, pulling heists.
+  game.bus.on('brawl:won', ({ tier = 0, count = 1, boss = false } = {}) => {
+    if (count <= 0) return;
+    train(game, 'str', 0.35 + 0.3 * tier + (boss ? 0.5 : 0), 'fight', 50, { tiring: false });
+  });
+  game.bus.on('heist:completed', ({ id, quiet } = {}) => {
+    const tier = { gas: 1, truck: 2, bank: 3, casino: 4, grimco: 5 }[id] || 1;
+    if (quiet) { train(game, 'int', 0.6 + 0.4 * tier, 'heist', 50, { tiring: false }); train(game, 'cha', 0.3 + 0.2 * tier, 'heist', 50, { tiring: false }); }
+    else train(game, 'str', 0.6 + 0.4 * tier, 'heist', 50, { tiring: false });
+  });
 
   async function workout(kind) {
     const p = st.p;
     const W = {
-      lift: { min: 60, energy: 12, str: 1.4, text: ['You bench press until a vein in your forehead says hello.', 'You curl in the squat rack. Brick screams like you shot his dog.', 'You do one more rep. Then another. Then you see your grandma, who is dead.'] },
-      heavy: { min: 180, energy: 34, str: 4.6, text: ['Leg day. You will never walk normally again. You will walk like a cowboy who lost a bet.', 'Three hours of deadlifts. Your spine is now a suggestion.', 'Brick puts you through "The Mastodon Protocol". You throw up in a bucket labeled "FOR YOU".'] },
+      lift: { min: 60, energy: 12, str: 1.1, text: ['You bench press until a vein in your forehead says hello.', 'You curl in the squat rack. Brick screams like you shot his dog.', 'You do one more rep. Then another. Then you see your grandma, who is dead.'] },
+      heavy: { min: 180, energy: 34, str: 3.6, text: ['Leg day. You will never walk normally again. You will walk like a cowboy who lost a bet.', 'Three hours of deadlifts. Your spine is now a suggestion.', 'Brick puts you through "The Mastodon Protocol". You throw up in a bucket labeled "FOR YOU".'] },
       cardio: { min: 60, energy: 10, str: 0.45, text: ['You run on the treadmill watching a cooking show. You burn 300 calories and gain 400 in envy.', 'The treadmill next to you is a 70-year-old woman. She laps you. On a treadmill. Somehow.'] },
-      spar: { min: 60, energy: 16, str: 1.9, hp: 10, text: ['Brick spars with you. "Hands up! HANDS UP!" Your hands are up. They were always up. He hits you anyway.', 'You land one punch on Brick. He laughs, then sits on you. For 20 minutes.'] },
+      spar: { min: 60, energy: 16, str: 1.5, hp: 10, text: ['Brick spars with you. "Hands up! HANDS UP!" Your hands are up. They were always up. He hits you anyway.', 'You land one punch on Brick. He laughs, then sits on you. For 20 minutes.'] },
     }[kind];
     if (!activity(game, { minutes: W.min, energy: W.energy })) return;
     if (W.hp) st.damage(W.hp, 'spar');
     const gained = train(game, 'str', W.str, 'gym');
     st.addXP(Math.round(W.min / 10));
     let extra = '';
+    if (st.p.str >= 15 && soreMult(st.p, 'str') < 0.97) extra += `<br><span class="sys-hint">Sore (${soreHint(st.p, 'str')}). Sleep it off, or go use those muscles: fights, the meat plant, The Pit.</span>`;
     if (kind === 'cardio' && p.maxEnergy < 200 && chance(0.3)) { p.maxEnergy += 1; st.changed('energy'); extra = '<br><span class="ui-good">Your stamina improves: +1 max energy.</span>'; }
     if (game.sysFx.has('roids') && chance(0.25)) extra += '<br><em>Roid rage! You scream at a water fountain. It had it coming.</em>';
     await say(game, 'Iron Lung Gym', `${pick(W.text)}${gained ? `<br><br>+${Math.round(gained * 100) / 100} STR` : ''}${extra}`);
@@ -55,10 +71,10 @@ export function installTraining(game) {
         out.push({ label: 'Monthly membership', hint: '$150 / 30 days', run: () => { if (st.spend(150, 'gym')) { p.sys.gym.until = game.time.day + 29; game.ui.toast('Member! You get a keycard and a free towel (used).', 'good'); } } });
       }
       if (!p.sys.gym.lifetime) out.push({ label: 'Lifetime membership', hint: '$2,500', run: () => { if (st.spend(2500, 'gym')) { p.sys.gym.lifetime = true; game.ui.toast('LIFETIME MEMBER. Brick gives you a hug. Three ribs crack. Worth it.', 'good', 3500); } } });
-      out.push({ label: 'Pump iron', hint: '1h · -12 energy', disabled: !m, run: () => workout('lift') });
-      out.push({ label: 'Heavy session with Brick', hint: '3h · -34 energy', disabled: !m, run: () => workout('heavy') });
+      out.push({ label: 'Pump iron', hint: `1h · -12 energy${sh('str')}`, disabled: !m, run: () => workout('lift') });
+      out.push({ label: 'Heavy session with Brick', hint: `3h · -34 energy${sh('str')}`, disabled: !m, run: () => workout('heavy') });
       out.push({ label: 'Treadmill', hint: '1h · -10 energy · stamina', disabled: !m, run: () => workout('cardio') });
-      out.push({ label: 'Spar in the ring', hint: p.str < 15 ? 'needs STR 15' : '1h · -16 energy · hurts', disabled: !m || p.str < 15, run: () => workout('spar') });
+      out.push({ label: 'Spar in the ring', hint: p.str < 15 ? 'needs STR 15' : `1h · -16 energy · hurts${sh('str')}`, disabled: !m || p.str < 15, run: () => workout('spar') });
       out.push({ label: 'Gym showers', hint: 'free', disabled: !m, run: () => { g.time.advance(15); game.sysFx.add({ id: 'fresh', min: 360, temp: { cha: 1 } }); return say(g, 'Gym Showers', pick(['Three naked old men discuss the stock market. You learn about bonds. You did not want to learn about bonds.', 'The water is cold. The floor is warm. You don\'t want to know why.'])); } });
       out.push({ label: 'Juice bar', run: () => shopPanel(g, { title: 'Juice Bar', speaker: 'Brick Mastodon', intro: '"Protein! PROTEIN! Your body is a temple. A temple made of chicken."', sections: [{ products: [
         { name: 'Swole Sludge Protein', desc: game.items.def('protein_shake').desc, price: 12, qty: true, buy: (q) => game.items.buy('protein_shake', q, 12) },
@@ -95,13 +111,13 @@ export function installTraining(game) {
       const p = st.p;
       const t = today(g);
       return [
-        { label: 'Read for an hour', hint: '1h · -5 energy · +INT', run: async () => {
+        { label: 'Read for an hour', hint: `1h · -5 energy · +INT${sh('int')}`, run: async () => {
           if (!activity(g, { minutes: 60, energy: 5 })) return;
-          const gain = train(g, 'int', 0.9, 'library', 40);
+          const gain = train(g, 'int', 0.8, 'library', 40);
           st.addXP(4);
           return say(g, 'Reading', `${pick(['You read about the history of spoons. It\'s riveting. It\'s not.', 'You read a book on quantum physics. You understand one word: "the".', 'You read the entire "Garfield" collection. Educational? Debatable.', 'You read a romance novel called "Lust in the Rendering Plant". You learn several new words for "throbbing".'])}<br><br>+${Math.round(gain * 100) / 100} INT`);
         } },
-        { label: 'Hit the books hard', hint: '3h · -18 energy · ++INT', run: async () => {
+        { label: 'Hit the books hard', hint: `3h · -18 energy · ++INT${sh('int')}`, run: async () => {
           if (!activity(g, { minutes: 180, energy: 18 })) return;
           const gain = train(g, 'int', 2.8, 'library', 40);
           st.addXP(14);
@@ -130,7 +146,7 @@ export function installTraining(game) {
           st.addStat('energy', 12);
           return say(g, 'Reading Room', 'You nap face-down in an atlas. You wake up with Madagascar printed on your cheek. +12 energy.');
         } },
-        { label: 'Public speaking club', hint: '$5 · 2h · -12 energy · +CHA', run: async () => {
+        { label: 'Public speaking club', hint: `$5 · 2h · -12 energy · +CHA${sh('cha')}`, run: async () => {
           if (!activity(g, { minutes: 120, energy: 12, cost: 5, reason: 'club dues' })) return;
           const gain = train(g, 'cha', 1.5, 'speaking club');
           st.addXP(8);

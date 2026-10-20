@@ -660,7 +660,7 @@ export const QUESTS = {
       },
       {
         text: 'Vivienne is sending Two-Ton Tito after the Rats. Hit the Velvet Syndicate lounge in Hilltop first. (Bring a real weapon and some bandages.)',
-        obj: { type: 'brawl', loc: 'syndicate_lounge', count: 5, kind: 'gang', tier: 3, label: 'Two-Ton Tito & the Velvet Goons' },
+        obj: { type: 'brawl', loc: 'syndicate_lounge', count: 4, kind: 'gang', tier: 3, label: 'Two-Ton Tito & the Velvet Goons', boss: { name: 'Two-Ton Tito', moves: ['combo', 'charge'], weapon: 'brass', dmg: 1, scale: 1.3 } }, // Tito + 3 goons (5 goons + a bat-wielding, guarding Tito was a coin flip at STR 32)
         arrive: [{ who: 'nar', t: ['> Two-Ton Tito fills the doorway. Not metaphorically. They had to widen it. Twice.', '> "The Contessa says hello," he rumbles. "And goodbye. Mostly goodbye."'] }],
         win: ['> Two-Ton Tito goes down like a sack of wet laundry. The building shakes. Somewhere upstairs, Vivienne screams into a pillow embroidered with her own face.'],
       },

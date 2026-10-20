@@ -46,24 +46,84 @@ export function today(game) {
   return s.today;
 }
 
+// ---------------------------------------------------------------------------------------------
+// Stat curve (balance pass 4). Stats used to fall in a day and a half (STR 12 -> 34) while cash
+// carried all the pacing. Now:
+//   - "newbie gains": while a stat is under 15 every gain is x1.4 (the first 15 minutes stay quick);
+//   - diminishing returns: the old soft curve, plus an extra falloff once a stat passes 25;
+//   - soreness (the daily soft cap): points from training since your last real sleep (6h+) pile up;
+//     past SORE_FREE further training in that stat gives less and less. A 2h nap takes a quarter
+//     off, a new day halves it. Stats under 15 never get sore. Courses (once a day anyway), job
+//     shifts and "doing things" rewards (fights won, heists, flirts/dates: tiring:false) skip
+//     soreness entirely, so the city itself is the best gym.
+// p.sys.sore = { str, int, cha } (points gained while tired-eligible since the last sleep)
+// ---------------------------------------------------------------------------------------------
+export const SORE_FREE = 2;     // points per rest cycle at full speed
+export const SORE_SPAN = 2;     // every SORE_SPAN points beyond that: gains / (1 + n)
+export const NEWBIE_UNTIL = 15;
+
 // Diminishing returns: high stats grow slower. `soft` is the stat value at which gains halve.
 export function dim(base, current, soft = 50) {
-  return base * soft / (soft + Math.max(0, current));
+  const c = Math.max(0, current);
+  let m = soft / (soft + c);
+  if (c > 25) m *= 25 / c;
+  return base * m;
 }
 
+// 1 = fresh, lower = sore. Training the same stat over and over before sleeping is the soft cap.
+export function soreMult(p, stat, extra = 0) {
+  const f = (p.sys?.sore?.[stat] || 0) + extra;
+  return f <= SORE_FREE ? 1 : 1 / (1 + (f - SORE_FREE) / SORE_SPAN);
+}
+
+const SORE_TEXT = {
+  str: 'Your muscles are SCREAMING. STR training is less effective until you sleep (6h+). Fights, jobs and heists still build you up.',
+  int: 'Your brain is fried. INT study is less effective until you sleep (6h+). Classes still count in full.',
+  cha: 'You\'re socially drained. CHA practice is less effective until you sleep (6h+). Dates and real adventures still count.',
+};
+
 // Train a stat with diminishing returns + active effect multipliers. Returns actual gain.
-export function train(game, stat, base, source = '', soft = 50) {
+// opts.tiring = false: an activity reward that ignores (and doesn't add to) soreness.
+export function train(game, stat, base, source = '', soft = 50, opts = {}) {
   const p = game.state.p;
   let mult = 1;
   const fx = game.sysFx;
   if (stat === 'str' && fx) {
     if (fx.has('roids')) mult *= 2;
-    if (fx.has('protein')) mult *= 1.5;
+    if (fx.has('protein')) mult *= 1.3;
   }
   if (fx?.has('withdrawal')) mult *= 0.7;
-  const amount = Math.round(dim(base, p[stat], soft) * mult * 100) / 100;
+  const cur = p[stat] ?? 0;
+  if (cur < NEWBIE_UNTIL) mult *= 1.4;
+  const src = String(source);
+  const tiring = opts.tiring !== false && !src.startsWith('course:') && !src.startsWith('job:') && cur >= NEWBIE_UNTIL && stat in SORE_TEXT;
+  const before = tiring ? soreMult(p, stat) : 1;
+  // judge soreness halfway through this session, so one huge session can't blow past the cap
+  if (tiring) mult *= soreMult(p, stat, dim(base, cur, soft) * mult / 2);
+  const amount = Math.round(dim(base, cur, soft) * mult * 100) / 100;
   if (amount <= 0) return 0;
-  return game.state.addStat(stat, amount, source);
+  const got = game.state.addStat(stat, amount, source) || 0;
+  if (tiring && got > 0) {
+    p.sys ??= {};
+    const sore = (p.sys.sore ??= {});
+    sore[stat] = Math.round(((sore[stat] || 0) + got) * 100) / 100;
+    const after = soreMult(p, stat);
+    if (before > 0.8 && after <= 0.8) game.ui?.toast(SORE_TEXT[stat], 'bad', 4500);
+  }
+  return got;
+}
+
+// Rest: sleeping 6h+ clears soreness, a nap takes a quarter off, a new day halves it.
+export function rest(p, frac = 1) {
+  const sore = p.sys?.sore;
+  if (!sore) return;
+  for (const k of Object.keys(sore)) { sore[k] = Math.round(sore[k] * (1 - frac) * 100) / 100; if (sore[k] < 0.05) delete sore[k]; }
+}
+
+// "Sore: STR -40%" style hint for menus ('' when fresh).
+export function soreHint(p, stat) {
+  const m = soreMult(p, stat);
+  return m >= 0.97 ? '' : `sore: gains -${Math.round((1 - m) * 100)}%`;
 }
 
 export function hasCourse(p, id) {

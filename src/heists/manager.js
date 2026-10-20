@@ -224,7 +224,9 @@ export class HeistManager {
     return {
       kind: 'thug', role: 'thug', x, z, facing: Math.random() * Math.PI * 2, name,
       color: def.id === 'grimco' ? '#0f1012' : GUARD_COLOR, hat: def.id === 'grimco' ? 'hardhat' : 'cop', hatColor: def.id === 'grimco' ? '#0a0a0a' : '#1b2230',
-      hp: 70 + def.tier * 18, weapon, hostile, wander: !hostile, leash: 5,
+      hp: def.guard?.hp ?? 70 + def.tier * 18, weapon, hostile, wander: !hostile, leash: 5,
+      // per-job tuning (src/data/heists.js guard): gun accuracy and how many may shoot at you at once
+      acc: def.guard?.acc ?? 1, shooters: def.guard?.shooters ?? 2,
       networked: !!(this.net.connected && this.net.isHost), persistent: false,
       talkPrompt: `Talk to ${name} <small>(guard)</small>`,
       onTalk: (g, npc) => this.guardTalk(npc),
@@ -572,7 +574,7 @@ export class HeistManager {
     if (loudGuard) this.g.npcs.say?.(loudGuard, pick(GUARD_BARKS.spot), { ttl: 2.5, kind: 'angry' });
     if (this.A.civ && !this.A.civ.removed) this.g.npcs.say?.(this.A.civ, pick(this.A.def.civ.lines), { ttl: 3.5 });
     try { this.g.npcs.ambient?.panic?.(s.target.x, s.target.z, 35); } catch { /* ignore */ }
-    this.A.waveT = Math.min(this.A.waveT || 30, 25);
+    this.A.waveT = Math.min(this.A.waveT || 30, s.approach === 'quiet' ? 35 : 25);
     this.dirty();
   }
 
@@ -969,7 +971,9 @@ export class HeistManager {
       for (const n of alive) if (!n.hostile) { const t = this.nearestCrewTarget(n.pos.x, n.pos.z, 40); if (t) this.aggro(n); }
     }
     if (A.barkT <= 0 && alive.length) { A.barkT = rand(5, 9); const n = pick(alive); if (n.dist < 30) npcs.say?.(n, pick(GUARD_BARKS.alarm), { ttl: 2, kind: 'angry' }); }
-    const W = A.def.waves;
+    // A quiet job that went loud only gets the skeleton crew: later, smaller waves.
+    const W0 = A.def.waves;
+    const W = W0 && s.approach === 'quiet' ? { ...W0, every: W0.every * 1.4, count: Math.max(1, W0.count - 1), max: Math.max(2, W0.max - 2) } : W0;
     if (W && s.timeLeft > 20) {
       A.waveT -= dt;
       const anyNear = s.crew.some((c) => { if (c.out) return false; const p = this.crewPos(c.id); return p && Math.hypot(p.x - s.target.x, p.z - s.target.z) < 80; });

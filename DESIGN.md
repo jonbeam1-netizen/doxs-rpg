@@ -201,3 +201,7 @@ Also owns `src/data/barks.js` (`bark(kind)` one-liners).
 - Combat (round 3): combos, heavy, kick, block/parry, roll, lock-on, hit-stop via game.timeScale (wraps clock.getDelta).
   Boss spec: startBrawl({..., boss: true | {name, hp, moves:['combo','charge','slam','block','summon'], weapon, scale, color, hat, dmg}}).
 - Traffic signals: game.world.signals (src/world/signals.js); AI cars and pedestrians obey them.
+- Balance (round 5): heist guards take turns/volley with telegraph glints; Terry sells a used 9mm ($450) + ammo;
+  dating first date after 4 interactions (progress shown); stat gains x1.4 below 15, diminishing past 25,
+  soreness cap ~2 pts per sleep; fights/heists/dates also raise stats.
+- Audio (round 5): src/audio/mixer.js buses (sfx/ambience/music/ui) + limiter; game.audio.play3D(preset|fn, x, z, opts).
