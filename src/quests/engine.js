@@ -493,7 +493,7 @@ export class QuestEngine {
         let r = st.arrive ? await this.say(st.arrive, ctx) : 'advance';
         if (r === 'stay' || r === 'decline') return;
         const o = st.obj;
-        const won = await this.brawl({ count: o.count, kind: o.kind, tier: o.tier, label: o.label });
+        const won = await this.brawl({ count: o.count, kind: o.kind, tier: o.tier, label: o.label, names: o.names, boss: o.boss });
         if (!this._still(id, stepAt)) return;
         if (won) {
           if (st.win) await this.say(st.win, ctx);

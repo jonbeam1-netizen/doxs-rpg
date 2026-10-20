@@ -99,7 +99,7 @@ export function openCreator(game, layer, { name = 'Dox', look: initLook = null }
           <label>Background</label>
           <div class="bgs">${Object.entries(BACKGROUNDS).map(([k, b]) => `
             <button class="bg-card" data-k="bg" data-v="${k}"><b>${b.name}</b><span>${b.blurb}</span>
-              <ul>${b.perks.map((x) => `<li>${x}</li>`).join('')}</ul></button>`).join('')}</div>
+              <ul>${b.perks.map((x) => `<li${/^[−-]/.test(x) ? ' class="cr-minus"' : ''}>${x}</li>`).join('')}</ul></button>`).join('')}</div>
         </div>
       </div>
       <div class="creator-foot">

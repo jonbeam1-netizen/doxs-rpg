@@ -541,7 +541,7 @@ export const QUESTS = {
       },
       {
         text: 'Two drunks are hassling the hobos under the overpass. Go knock them out (Left-click to punch, keep moving).',
-        obj: { type: 'brawl', loc: 'hobo_camp', count: 2, kind: 'drunk', tier: 0, label: 'Drunk Doug & Drunker Doug', radius: 12 },
+        obj: { type: 'brawl', loc: 'hobo_camp', count: 2, kind: 'drunk', tier: 0, label: 'Drunk Doug & Drunker Doug', names: ['Drunk Doug', 'Drunker Doug'], radius: 12 },
         arrive: [{ who: 'nar', t: ['> Two men in matching stained tank tops are trying to steal Reg\'s burning barrel. One of them is hugging it. He is on fire a little.', '> "This is OUR barrel now," slurs Drunk Doug. "Fight us. Or don\'t. Please don\'t."'] }],
         win: ['> The Dougs go down like two sacks of wet laundry. In their pockets: $40 and a coupon for a free colonoscopy. Reg applauds with his feet.'],
         reward: { money: 40, karma: 1 },

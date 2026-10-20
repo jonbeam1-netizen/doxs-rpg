@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { WEAPONS, AMMO } from '../data/weapons.js';
-import { clamp, rand, randInt, pick, chance, fmtMoney, esc, angleLerp } from '../core/util.js';
+import { clamp, rand, randInt, pick, chance, fmtMoney, esc, angleLerp, weightedPick } from '../core/util.js';
 import { weaponDef, weaponMesh, MUZZLE } from './weapons-mesh.js';
 import { DEATH_SUBS, KO_SUBS, TAUNTS } from './names.js';
 
@@ -546,7 +546,7 @@ export class Combat {
       const fxd = ITEMS[id]?.fx;
       return g.state.hasItem(id) && fxd && fxd.hp > 0 && !fxd.drunk && !fxd.time && !fxd.addiction && !(fxd.special && fxd.special !== 'holy');
     });
-    if (!owned.length) { g.ui.toast('No healing items! Bandages & painkillers: any pharmacy. <kbd>Y</kbd> uses them mid-fight.', 'bad', 2600); this.healCd = 1; return; }
+    if (!owned.length) { g.ui.toast('No healing items! Bandages & painkillers: Gas-N-Gulp Mart. <kbd>Y</kbd> uses them mid-fight.', 'bad', 2600); this.healCd = 1; return; }
     const med = owned.filter((id) => ITEMS[id].cat === 'med');
     const pool = med.length ? med : owned;
     pool.sort((a, b) => {
@@ -1196,7 +1196,13 @@ export class Combat {
     }
     if (['thug', 'gang', 'dealer', 'shady'].includes(info.role) && this.DRUGS && chance(info.role === 'dealer' ? 0.8 : 0.22)) {
       const ids = Object.keys(this.DRUGS);
-      if (ids.length) fx.dropPickup(info.x, info.z, { kind: 'drug', drug: pick(ids), qty: randInt(1, info.role === 'dealer' ? 5 : 2) });
+      // Street drops skew hard toward cheap stuff: odds ~ 1/base price, so a
+      // $4k bag of Velvet Thunder is a rare jackpot, not a quest skip.
+      if (ids.length) {
+        const drug = weightedPick(ids.map((id) => [id, 1 / Math.max(10, this.DRUGS[id].base || 50)]));
+        const exp = (this.DRUGS[drug].base || 50) > 400;
+        fx.dropPickup(info.x, info.z, { kind: 'drug', drug, qty: exp ? 1 : randInt(1, info.role === 'dealer' ? 5 : 2) });
+      }
     }
     if (this.ITEMS && chance(info.boss ? 1 : 0.18)) {
       const ids = (info.boss ? ['first_aid', 'painkillers'] : ITEM_CANDIDATES).filter((i) => this.ITEMS[i]);
@@ -1307,6 +1313,7 @@ export class Combat {
     const boss = this._bossSpec(spec);
     const b = { id, label: spec.label || 'Brawl', kind, tier, lethal, npcIds: [], onWin: spec.onWin, onLose: spec.onLose, peer, reqId, target, x: cx, z: cz, done: false, t: 0, faction, boss: boss?.name || null };
     let gunners = 0;
+    let usedNames = null;
     for (let i = 0; i < count; i++) {
       const a = (i / count) * Math.PI * 2 + rand(-0.3, 0.3);
       const r = rand(3, 5.5);
@@ -1333,9 +1340,14 @@ export class Combat {
         boss: isBoss ? boss : undefined,
         scale: isBoss ? (boss.scale ?? 1.22) : undefined,
         color: isBoss ? boss.color : undefined, hat: isBoss && boss.hat !== undefined ? boss.hat : undefined, hatColor: isBoss ? boss.hatColor : undefined,
+        name: isBoss && boss.name ? boss.name : (Array.isArray(spec.names) && typeof spec.names[i] === 'string' ? spec.names[i] : undefined),
         data: { brawl: true },
       });
       if (!npc) continue;
+      // No two goons in one fight share a name ("Hiccup Harold" x2 → "Hiccup Harold Jr.").
+      usedNames ??= new Set();
+      while (usedNames.has(npc.name)) npc.name += ' Jr.';
+      usedNames.add(npc.name);
       npc.aggressor = true;
       npc.tierMult = (1 + 0.25 * tier) * (isBoss ? (boss.dmg ?? 1.1) : 1);
       if (kind === 'fighter') npc.run *= 1 + tier * 0.05;

@@ -29,14 +29,22 @@ export class Interactions {
     // p.suppressInteract: a riding mode (e.g. the skateboard) has taken over the E key.
     if (!p || !g.started || g.controlsLocked || p.vehicle || p.dead || p.suppressInteract) { this._show(null); return; }
     const px = p.group.position.x, pz = p.group.position.z;
-    let best = null, bestD = Infinity;
+    const fx = Math.sin(p.facing), fz = Math.cos(p.facing);
+    let best = null, bestScore = Infinity;
     for (const it of this.items.values()) {
       const pos = it.getPos ? it.getPos() : it;
       if (!pos) continue;
-      const d = Math.hypot(pos.x - px, pos.z - pz);
-      if (d > it.radius || d >= bestD) continue;
+      const dx = pos.x - px, dz = pos.z - pz;
+      const d = Math.hypot(dx, dz);
+      if (d > it.radius) continue;
+      // Prefer what the player is facing, and people (moving things) over props:
+      // a target straight ahead scores like it's ~half as far away.
+      const dot = d > 0.01 ? (dx * fx + dz * fz) / d : 1;
+      let score = d * (1.5 - 0.75 * Math.max(0, dot));
+      if (it.getPos) score *= 0.85;
+      if (score >= bestScore) continue;
       if (it.enabled && !it.enabled(g)) continue;
-      best = it; bestD = d;
+      best = it; bestScore = score;
     }
     this._show(best);
     if (best && g.input.wasPressed('KeyE')) {
