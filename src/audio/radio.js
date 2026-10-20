@@ -348,6 +348,9 @@ export function installRadio(game) {
   }
   function updateTalk() {
     if (playing !== 'talk') return;
+    // speech synthesis isn't routed through the AudioContext: keep Big Ron quiet while it's
+    // suspended (tab hidden, muted session) instead of talking over a frozen game
+    if (ctx.state !== 'running') { if (talk.busy) stopTalk(); talk.until = performance.now() + 600; return; }
     const now = performance.now();
     if (!talk.busy && now >= talk.until) nextTalkLine();
     else if (talk.busy && talk.watchdog && now > talk.until) { try { speechSynthesis.cancel(); } catch { /* ignore */ } talk.busy = false; }

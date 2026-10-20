@@ -5,6 +5,26 @@ import { clamp, rand, pick } from '../core/util.js';
 // flashes, loot pickups, speech bubbles and floating damage numbers.
 
 // ---------------------------------------------------------------- audio
+// combat name -> [sample group, level, opts]. Anything not listed (guns, tells, jingles) stays synth.
+const REC = {
+  punch: ['hit', 1],
+  kick: ['hit', 1.1, { rate: 0.9 }],
+  smack: ['hit_crit', 0.85, { rate: 0.92 }],
+  heavy: ['hit_crit', 1.1, { rate: 0.85 }],
+  slam: ['slam', 1],
+  slash: ['swing', 1.6, { rate: 1.25 }],
+  whoosh: ['swing', 1],
+  block: ['shield_block', 0.9],
+  parry: ['shield_block', 1.1, { rate: 1.3 }],
+  hurt: ['hero_ouch', 1],
+  grunt: ['hurt', 1],
+  pickup: ['item_pickup', 1],
+  cash: ['coin_drop', 1],
+  heal: ['heal', 1],
+};
+// synth sub-thump layered under recorded body hits: [f0, f1, dur, level]
+const SUB = { punch: [150, 45, 0.12, 0.45], kick: [125, 40, 0.15, 0.55], smack: [110, 35, 0.16, 0.5], heavy: [90, 28, 0.28, 0.75], slam: [70, 24, 0.4, 0.5] };
+
 export class Sfx {
   constructor(game) {
     this.game = game;
@@ -17,10 +37,10 @@ export class Sfx {
 
   ctx() {
     const shared = this.game.audio;
-    if (shared?.ctx) {
-      if (shared.ctx.state === 'suspended') shared.ctx.resume?.();
-      return shared.ctx;
-    }
+    if (shared?.ctx) return shared.ctx;
+    // The audio module owns the context and creates it on the first gesture. Never make a second,
+    // private one while it exists (that one bypassed the mixer, the volume sliders and ?dev mute).
+    if (shared) return null;
     if (!this._ctx) {
       const AC = window.AudioContext || window.webkitAudioContext;
       if (!AC) return null;
@@ -90,6 +110,19 @@ export class Sfx {
     s.start(t0, Math.random() * 0.5); s.stop(t0 + dur + 0.02);
   }
 
+  // Recorded sample for this combat sound (src/audio/samples.js), or false -> synth patch.
+  _recorded(name, pos, vol) {
+    const S = this.game.audio?.samples;
+    const m = REC[name];
+    if (!S || !m) return false;
+    const [g, k, opts] = m;
+    if (!S.has(g)) return false;
+    // player-centred sounds (no pos) play flat; NPC sounds are positioned
+    if (pos) S.play3D(g, pos.x, pos.z, { maxDist: 70, refDist: 3, vol: vol * k, ...opts });
+    else S.play(g, { vol: vol * k, ...opts });
+    return true;
+  }
+
   play(name, { pos = null, vol = 1 } = {}) {
     try {
       const ctx = this.ctx();
@@ -109,6 +142,12 @@ export class Sfx {
         if (!out || v < 0.005) return;
       }
       const t = ctx.currentTime + 0.005 + Math.random() * 0.006;
+      if (this._recorded(name, pos, vol)) {
+        // recorded layer played; add a short synth sub-thump under body hits so they land punchy
+        const sub = SUB[name];
+        if (sub) this._osc(ctx, out, 'sine', sub[0] * rand(0.92, 1.08), sub[1], t, sub[2], sub[3] * v);
+        return;
+      }
       const r = rand(0.85, 1.15);
       const r2 = rand(0.96, 1.04);
       switch (name) {

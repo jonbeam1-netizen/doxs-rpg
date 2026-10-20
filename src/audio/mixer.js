@@ -11,13 +11,15 @@
 
 export const BUSES = ['sfx', 'amb', 'music', 'ui'];
 export const BUS_LABELS = { sfx: 'Effects', amb: 'Ambience & weather', music: 'Music & radio', ui: 'Interface' };
-export const BUS_DEFAULTS = { sfx: 1, amb: 0.85, music: 0.8, ui: 0.7 };
+// Defaults for players with no saved setting (round 8 mix pass: ambience and UI sit lower).
+export const BUS_DEFAULTS = { sfx: 1, amb: 0.7, music: 0.75, ui: 0.55 };
+export const MASTER_DEFAULT = 0.3; // owner request: 30% master for new players
 
 // Makeup compensation for the glue compressor's automatic makeup gain (measured offline:
 // a -20 dBFS sine comes out of mix->comp->limiter at about the same level it went in).
 const MIX_TRIM = 0.62;
 
-export function buildMixer(ctx, { master = 0.6, levels = {} } = {}) {
+export function buildMixer(ctx, { master = MASTER_DEFAULT, levels = {} } = {}) {
   const out = ctx.createGain();
   out.gain.value = master;
   const comp = ctx.createDynamicsCompressor();

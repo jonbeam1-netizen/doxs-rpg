@@ -244,7 +244,8 @@ export class Traffic {
     if (ai.stunned > 0) {
       ai.stunned -= dt;
       inp.throttle = 0; inp.reverse = 0; inp.steer = 0; inp.handbrake = car.speed < 3;
-      if (ai.stunned <= 0) this.honk(car, true);
+      // angry honk after a crash only if the player was in it (AI-on-AI fender benders stay quiet)
+      if (ai.stunned <= 0 && ai.honkT <= 0 && this.playerNear(car, 9)) { ai.honkT = 10 + Math.random() * 4; this.honk(car, true); }
       return;
     }
     const G = this.graph();
@@ -316,10 +317,14 @@ export class Traffic {
     else if (ai.obst < 99) desired = ai.obst < 4 ? 0 : Math.min(desired, (ai.obst - 4) * 1.1);
 
     if (desired < 0.5 && car.speed < 1) ai.wait += dt; else ai.wait = Math.max(0, ai.wait - dt * 2);
+    // Honk only when actually blocked by the player / another car (not queued at a red light, not
+    // a pedestrian), continuously for >1.5 s (2.5 s behind a car), then at most once per ~10 s.
     ai.honkT -= dt;
-    if (ai.wait > 1.2 && ai.obstType === 'player' && ai.honkT <= 0) {
-      ai.honkT = 2.5 + Math.random() * 3;
-      this.honk(car, ai.wait > 5);
+    const blocked = (ai.obstType === 'player' || ai.obstType === 'car') && ai.obst < 5 && !ai.lightHold && !(ai.yieldT > 0) && car.speed < 1;
+    ai.blockT = blocked ? (ai.blockT || 0) + dt : 0;
+    if (ai.honkT <= 0 && ai.blockT > (ai.obstType === 'player' ? 1.5 : 2.5)) {
+      ai.honkT = 10 + Math.random() * 4;
+      this.honk(car, ai.blockT > 6);
     }
     // stuck behind something that isn't moving? nudge past it — unless we're all waiting at a red light
     if (ai.wait > 4 && ai.obstType !== 'player' && !ai.lightHold) { ai.ignoreT = 2.2; ai.wait = 0; }
@@ -397,10 +402,15 @@ export class Traffic {
     return { d: best, type };
   }
 
+  playerNear(car, r) {
+    const pp = this.game.player?.group?.position;
+    return !!pp && Math.hypot(car.x - pp.x, car.z - pp.z) < r;
+  }
+
   honk(car, angry = false) {
     const pp = this.game.player.group.position;
     const d = Math.hypot(car.x - pp.x, car.z - pp.z);
-    this.vm.audio.honk(d, angry);
+    if (this.vm.audio.honk(d, angry, car.x, car.z) === false) return; // too far / global horn cap
     if (d < 18 && this.barkT <= 0 && Math.random() < 0.35) {
       this.barkT = 9;
       this.game.ui.toast(`<i>Driver:</i> "${pick(HONK_BARKS)}"`, 'info', 2600);

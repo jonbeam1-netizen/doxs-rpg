@@ -1,17 +1,22 @@
 // Synthesized vehicle sounds routed into game.audio.sfx (so the global volume
 // slider applies). Falls back to a private AudioContext if the audio module
-// isn't installed. Engine = detuned saw + square through a low-pass whose
-// pitch follows a fake gearbox RPM.
+// isn't installed. Engine = saw + triangle sub through a low-pass whose
+// pitch follows a fake gearbox RPM (smoothed, so gear changes glide instead of snapping).
+//
+// Levels (round 8 audio pass): the engine used to sit at ~-20 dBFS RMS, continuously, louder than
+// every punch and line of dialog. It now idles far lower and tops out well under SFX and the
+// radio. The buzzy square-wave sub was swapped for a softer triangle.
 
 const ENGINE = {
   bike: null,
-  moped: { base: 85, range: 170, wave: 'square', cutoff: 1400, vol: 0.09 },
-  moto: { base: 52, range: 210, wave: 'sawtooth', cutoff: 1500, vol: 0.13 },
-  car: { base: 36, range: 120, wave: 'sawtooth', cutoff: 900, vol: 0.13 },
-  truck: { base: 28, range: 80, wave: 'sawtooth', cutoff: 650, vol: 0.15 },
-  sports: { base: 52, range: 230, wave: 'sawtooth', cutoff: 1800, vol: 0.13 },
-  muscle: { base: 32, range: 125, wave: 'square', cutoff: 800, vol: 0.15 },
+  moped: { base: 85, range: 170, wave: 'sawtooth', cutoff: 1300, vol: 0.032 },
+  moto: { base: 52, range: 210, wave: 'sawtooth', cutoff: 1400, vol: 0.04 },
+  car: { base: 36, range: 120, wave: 'sawtooth', cutoff: 850, vol: 0.045 },
+  truck: { base: 28, range: 80, wave: 'sawtooth', cutoff: 620, vol: 0.05 },
+  sports: { base: 52, range: 230, wave: 'sawtooth', cutoff: 1600, vol: 0.042 },
+  muscle: { base: 32, range: 125, wave: 'sawtooth', cutoff: 760, vol: 0.05 },
 };
+const HONK_GAP = 1.4, HONK_WINDOW = 12, HONK_MAX = 3; // global traffic-horn cap: >=1.4 s apart, <=3 per 12 s
 
 export function engineProfile(def) {
   if (def.kind === 'bike') return null;
@@ -30,6 +35,9 @@ export class CarAudio {
     this.engine = null;
     this.hornNodes = null;
     this.skidGain = null;
+    this._honks = [];
+    this._crashT = 0;
+    this._rpm = 0;
     const unlock = () => this.ctx;
     addEventListener('keydown', unlock);
     addEventListener('mousedown', unlock);
@@ -71,28 +79,32 @@ export class CarAudio {
     if (!prof || !ctx || !out) { this._pendingDef = prof ? def : null; return; }
     this._pendingDef = null;
     const o1 = ctx.createOscillator(), o2 = ctx.createOscillator();
-    o1.type = prof.wave; o2.type = 'square';
+    o1.type = prof.wave; o2.type = 'triangle';
     o1.frequency.value = prof.base; o2.frequency.value = prof.base * 0.5;
     o2.detune.value = 9;
+    o1._tag = 'engine'; o2._tag = 'engine-sub';
     const lp = ctx.createBiquadFilter();
-    lp.type = 'lowpass'; lp.frequency.value = prof.cutoff; lp.Q.value = 2.5;
+    lp.type = 'lowpass'; lp.frequency.value = prof.cutoff; lp.Q.value = 1.1;
     const g = ctx.createGain(); g.gain.value = 0;
-    const g2 = ctx.createGain(); g2.gain.value = 0.6;
+    const g2 = ctx.createGain(); g2.gain.value = 0.9;
     o1.connect(lp); o2.connect(g2).connect(lp);
     lp.connect(g).connect(out);
     // Skid: band-passed noise.
-    const n = ctx.createBufferSource(); n.buffer = this._noise(ctx); n.loop = true;
+    const n = ctx.createBufferSource(); n.buffer = this._noise(ctx); n.loop = true; n._tag = 'engine-skid';
     const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 1100; bp.Q.value = 3;
     const sg = ctx.createGain(); sg.gain.value = 0;
     n.connect(bp).connect(sg).connect(out);
     o1.start(); o2.start(); n.start();
-    g.gain.setTargetAtTime(prof.vol * 0.6, ctx.currentTime, 0.1);
+    g.gain.setTargetAtTime(prof.vol * 0.5, ctx.currentTime, 0.15);
     this.engine = { o1, o2, lp, g, n, sg, prof };
+    this._def = def;
+    this._rpm = 0.1;
   }
 
   stopEngine() {
     const e = this.engine;
     this._pendingDef = null;
+    this.horn(false); // a held horn must never outlive the car (exit, death, despawn)
     if (!e) return;
     this.engine = null;
     const ctx = this.game.audio?.ctx || this.own; // not the running-only getter: always stop the nodes
@@ -112,45 +124,62 @@ export class CarAudio {
     if (!e) return;
     const ctx = this.ctx;
     if (!ctx) return;
+    // stuck-loop guard: if the vehicle manager stops calling this (car despawned behind our
+    // back, an exception upstream, back to the title...), the audio core kills the engine.
+    // (still in a car when updates resume -> it restarts via _pendingDef)
+    this.game.audio?.keepAlive?.('car-engine', () => { const d = this._def; this.stopEngine(); if (d && this.game.player?.vehicle) this._pendingDef = d; });
     const t = ctx.currentTime, p = e.prof;
-    const f = p.base + rpm * p.range;
-    e.o1.frequency.setTargetAtTime(f, t, 0.05);
-    e.o2.frequency.setTargetAtTime(f * 0.5, t, 0.05);
-    e.lp.frequency.setTargetAtTime(p.cutoff * (0.6 + throttle * 0.8 + rpm * 0.6), t, 0.08);
-    e.g.gain.setTargetAtTime(muted ? p.vol * 0.12 : p.vol * (0.45 + throttle * 0.55), t, 0.08);
-    e.sg.gain.setTargetAtTime(muted ? 0 : Math.min(1, skid) * 0.22, t, 0.05);
+    // smooth the RPM itself (gear changes become a quick glide, not a step) and ease the pitch
+    this._rpm += (rpm - this._rpm) * (rpm < this._rpm - 0.3 ? 0.35 : 0.18);
+    const r = this._rpm;
+    const f = p.base + r * p.range;
+    e.o1.frequency.setTargetAtTime(f, t, 0.09);
+    e.o2.frequency.setTargetAtTime(f * 0.5, t, 0.09);
+    e.lp.frequency.setTargetAtTime(p.cutoff * (0.55 + throttle * 0.5 + r * 0.5), t, 0.12);
+    e.g.gain.setTargetAtTime(muted ? p.vol * 0.1 : p.vol * (0.4 + throttle * 0.35 + r * 0.25), t, 0.12);
+    e.sg.gain.setTargetAtTime(muted ? 0 : Math.min(1, skid) * 0.09, t, 0.06);
   }
 
   // ---- horn ----
   horn(on, meep = false) {
+    if (!on && this.hornNodes) { // release with the raw context: always stop, even while suspended
+      const { g, os } = this.hornNodes;
+      this.hornNodes = null;
+      const c = this.game.audio?.ctx || this.own;
+      try { g.gain.setTargetAtTime(0, c.currentTime, 0.02); os.forEach((o) => o.stop(c.currentTime + 0.15)); } catch { /* ignore */ }
+      return;
+    }
     const ctx = this.ctx, out = this.out;
     if (!ctx || !out) return;
     if (on && !this.hornNodes) {
       const g = ctx.createGain(); g.gain.value = 0;
       const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 1700; lp.Q.value = 0.6;
       const fs = meep ? [620, 780] : [347, 440];
-      const os = fs.map((fr) => { const o = ctx.createOscillator(); o.type = 'square'; o.frequency.value = fr; o.connect(lp); o.start(); return o; });
+      const os = fs.map((fr) => { const o = ctx.createOscillator(); o.type = 'square'; o.frequency.value = fr; o._tag = 'horn'; o.connect(lp); o.start(); return o; });
       lp.connect(g).connect(out);
-      g.gain.setTargetAtTime(meep ? 0.05 : 0.08, ctx.currentTime, 0.01);
+      g.gain.setTargetAtTime(meep ? 0.035 : 0.05, ctx.currentTime, 0.01);
       this.hornNodes = { g, os };
-    } else if (!on && this.hornNodes) {
-      const { g, os } = this.hornNodes;
-      this.hornNodes = null;
-      g.gain.setTargetAtTime(0, ctx.currentTime, 0.02);
-      os.forEach((o) => o.stop(ctx.currentTime + 0.15));
     }
+    if (on && this.hornNodes) this.game.audio?.keepAlive?.('car-horn', () => this.horn(false));
   }
 
-  // One-shot honk from somewhere in the world (traffic).
-  honk(dist = 10, angry = false) {
+  // One-shot honk from a traffic car at (x, z). Globally capped so a jam can't turn into a horn
+  // symphony; returns false when skipped (too far / too soon). Positioned + muffled via spatial().
+  honk(dist = 10, angry = false, x = null, z = null) {
     const ctx = this.ctx, out = this.out;
-    if (!ctx || !out) return;
-    const vol = Math.max(0, 0.09 * (1 - dist / 70));
-    if (vol <= 0.002) return;
+    if (!ctx || !out || dist > 60) return false;
+    const now = ctx.currentTime;
+    this._honks = this._honks.filter((h) => now - h < HONK_WINDOW);
+    if (this._honks.length >= HONK_MAX || (this._honks.length && now - this._honks[this._honks.length - 1] < HONK_GAP)) return false;
+    let dest = out, vol;
+    const sp = x != null && this.game.audio?.spatial ? this.game.audio.spatial(x, z, { maxDist: 60, refDist: 6, vol: 1 }) : null;
+    if (sp) { dest = sp.dest; vol = 0.05; } else vol = Math.max(0, 0.05 * (1 - dist / 60) ** 2);
+    if (vol <= 0.002) return false;
+    this._honks.push(now);
     const t = ctx.currentTime;
     const g = ctx.createGain(); g.gain.value = 0;
-    const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 1800 - dist * 15;
-    lp.connect(g).connect(out);
+    const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 1700 - Math.min(60, dist) * 12;
+    lp.connect(g).connect(dest);
     const pitch = 0.85 + Math.random() * 0.4;
     for (const fr of [330 * pitch, 415 * pitch]) {
       const o = ctx.createOscillator(); o.type = 'square'; o.frequency.value = fr; o.connect(lp);
@@ -163,6 +192,7 @@ export class CarAudio {
     } else {
       g.gain.setTargetAtTime(vol, t, 0.01); g.gain.setTargetAtTime(0, t + 0.42, 0.03);
     }
+    return true;
   }
 
   // Noise burst: crashes, glass, explosions.
@@ -181,6 +211,10 @@ export class CarAudio {
   }
 
   crash(strength = 0.5, dist = 0) {
+    // AI cars nudging each other across the block shouldn't machine-gun crash noise
+    const now = performance.now();
+    if (now - this._crashT < (dist > 25 ? 400 : 90)) return;
+    this._crashT = now;
     this.burst({ vol: 0.12 + strength * 0.35, dur: 0.18 + strength * 0.3, freq: 900, endFreq: 90, dist });
     if (strength > 0.4) this.burst({ vol: 0.12 * strength, dur: 0.25, freq: 4500, endFreq: 1800, type: 'highpass', dist });
   }

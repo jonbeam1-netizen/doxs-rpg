@@ -1102,9 +1102,15 @@ class PoliceAudio {
       const g = ctx.createGain(); g.gain.value = 0;
       o1.connect(f); o2.connect(f); f.connect(g); g.connect(this.game.audio.sfx);
       o1.start(); o2.start();
-      this.s = { o1, o2, g, t0: ctx.currentTime, ctx };
+      o1._tag = o2._tag = 'siren';
+      this.s = { o1, o2, g, t0: ctx.currentTime, ctx, quiet: 0 };
     }
     const s = this.s, t = ctx.currentTime;
+    // release the oscillators once silent for a while (they used to run forever at gain 0), and
+    // let the audio core kill them if this stops being called (police update skipped / threw)
+    s.quiet = vol < 0.01 ? s.quiet + 1 : 0;
+    if (s.quiet > 90) { this._release('s'); return; }
+    this.game.audio?.keepAlive?.('police-siren', () => this._release('s'));
     const tt = t - s.t0;
     // wail (slow sweep) far away, yelp (fast warble) up close
     const sweep = yelp ? 0.5 - 0.5 * Math.cos(tt * Math.PI * 2 / 0.32) : 0.5 - 0.5 * Math.cos(tt * Math.PI * 2 / 3.6);
@@ -1130,9 +1136,21 @@ class PoliceAudio {
       const g = ctx.createGain(); g.gain.value = 0;
       src.connect(f); f.connect(chop); chop.connect(g); g.connect(this.game.audio.sfx);
       src.start(); lfo.start();
-      this.r = { g, ctx };
+      src._tag = lfo._tag = 'heli-rotor';
+      this.r = { g, ctx, o1: src, o2: lfo, quiet: 0 };
     }
+    this.r.quiet = vol < 0.01 ? this.r.quiet + 1 : 0;
+    if (this.r.quiet > 120) { this._release('r'); return; }
+    this.game.audio?.keepAlive?.('police-rotor', () => this._release('r'));
     this.r.g.gain.setTargetAtTime(vol * 0.5, ctx.currentTime, 0.2);
+  }
+
+  // fade out + stop + forget a sustained voice ('s' siren / 'r' rotor)
+  _release(k) {
+    const v = this[k];
+    if (!v) return;
+    this[k] = null;
+    try { const t = v.ctx.currentTime; v.g.gain.cancelScheduledValues(t); v.g.gain.setTargetAtTime(0, t, 0.05); v.o1.stop(t + 0.3); v.o2.stop(t + 0.3); } catch { /* ignore */ }
   }
 
   pop(vol = 1) {

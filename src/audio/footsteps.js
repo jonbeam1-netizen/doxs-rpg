@@ -46,11 +46,19 @@ export function installFootsteps(game) {
         if (surfT <= 0) { surfT = 0.25; surf = surfaceAt(game, p.x, p.z); }
 
         // landing after a jump / fall
+        const S = A.samples;
+        const rec = S && (surf === 'pavement' || surf === 'dirt' || surf === 'wet'); // recorded steps fit hard/gritty ground
         const up = p.y > 0.05;
+        if (up && !airborne && p.y < 0.4 && S?.has('jump')) S.play('jump', { vol: 0.8 }); // take-off scuff
         if (up) { airborne = true; airT += dt; }
         else if (airborne) {
           airborne = false;
-          if (airT > 0.12) A.play('land', { surface: surf, k: Math.min(1, 0.55 + airT * 0.8), vol: 0.9 });
+          if (airT > 0.12) {
+            const k = Math.min(1, 0.55 + airT * 0.8);
+            if (rec && airT > 0.9 && S.has('mstep_heavy')) S.play('mstep_heavy', { vol: 0.8 }); // long drop: heavy thud
+            else if (rec && S.has('land')) S.play('land', { vol: 0.5 + 0.5 * k });
+            else A.play('land', { surface: surf, k, vol: 0.6 });
+          }
           airT = 0;
           phase = Math.PI * Math.round(phase / Math.PI) + 0.3; lastHalf = Math.floor(phase / Math.PI); // re-sync cadence
         }
@@ -64,7 +72,12 @@ export function installFootsteps(game) {
         if (moving && half !== lastHalf) {
           const run = sp > 7;
           const k = run ? 0.95 : 0.4 + Math.min(0.3, sp * 0.05);
-          A.play('step', { surface: surf, k, vol: run ? 1 : 0.85, pan: (half % 2 ? 0.06 : -0.06) });
+          const pan = half % 2 ? 0.06 : -0.06;
+          // footsteps sit low in the mix: present, never the loudest thing on screen
+          if (rec && S.has('step')) {
+            S.play('step', { vol: run ? 1 : 0.7, pan, rate: run ? 1.05 : 1 });
+            if (surf === 'wet') A.play('step', { surface: 'wet', k: k * 0.5, vol: 0.35, pan }); // splash layer
+          } else A.play('step', { surface: surf, k, vol: run ? 0.6 : 0.5, pan });
         } else if (!moving && wasMoving && sp < 0.3) {
           // settle the cadence so the next stride starts with a step
           phase = Math.PI * Math.ceil(phase / Math.PI) - 0.25;

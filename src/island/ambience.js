@@ -21,8 +21,8 @@ export function installAmbience(game) {
     const g = ctx.createGain();
     g.gain.value = 0.0001;
     g.gain.setValueAtTime(0.0001, t);
-    g.gain.exponentialRampToValueAtTime(0.2 * vol, t + 0.35);
-    g.gain.setValueAtTime(0.2 * vol, t + 2.2);
+    g.gain.exponentialRampToValueAtTime(0.12 * vol, t + 0.35); // (0.2 peaked hotter than any SFX)
+    g.gain.setValueAtTime(0.12 * vol, t + 2.2);
     g.gain.exponentialRampToValueAtTime(0.0001, t + 3.4);
     const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 420; lp.Q.value = 2;
     lp.connect(g).connect(dest(a));

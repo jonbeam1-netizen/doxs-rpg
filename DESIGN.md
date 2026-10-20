@@ -18,7 +18,7 @@ actual text, characters, names or assets.
 - Import three via the importmap: `import * as THREE from 'three'` and `'three/addons/...'` (three r160).
   PeerJS is loaded globally as `window.Peer`. **Do not add other libraries.**
 - Paths are relative (GitHub Pages serves under `/doxs-rpg/`). Never use absolute `/src/...` URLs.
-- No image/audio files needed; textures are procedural (`src/core/materials.js`). Sound, if any, via WebAudio synthesis.
+- Textures are procedural (`src/core/materials.js`). Sound: recorded samples in assets/sfx (listed in src/audio/sample-manifest.js — delete a line to fall back to synth) + WebAudio synthesis. Default master volume 30%.
 - Performance budget: 60 fps on a mid laptop. Merge static geometry / use InstancedMesh, share materials and
   geometries, cull far NPCs, keep draw calls < ~1500 and shadows to one directional light.
 - Only touch files you own (see Ownership). If you need a change in someone else's file, use the API below or

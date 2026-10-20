@@ -1,5 +1,6 @@
-// WebAudio-synth skate sounds routed through game.audio.sfx (so the volume
-// setting and ?dev muting apply). Everything no-ops until the AudioContext exists.
+// Skate sounds routed through game.audio.sfx (so the volume setting and ?dev muting apply).
+// The owner's recordings (assets/sfx/skate: wheel roll loop, ollie pop/land, bails) are used when
+// decoded; the original synth patches are the fallback. Everything no-ops until the context runs.
 export class SkateAudio {
   constructor(game) {
     this.game = game;
@@ -27,20 +28,28 @@ export class SkateAudio {
   // Continuous wheel rumble (and an electric motor whine for the e-board).
   start(electric = false) {
     const ctx = this.ctx, out = this.out;
+    this._electric = electric;
+    this._want = true;
     if (!ctx || !out || this.rumble) return;
     try {
-      const src = ctx.createBufferSource();
-      src.buffer = this._noiseBuf(); src.loop = true;
-      const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 180; bp.Q.value = 0.9;
-      const gain = ctx.createGain(); gain.gain.value = 0;
-      src.connect(bp); bp.connect(gain); gain.connect(out);
-      src.start();
-      this.rumble = { src, bp, gain };
+      const rec = this.game.audio?.samples?.loop?.('skate_roll', { vol: 0 });
+      if (rec) {
+        this.rumble = { rec, gain: rec.gain };
+      } else {
+        const src = ctx.createBufferSource();
+        src.buffer = this._noiseBuf(); src.loop = true;
+        const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 180; bp.Q.value = 0.9;
+        const gain = ctx.createGain(); gain.gain.value = 0;
+        src.connect(bp); bp.connect(gain); gain.connect(out);
+        src.start();
+        src._tag = 'skate-rumble';
+        this.rumble = { src, bp, gain };
+      }
       if (electric) {
         const osc = ctx.createOscillator(); osc.type = 'sawtooth'; osc.frequency.value = 80;
         const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 900;
         const g = ctx.createGain(); g.gain.value = 0;
-        osc.connect(lp); lp.connect(g); g.connect(out); osc.start();
+        osc.connect(lp); lp.connect(g); g.connect(out); osc.start(); osc._tag = 'skate-motor';
         this.motor = { osc, g };
       }
     } catch (e) { this.rumble = null; }
@@ -49,12 +58,23 @@ export class SkateAudio {
   update(speed, grounded, motoring) {
     const ctx = this.ctx;
     if (!ctx) return;
+    // mounted before the context ran / the recording decoded: (re)build the wheel loop now
+    if (this._want && (!this.rumble || (!this.rumble.rec && this.game.audio?.samples?.has?.('skate_roll')))) {
+      const e = this._electric; this.stop(); this._want = true; this.start(e);
+    }
     if (!this.rumble) return;
+    this.game.audio?.keepAlive?.('skate-roll', () => this.stop());
     const now = ctx.currentTime;
     const k = Math.min(1, speed / 18);
-    const target = grounded && speed > 0.4 ? 0.04 + k * 0.22 : 0;
-    this.rumble.gain.gain.setTargetAtTime(target, now, 0.05);
-    this.rumble.bp.frequency.setTargetAtTime(120 + k * 520 + Math.random() * 30, now, 0.05);
+    if (this.rumble.rec) {
+      // recorded roll: level and playback rate follow speed (slow roll = lower, duller)
+      this.rumble.rec.setVol(grounded && speed > 0.4 ? 0.25 + k * 0.75 : 0, 0.06);
+      this.rumble.rec.setRate(0.75 + k * 0.45, 0.1);
+    } else {
+      const target = grounded && speed > 0.4 ? 0.03 + k * 0.15 : 0;
+      this.rumble.gain.gain.setTargetAtTime(target, now, 0.05);
+      this.rumble.bp.frequency.setTargetAtTime(120 + k * 520 + Math.random() * 30, now, 0.05);
+    }
     if (this.motor) {
       this.motor.g.gain.setTargetAtTime(motoring ? 0.05 + k * 0.05 : 0, now, 0.08);
       this.motor.osc.frequency.setTargetAtTime(70 + k * 380, now, 0.1);
@@ -63,8 +83,10 @@ export class SkateAudio {
 
   stop() {
     const ctx = this.ctx;
+    this._want = false;
     for (const n of [this.rumble, this.motor]) {
       if (!n) continue;
+      if (n.rec) { n.rec.stop(0.08); continue; }
       try { (n.src || n.osc).stop(ctx ? ctx.currentTime + 0.05 : 0); } catch { /* ignore */ }
       try { (n.gain || n.g).disconnect(); } catch { /* ignore */ }
     }
@@ -99,6 +121,13 @@ export class SkateAudio {
 
   play(name) {
     try {
+      const S = this.game.audio?.samples;
+      const rec = { pop: 'skate_pop', land: 'skate_land', bail: 'skate_bail' }[name];
+      if (rec && S?.has(rec) && this.ctx) {
+        S.play(rec);
+        if (name === 'land') this._thump(140, 45, 0.1, 0.25); // a little low end under the recorded slap
+        return;
+      }
       switch (name) {
         case 'pop': this._burst({ dur: 0.05, freq: 1800, vol: 0.5 }); this._thump(220, 70, 0.09, 0.45); break;
         case 'flip': this._burst({ dur: 0.18, freq: 900, type: 'bandpass', vol: 0.18, q: 2 }); break;

@@ -14,9 +14,14 @@
 //   duck(level, seconds, buses=['amb','music'])       temporarily lower buses (big moments)
 //   ui(kind)   'click' 'hover' 'open' 'close' 'error' 'text' 'cash' 'perk' 'levelup' 'achievement'
 //   presets, running(), throttle(key, ms), onStart(fn)
+//   samples                                           recorded-sound player (src/audio/samples.js)
+//   keepAlive(key, kill)   call every frame while a sustained sound runs; if the producer stops
+//                          pinging for ~20 game frames, kill() is called once (stuck-loop guard)
 // }
+// Debug: window.__audioNodes() lists live sources (oscillators / buffer sources), flags long-lived ones.
 // A preset/fn is (ctx, dest, t, opts) => void; see src/audio/sounds.js.
-import { buildMixer, BUSES, BUS_LABELS, BUS_DEFAULTS, noiseBuf, vary, rnd } from './mixer.js';
+import { buildMixer, BUSES, BUS_LABELS, BUS_DEFAULTS, MASTER_DEFAULT, noiseBuf, vary, rnd } from './mixer.js';
+import { createSampler } from './samples.js';
 import { PRESETS } from './sounds.js';
 import { installFootsteps, surfaceAt } from './footsteps.js';
 import { installAudioHooks } from './hooks.js';
@@ -33,11 +38,13 @@ export function installAudio(game) {
   let mixer = null;
   const audio = {
     ctx: null, master: null, sfx: null, amb: null, music: null, uiBus: null,
-    volume: clamp01(loadNum('doxsrpg_vol', 0.6)), levels, BUSES, BUS_LABELS, presets: PRESETS,
-    setVolume, getBusVolume, setBusVolume, ui: uiSound, onStart, play, play3D, spatial, duck, running, throttle,
+    volume: clamp01(loadNum('doxsrpg_vol', MASTER_DEFAULT)), levels, BUSES, BUS_LABELS, presets: PRESETS,
+    setVolume, getBusVolume, setBusVolume, ui: uiSound, onStart, play, play3D, spatial, duck, running, throttle, keepAlive,
+    samples: null,
     surfaceAt: (x, z) => surfaceAt(game, x, z),
   };
   game.audio = audio;
+  audio.samples = createSampler(audio);
 
   function onStart(fn) { if (audio.ctx) { try { fn(audio.ctx); } catch (e) { console.error(e); } } else startHooks.push(fn); }
   function running() { return !!(audio.ctx && audio.ctx.state === 'running' && mixer); }
@@ -62,6 +69,86 @@ export function installAudio(game) {
     lastT.set(key, now);
     return true;
   }
+
+  // ---------------------------------------------------------------- stuck-loop guard
+  // Sustained sounds (engine, siren, rotor, skate wheels...) ping keepAlive() every frame they
+  // are updated. Staleness is counted in game frames, not wall time, so a hidden tab (no frames,
+  // context suspended) never trips it; a producer that silently stopped updating does.
+  let frameNo = 0;
+  const alive = new Map(); // key -> { f, kill }
+  function keepAlive(key, kill) {
+    const e = alive.get(key);
+    if (e) { e.f = frameNo; e.kill = kill; } else alive.set(key, { f: frameNo, kill });
+  }
+  function sweepAlive() {
+    for (const [k, e] of alive) {
+      if (frameNo - e.f > 20) {
+        alive.delete(k);
+        try { e.kill?.(); } catch (err) { console.warn('[audio] keepAlive kill failed', k, err); }
+      }
+    }
+  }
+
+  // ---------------------------------------------------------------- live-node registry (debug)
+  const live = new Set();
+  function instrument(ctx) {
+    for (const [fn, kind] of [['createOscillator', 'osc'], ['createBufferSource', 'buf'], ['createConstantSource', 'const']]) {
+      if (typeof ctx[fn] !== 'function') continue;
+      const orig = ctx[fn].bind(ctx);
+      ctx[fn] = (...args) => {
+        const n = orig(...args);
+        const rec = { n, kind, born: ctx.currentTime, wall: performance.now(), started: false, stopAt: null, stack: audio.debugNodes ? new Error().stack : null };
+        const s0 = n.start.bind(n), s1 = n.stop.bind(n);
+        n.start = (...a) => {
+          rec.started = true;
+          if (a[2] != null && !n.loop) rec.stopAt = (a[0] || ctx.currentTime) + a[2] / (n.playbackRate?.value || 1); // start(when, offset, duration)
+          return s0(...a);
+        };
+        n.stop = (...a) => { rec.stopAt = a[0] ?? ctx.currentTime; return s1(...a); };
+        n.addEventListener('ended', () => live.delete(rec));
+        live.add(rec);
+        return n;
+      };
+    }
+  }
+  function pruneLive() {
+    const now = performance.now();
+    for (const r of live) if (!r.started && now - r.wall > 3000) live.delete(r); // created but never started
+  }
+  window.__audioNodes = (debug) => {
+    if (debug !== undefined) audio.debugNodes = !!debug;
+    pruneLive();
+    const ctx = audio.ctx;
+    const t = ctx?.currentTime ?? 0;
+    const list = [...live].map((r) => ({
+      kind: r.kind,
+      tag: r.n._tag || (r.n.loop ? 'loop' : r.kind === 'osc' ? r.n.type : 'buffer'),
+      loop: !!r.n.loop,
+      started: r.started,
+      age: +(t - r.born).toFixed(2),
+      stopIn: r.stopAt == null ? null : +(r.stopAt - t).toFixed(2),
+      freq: r.kind === 'osc' ? Math.round(r.n.frequency.value) : undefined,
+      stack: r.stack ? r.stack.split('\n').slice(2, 5).map((s) => s.trim()).join(' < ') : undefined,
+    }));
+    const persistent = list.filter((r) => r.started && r.stopIn == null);
+    return { ctxState: ctx?.state ?? 'none', time: +t.toFixed(2), total: list.length, persistent: persistent.length, keepAlive: [...alive.keys()], samples: audio.samples?.status?.(), persistentList: persistent, list: list.length <= 60 ? list : undefined };
+  };
+
+  // ---------------------------------------------------------------- tab hidden -> silence
+  // rAF stops in a background tab, so nothing updates the sustained sounds: suspend the
+  // context (everything freezes in place) and resume on return. Muted ?dev/?mute sessions
+  // keep their own suspended state (their resume() is a no-op).
+  let hiddenSuspended = false;
+  document.addEventListener('visibilitychange', () => {
+    const ctx = audio.ctx;
+    if (!ctx) return;
+    try {
+      if (document.hidden) {
+        if (ctx.state === 'running') { hiddenSuspended = true; ctx.suspend(); }
+        try { window.speechSynthesis?.cancel?.(); } catch { /* ignore */ }
+      } else if (hiddenSuspended) { hiddenSuspended = false; ctx.resume?.(); }
+    } catch { /* ignore */ }
+  });
 
   let warned = false;
   function run(fn, ctx, dest, t, opts) {
@@ -159,7 +246,11 @@ export function installAudio(game) {
   function uiSound(kind = 'click') {
     const u = UI[kind] || UI.click;
     if (!running() || !throttle('ui:' + kind, u[2])) return;
-    play(u[0], { bus: u[1] });
+    const S = audio.samples;
+    // recorded where one fits; the soft synth patch otherwise (or until it has loaded)
+    const rec = { click: 'ui_click', cash: 'coins', levelup: 'level_up' }[kind];
+    if (rec && S?.has(rec)) S.play(rec, kind === 'click' ? { vol: 0.9 } : {});
+    else play(u[0], { bus: u[1], vol: kind === 'hover' ? 0.6 : 1 });
     if (kind === 'levelup' || kind === 'achievement') duck(0.35, 2.4);
   }
 
@@ -183,6 +274,7 @@ export function installAudio(game) {
     if (!AC) return;
     let ctx;
     try { ctx = new AC(); } catch { return; }
+    try { instrument(ctx); } catch (e) { console.warn('[audio] node registry unavailable', e); }
     audio.ctx = ctx;
     mixer = buildMixer(ctx, { master: audio.volume, levels });
     audio.master = mixer.mix;
@@ -202,6 +294,9 @@ export function installAudio(game) {
       drips: loop(ctx, 'crackle', amb, [['bandpass', 2800, 0.6]], 0),
       crowd: loop(ctx, 'pink', amb, [['bandpass', 600, 1.4], ['lowpass', 1400]], 0),
     };
+    for (const k in L) L[k].s._tag = 'amb:' + k;
+    // recorded sounds: decode in the background, most-used groups first
+    setTimeout(() => { audio.samples.preloadAll().catch(() => { /* per-file failures already fall back */ }); }, 30);
     for (const fn of startHooks.splice(0)) { try { fn(ctx); } catch (e) { console.error('[audio] start hook failed', e); } }
   }
 
@@ -226,16 +321,6 @@ export function installAudio(game) {
     g.gain.linearRampToValueAtTime(0.0, t + dur);
     o.start(t); o.stop(t + dur + 0.1);
   }
-  function honk(ctx, d, t) {
-    const g = ctx.createGain(); g.gain.value = 0;
-    const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 800;
-    lp.connect(g); g.connect(d);
-    const p = vary(1, 0.12), len = rnd(0.25, 0.5);
-    for (const f of [380 * p, 470 * p]) { const o = ctx.createOscillator(); o.type = 'sawtooth'; o.frequency.value = f; o.connect(lp); o.start(t); o.stop(t + len + 0.1); }
-    g.gain.linearRampToValueAtTime(0.007, t + 0.03);
-    g.gain.setValueAtTime(0.007, t + len - 0.08);
-    g.gain.linearRampToValueAtTime(0, t + len);
-  }
   function dogBark(ctx, d, t) {
     const n = 1 + Math.floor(Math.random() * 3), p = vary(1, 0.15);
     for (let i = 0; i < n; i++) {
@@ -256,11 +341,17 @@ export function installAudio(game) {
     game.scene?.traverse?.((o) => { if (!sky && o.material?.uniforms?.uFlash) sky = o.material.uniforms.uFlash; });
   }
   function thunderNow(delay, near) {
-    play('thunder', { bus: 'amb', delay, near, pan: rnd(-0.6, 0.6) });
+    const S = audio.samples, pan = rnd(-0.6, 0.6);
+    if (S?.has('lightning_boom')) {
+      // recorded crack/boom (muffled + slower when far), with a quieter synth rumble tail under it
+      S.play('lightning_boom', { delay, pan, vol: 0.45 + 0.55 * near, rate: 1 - (1 - near) * 0.18, lp: 700 + near * near * 9000 });
+      play('thunder', { bus: 'amb', delay: delay + 0.15, near: Math.min(0.5, near), pan, vol: 0.45 });
+    } else play('thunder', { bus: 'amb', delay, near, pan });
   }
 
   // ---------------------------------------------------------------- per-frame
-  let nextEvent = 8, gustT = 12, crowdT = 0, density = 0, blurbT = 2, npcStepT = 0;
+  let nextEvent = 14, gustT = 12, crowdT = 0, density = 0, blurbT = 2, npcStepT = 0, pruneT = 2, hbT = 0;
+  let rainH = null, dryT = 0; // recorded rain bed (src/audio/samples.js loop handle) while it's wet
   const lastNpcPos = new WeakMap();
   const set = (param, v, tc = 0.5) => param.setTargetAtTime(v, audio.ctx.currentTime, tc);
 
@@ -268,9 +359,14 @@ export function installAudio(game) {
     name: 'ambience',
     update(dt) {
       if (!audio.ctx || !mixer) return;
+      frameNo++;
+      sweepAlive();
+      pruneT -= dt;
+      if (pruneT <= 0) { pruneT = 2; pruneLive(); }
       updateDucks();
       if (!game.started || !running() || !L) return;
       try {
+        const S = audio.samples;
         const night = 1 - (game.time?.daylight ?? 1);
         const t = game.elapsed || 0;
         const weather = game.world?.weather ?? 'overcast';
@@ -279,15 +375,26 @@ export function installAudio(game) {
         const inCar = !!game.player?.vehicle;
         const exposed = pos.x > 600 || game.world?.districtAt?.(pos.x, pos.z) === 'hilltop' ? 1.4 : 1;
 
+        // rain: recorded loop while wet (released a few seconds after it dries up), synth layers under it
+        if (wet > 0) {
+          dryT = 0;
+          if (!rainH && S?.has('rain_loop')) rainH = S.loop('rain_loop', { vol: 0 });
+        } else if (rainH && (dryT += dt) > 4) { rainH.stop(0.6); rainH = null; }
+        if (rainH) {
+          rainH.setVol(wet * (inCar ? 0.55 : 1), 1.2);
+          keepAlive('amb:rain', () => { rainH?.stop(0.3); rainH = null; });
+        }
+        const rec = !!rainH;
+
         // loops
-        set(L.rumble.g.gain, 0.12 + 0.08 * (1 - night) + 0.04 * Math.min(1, density));
+        set(L.rumble.g.gain, 0.1 + 0.07 * (1 - night) + 0.03 * Math.min(1, density));
         set(L.wind.f[0].frequency, 400 + Math.sin(t * 0.13) * 200 + Math.sin(t * 0.41) * 90, 0.3);
-        set(L.wind.g.gain, (0.012 + 0.012 * (0.5 + 0.5 * Math.sin(t * 0.07))) * (1 + wet * 0.8) * exposed);
-        set(L.night.g.gain, wet ? 0 : 0.003 * night);
-        set(L.rain.g.gain, 0.055 * wet * (inCar ? 0.5 : 1), 1.2);
-        set(L.rainLow.g.gain, 0.05 * wet, 1.2);
-        set(L.drips.g.gain, 0.5 * wet * (inCar ? 1.8 : 1), 1.2);
-        set(L.crowd.g.gain, 0.012 * density * (inCar ? 0.4 : 1), 1);
+        set(L.wind.g.gain, (0.01 + 0.01 * (0.5 + 0.5 * Math.sin(t * 0.07))) * (1 + wet * 0.8) * exposed);
+        set(L.night.g.gain, wet ? 0 : 0.0025 * night);
+        set(L.rain.g.gain, (rec ? 0.008 : 0.045) * wet * (inCar ? 0.5 : 1), 1.2); // white hiss: only a sheen when the recording plays
+        set(L.rainLow.g.gain, (rec ? 0.025 : 0.045) * wet, 1.2);
+        set(L.drips.g.gain, (rec ? 0.3 : 0.45) * wet * (inCar ? 1.8 : 1), 1.2);
+        set(L.crowd.g.gain, 0.01 * density * (inCar ? 0.4 : 1), 1);
 
         // thunder: follow the sky's lightning flash (light first, sound a moment later)
         skySearchT -= dt;
@@ -310,16 +417,31 @@ export function installAudio(game) {
         gustT -= dt;
         if (gustT <= 0) {
           gustT = wet ? rnd(7, 16) : rnd(16, 40);
-          play('gust', { bus: 'amb', k: (0.6 + wet * 0.4) * exposed * (inCar ? 0.4 : 1), pan: rnd(-0.7, 0.7) });
+          const k = (0.6 + wet * 0.4) * exposed * (inCar ? 0.4 : 1), pan = rnd(-0.7, 0.7);
+          if (S?.has('wind_gust')) S.play('wind_gust', { vol: k, pan, rate: rnd(0.85, 1.12) });
+          else play('gust', { bus: 'amb', k, pan });
         }
 
-        // distant city one-shots
+        // distant city one-shots. (No random car horns any more: real traffic honks only when
+        // it is actually blocked — src/vehicles/traffic.js — so a horn always means something.)
         nextEvent -= dt;
         if (nextEvent <= 0) {
-          nextEvent = 10 + Math.random() * 25;
-          const r = Math.random(), pan = rnd(-0.8, 0.8);
-          if (r < 0.3) play(siren, { bus: 'amb', pan }); else if (r < 0.7) play(honk, { bus: 'amb', pan }); else play(dogBark, { bus: 'amb', pan });
+          nextEvent = 14 + Math.random() * 28;
+          const pan = rnd(-0.8, 0.8);
+          if (Math.random() < 0.35) play(siren, { bus: 'amb', pan }); else play(dogBark, { bus: 'amb', pan });
         }
+
+        // low health: heartbeat, faster the closer to death
+        const P = game.state?.p;
+        const ratio = P ? (P.hp ?? 100) / (P.maxHp || 100) : 1;
+        if (P && P.hp > 0 && ratio < 0.25 && !game.player?.dead) {
+          hbT -= dt;
+          if (hbT <= 0) {
+            const k = 1 - ratio / 0.25;
+            hbT = 1.05 - 0.4 * k;
+            S?.play('heartbeat', { vol: 0.55 + 0.45 * k });
+          }
+        } else hbT = 0;
 
         // crowds: density, murmurs and other people's footsteps
         crowdT -= dt;
@@ -334,15 +456,15 @@ export function installAudio(game) {
         const crowd = audio._crowd || [];
         blurbT -= dt;
         if (blurbT <= 0) {
-          blurbT = density > 0.05 ? rnd(0.4, 1.6) / (0.3 + density) : 1.5;
+          blurbT = density > 0.05 ? rnd(0.5, 1.8) / (0.3 + density) : 1.5;
           if (density > 0.05 && crowd.length && !inCar) {
             const n = crowd[(Math.random() * crowd.length) | 0];
-            if (n?.pos && !n.removed) play3D(Math.random() < 0.06 ? 'laugh' : 'voice', n.pos.x, n.pos.z, { bus: 'amb', maxDist: 28, refDist: 4, vol: 0.55 * (1 - night * 0.3) });
+            if (n?.pos && !n.removed) play3D(Math.random() < 0.06 ? 'laugh' : 'voice', n.pos.x, n.pos.z, { bus: 'amb', maxDist: 28, refDist: 4, vol: 0.45 * (1 - night * 0.3) });
           }
         }
         npcStepT -= dt;
         if (npcStepT <= 0) {
-          npcStepT = rnd(0.18, 0.35);
+          npcStepT = rnd(0.2, 0.4);
           if (crowd.length && !inCar) {
             const n = crowd[(Math.random() * crowd.length) | 0];
             if (n?.pos && !n.removed) {
@@ -350,7 +472,11 @@ export function installAudio(game) {
               const now = game.elapsed || 0;
               if (last) {
                 const sp = Math.hypot(n.pos.x - last.x, n.pos.z - last.z) / Math.max(0.05, now - last.t);
-                if (sp > 0.8 && sp < 12) play3D('step', n.pos.x, n.pos.z, { maxDist: 16, refDist: 2, vol: 0.5, surface: surfaceAt(game, n.pos.x, n.pos.z), k: Math.min(1, sp / 8) });
+                if (sp > 0.8 && sp < 12) {
+                  const surf = surfaceAt(game, n.pos.x, n.pos.z), k = Math.min(1, sp / 8);
+                  if (S?.has('mstep_light') && (surf === 'pavement' || surf === 'dirt' || surf === 'wet')) S.play3D('mstep_light', n.pos.x, n.pos.z, { maxDist: 16, refDist: 2, vol: 0.5 + 0.5 * k });
+                  else play3D('step', n.pos.x, n.pos.z, { maxDist: 16, refDist: 2, vol: 0.4, surface: surf, k });
+                }
               }
               lastNpcPos.set(n, { x: n.pos.x, z: n.pos.z, t: now });
             }

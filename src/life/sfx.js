@@ -66,7 +66,7 @@ function burst(o, t, dur, peak, f, q = 1, type = 'bandpass') {
 export const SFX = {
   // scruffy two-three note "ruff ruff"
   bark(game, x, z, pitch = 1, n = 2) {
-    const o = out(game, x, z, 70, 0.55); if (!o) return;
+    const o = out(game, x, z, 70, 0.3); if (!o) return; // (was 0.55: a close dog out-barked gunfire)
     for (let i = 0; i < n; i++) {
       const t = o.t + i * (0.2 + Math.random() * 0.06);
       tone(o, 'sawtooth', 430 * pitch, 210 * pitch, t, 0.13, 0.5, { f: 950 * pitch, q: 1.3 });
@@ -98,7 +98,7 @@ export const SFX = {
     tone(o, 'sine', 330, 260, o.t + 0.26, 0.38, 0.35, { type: 'lowpass', f: 600 });
   },
   caw(game, x, z) {
-    const o = out(game, x, z, 80, 0.35); if (!o) return;
+    const o = out(game, x, z, 80, 0.22); if (!o) return;
     const n = 2 + (Math.random() * 2 | 0);
     for (let i = 0; i < n; i++) {
       const t = o.t + i * 0.36;
@@ -107,7 +107,7 @@ export const SFX = {
     }
   },
   gull(game, x, z) {
-    const o = out(game, x, z, 110, 0.3); if (!o) return;
+    const o = out(game, x, z, 110, 0.2); if (!o) return;
     const t = o.t;
     tone(o, 'triangle', 1350, 1900, t, 0.12, 0.35, { f: 1700, q: 1.5 });
     tone(o, 'triangle', 1900, 1050, t + 0.12, 0.3, 0.3, { f: 1500, q: 1.5 });
