@@ -373,7 +373,7 @@ export function installNightlife(game) {
             if (!st.spend(500, 'bottle service')) return;
             game.time.advance(90);
             game.sysFx.addDrunk(2);
-            st.addStat('cha', 1.5, 'vip');
+            train(game, 'cha', 1.5, 'vip', 50, { tiring: false }); // diminishing like other CHA sources (it was a flat, repeatable +1.5)
             const tip = chance(0.3);
             if (tip && game.market) return say(g, 'VIP Booth', `Sparklers! A bottle girl! People you don't know pretend to know you. A drunk hedge-fund guy whispers: "${game.market.rumor(0.95)}"`);
             return say(g, 'VIP Booth', 'Sparklers! Champagne! A rapper named Lil Gristle sits at your booth, drinks your bottle, and leaves. You feel famous by proximity.');

@@ -48,7 +48,7 @@ export function installJobs(game) {
       st.changed('job');
       game.bus.emit('job:hired', { jobId: id, rank, pay: r.pay });
       game.ui.bigText('HIRED', `${r.title} at ${d.name}`, 2200);
-      await say(game, d.name, `${hireLine(id)}<br><br>You're a <b>${r.title}</b>. Pay: <b>${fmtMoney(r.pay)}${d.kind === 'delivery' ? ' per delivery + tips' : '/hour'}</b>.<br><span class="sys-hint">${d.hours ? `Shifts can start ${hoursLabel(d.hours).replace('Open ', '')}.` : 'Shifts any time, day or night.'} Work ${r.shifts < 999 ? r.shifts : '—'} shifts for a shot at promotion.</span>`, d.boss);
+      await say(game, d.name, `${hireLine(id)}<br><br>You're ${/^[AEIOU]/i.test(r.title) ? 'an' : 'a'} <b>${r.title}</b>. Pay: <b>${fmtMoney(r.pay)}${d.kind === 'delivery' ? ' per delivery + tips' : '/hour'}</b>.<br><span class="sys-hint">${d.hours ? `Shifts can start ${hoursLabel(d.hours).replace('Open ', '')}.` : 'Shifts any time, day or night.'} Work ${r.shifts < 999 ? r.shifts : '—'} shifts for a shot at promotion.</span>`, d.boss);
       return true;
     },
 

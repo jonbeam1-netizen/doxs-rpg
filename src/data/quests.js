@@ -411,10 +411,10 @@ export const INTRO = [
     '> Darkness. A ceiling fan wobbles overhead like it\'s thinking about murder.',
     '> You wake up in the Roach Motel, Room 6. Your head feels like a dropped lasagna. Your mouth tastes like a raccoon died in it and then held a funeral in it.',
   ], next: 'Ugh.' },
-  { who: 'nar', t: [
+  (g) => ({ who: 'nar', t: [
     '> A cockroach the size of your thumb is sitting on your pillow, staring at you. You make eye contact. He doesn\'t blink. He doesn\'t have eyelids. Right now, neither do you.',
-    '> You pat your pockets: $50, a lint ball shaped like a disappointed face, and a folded Pizza Butt coupon with something scribbled on the back. In your handwriting. And ketchup. Hopefully ketchup.',
-  ], next: 'Read the note' },
+    `> You pat your pockets: ${$(Math.max(0, g.state.p.money))}, a lint ball shaped like a disappointed face, and a folded Pizza Butt coupon with something scribbled on the back. In your handwriting. And ketchup. Hopefully ketchup.`,
+  ], next: 'Read the note' }),
   { who: 'nar', html: `<div class="q-note">DON'T TRUST ANYONE.<br>ESPECIALLY THE MAYOR.<br>THE BUNKER IS THE KEY.<br>THE KEY IS IN THE BUNKER???<br><br>Go see REG under the overpass.<br>You owe him $20.<br><br>Also you are banned from the Rusty Nail.<br>— ME (you)<br><br><small>P.S. DRINK WATER YOU IDIOT</small></div><div class="ui-text"><em>Under the writing there's a crude doodle of a rocket. At least, you really hope it's a rocket.</em></div>`, next: 'What the hell happened last night?' },
   { who: 'Mrs. Krupnik (Motel Manager)', t: [
     '> Somebody pounds on the door hard enough to knock a roach off the ceiling. It lands in your hair. It stays there. It lives there now.',
@@ -952,11 +952,13 @@ export const QUESTS = {
             choices: [
               pay(500, 'Pay Mopsy $500'),
               gate('cha', 25, 'Promise to put in a good word with his mom'),
-              { label: 'Mug the janitor', hint: 'fight, -karma', do: async (g) => { const ok = await g.quests.brawl({ count: 1, kind: 'thug', tier: 1, label: 'Mopsy (and his mop)' }); if (ok) g.state.addStat('karma', -10); return ok ? 'advance' : 'stay'; } },
+              { label: 'Mug the janitor', hint: 'fight, -karma', do: async (g, q) => { const ok = await g.quests.brawl({ count: 1, kind: 'thug', tier: 1, label: 'Mopsy (and his mop)', names: ['Mopsy'] }); if (ok) { g.state.addStat('karma', -10); if (q) q.data.mugged = true; } return ok ? 'advance' : 'stay'; } },
               leave('Later.'),
             ],
           },
-          ['> Mopsy hands you a keycard. It\'s sticky. You don\'t ask.', 'It\'s demagnetized, though. Spilled a soda on it. Take it to Scrapper Pete out in the Dustbowl. He can fix anything. He fixed my marriage. With a crowbar. We\'re divorced now. Very fixed.'],
+          (g, q) => (q?.data?.mugged
+            ? ['> Mopsy lies in a puddle of his own mop water, sobbing. You fish a sticky keycard out of his jumpsuit.', 'It\'s demagnetized, you jerk! I spilled a soda on it! Take it to Scrapper Pete out in the Dustbowl. He can fix anything. Maybe he can fix your PERSONALITY.']
+            : ['> Mopsy hands you a keycard. It\'s sticky. You don\'t ask.', 'It\'s demagnetized, though. Spilled a soda on it. Take it to Scrapper Pete out in the Dustbowl. He can fix anything. He fixed my marriage. With a crowbar. We\'re divorced now. Very fixed.']),
         ],
         onDone: (g) => g.quests.giveItem('q_keycard'),
       },
@@ -995,13 +997,20 @@ export const QUESTS = {
         onDone: (g) => g.state.setFlag('knows_lid'),
       },
       {
-        text: 'Survive the Grimco Cleanup Crew at Bunker 9. (A gun from Bang Bang Bros. helps if you skipped leg day.)',
+        text: 'Survive the Grimco Cleanup Crew at Bunker 9. Four armed goons: if you skipped leg day, bring a gun (Two-Finger Terry sells a used 9mm for $450) and first aid kits (press Y to heal).',
         obj: { type: 'brawl', loc: 'bunker', count: 4, kind: 'thug', tier: 3, label: 'Grimco Cleanup Crew', radius: 14 },
+        // The reveal ends with the alarm going off and you standing in the fight zone: give a beat to
+        // decide instead of dropping an under-geared player straight into four tier-3 goons.
+        arrive: [{ who: 'nar', t: ['> Four Grimco goons in hazmat suits pile out of a van. One of them is carrying the BIG zapper. It is, regrettably, very big.'],
+          choices: [
+            { label: 'Fight your way out', hint: 'tough fight', result: 'advance' },
+            { label: 'Run for it (come back with a gun and first aid)', result: 'stay' },
+          ] }],
         win: ['> The BIG zapper breaks over somebody\'s skull. Not yours. You keep your memories. Even the bad ones. Especially the bad ones.'],
       },
       {
-        text: (g) => `FINALE: The Lid\'s exit controls need a genius. Reach INT 50 (now ${Math.floor(g.state.p.int)}), then return to Bunker 9.`, finale: true,
-        obj: { type: 'goto', loc: 'bunker', radius: 12, req: (g) => g.state.p.int >= 50, reqText: 'The Lid Control Terminal runs Grimco OS 3.1. You need INT 50 to even find the power button.' },
+        text: (g) => `FINALE: The Lid\'s exit controls need a genius. Reach INT 45 (now ${Math.floor(g.state.p.int)}), then return to Bunker 9.`, finale: true,
+        obj: { type: 'goto', loc: 'bunker', radius: 12, req: (g) => g.state.p.int >= 45, reqText: 'The Lid Control Terminal runs Grimco OS 3.1. You need INT 45 to even find the power button.' },
         run: async (g, q) => {
           await g.quests.say([{ who: 'nar', t: ['> The Lid Control Terminal. It runs Grimco OS 3.1, which crashes if you look at it with emotion. A sticky note on the screen says "password is password". It isn\'t.'] }]);
           const qs = [

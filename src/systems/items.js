@@ -6,7 +6,7 @@ import { DRUGS, DRUG_ORDER } from '../data/drugs.js';
 import { COURSES } from '../data/courses.js';
 import { JOBS } from '../data/jobs.js';
 import { fmtMoney, pick, chance, randInt, esc } from '../core/util.js';
-import { ensureState, capacity, hasCourse, today } from './common.js';
+import { ensureState, capacity, hasCourse, today, dim } from './common.js';
 import { meter } from './ui-kit.js';
 
 export function installItems(game) {
@@ -84,9 +84,28 @@ export function installItems(game) {
       }
       if (fx.speed) game.sysFx.add({ id: 'speed_' + id, label: d.name, min: fx.speedMin ?? 60, speed: fx.speed, kind: 'drug' });
       if (fx.effect) game.sysFx.add({ id: fx.effect, min: fx.min ?? 60 });
-      if (fx.perm) for (const [k, v] of Object.entries(fx.perm)) st.addStat(k, v, 'item:' + id);
+      let bookGain = '';
+      if (fx.perm) {
+        // Books used to be flat, repeatable +INT with no limit: $700 of Gray's Anatomy = +25 INT,
+        // which skipped every INT gate in the game. Now each title teaches you less every re-read
+        // (1, 1/2, 1/4...) and high stats learn less from a $25 paperback (same curve as studying).
+        let k = 1;
+        if (d.cat === 'book') {
+          p.sys ??= {};
+          const read = (p.sys.booksRead ??= {});
+          k = Math.pow(0.5, read[id] || 0);
+          read[id] = (read[id] || 0) + 1;
+        }
+        const gains = [];
+        for (const [stat, v] of Object.entries(fx.perm)) {
+          const amt = d.cat === 'book' && v > 0 ? Math.round(dim(v * k, p[stat] ?? 0, 50) * 100) / 100 : v;
+          const got = st.addStat(stat, amt, 'item:' + id);
+          if (d.cat === 'book' && v > 0) gains.push(`+${Math.round((got ?? amt) * 100) / 100} ${stat.toUpperCase()}`);
+        }
+        if (d.cat === 'book') bookGain = ` ${gains.join(' ')}${k < 1 ? ' (you\'ve read this one before)' : ''}.`;
+      }
       if (fx.addiction) game.sysFx.addAddiction(fx.addiction);
-      if (d.cat === 'book') game.ui.toast(`You read ${d.name} cover to cover. ${pick(['Your brain feels sore.', 'You moved your lips the whole time.', 'You understood at least 40% of it.'])}`, 'stat', 2600);
+      if (d.cat === 'book') game.ui.toast(`You read ${d.name} cover to cover.${bookGain} ${pick(['Your brain feels sore.', 'You moved your lips the whole time.', 'You understood at least 40% of it.'])}`, 'stat', 2600);
       else if (!fx.special) game.ui.toast(useLine(d), 'info', 2200);
       game.bus.emit('item:used', { id, qty: 1 });
       return true;

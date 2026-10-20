@@ -1,7 +1,7 @@
 // The Pit (type 'fight_club'): an underground ranked ladder with purses, plus betting on other fights.
 // state.p.sys.pitRank = number of ladder fighters beaten.
 import { fmtMoney, pick, chance, rand, randInt, clamp } from '../core/util.js';
-import { today, brawlSpot } from './common.js';
+import { today, brawlSpot, train } from './common.js';
 import { placeMenu, say, choose } from './ui-kit.js';
 
 export const LADDER = [
@@ -136,7 +136,7 @@ export function installFightClub(game) {
       if (rank < LADDER.length) out.push({ label: `Fight ${LADDER[rank].name}`, hint: `purse ${fmtMoney(LADDER[rank].purse)}`, run: () => fight(loc, rank) });
       if (rank > 0) out.push({ label: 'Exhibition rematch', hint: t.exhibition ? 'once a night' : `vs ${LADDER[rank - 1].name} · smaller purse`, disabled: !!t.exhibition, run: () => { t.exhibition = true; return fight(loc, rank - 1, true); } });
       out.push({ label: 'Bet on a fight', hint: 'Dirty Dave\'s book', run: betOnFight });
-      out.push({ label: 'Buy a round for the crowd', hint: '$100 · +CHA/-karma?', run: () => { if (st.spend(100)) { st.addStat('cha', 0.5, 'pit'); g.sysFx.addDrunk(1); return say(g, 'The Pit', 'You buy a round. The crowd chants your name. Then they fight over the beer. A man loses an eyebrow.'); } } });
+      out.push({ label: 'Buy a round for the crowd', hint: '$100 · +CHA/-karma?', run: () => { if (st.spend(100)) { train(g, 'cha', 0.5, 'pit', 50, { tiring: false }); g.sysFx.addDrunk(1); return say(g, 'The Pit', 'You buy a round. The crowd chants your name. Then they fight over the beer. A man loses an eyebrow.'); } } });
       return out;
     },
   }));

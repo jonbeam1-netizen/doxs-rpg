@@ -14,12 +14,12 @@ export const MPH = 0.3;
 
 export const CARS = {
   bmx: {
-    name: "Lil' Shredder BMX", price: 150, topSpeed: 30, accel: 6, handling: 9, kind: 'bike',
+    name: "Lil' Shredder BMX", price: 150, topSpeed: 42, accel: 6, handling: 9, kind: 'bike',
     color: '#b8326f', seats: 1, hp: 40, tier: 'junk', model: 'bmx',
     desc: 'Pedal-powered. Pegs included, dignity sold separately. Previous owner was twelve and still cooler than you.',
   },
   moped: {
-    name: 'Sputter 49cc Moped', price: 900, topSpeed: 38, accel: 4, handling: 7, kind: 'moto',
+    name: 'Sputter 49cc Moped', price: 900, topSpeed: 50, accel: 4, handling: 7, kind: 'moto',
     color: '#7fa3a0', seats: 1, hp: 60, tier: 'junk', model: 'moped',
     desc: 'Top speed of a disappointed jogger. Sounds like a wasp trapped in a soda can. Chicks hate it.',
   },

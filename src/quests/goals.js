@@ -21,7 +21,7 @@ export const PATHS = [
     reqs: [{ label: 'No gang membership', ok: (g) => !g.quests.faction() }, stat('karma', 10), stat('karma', 25), stat('cha', 30), { label: '$2,500 filing fee', ok: (g) => P(g).money >= 2500 }, { label: 'Debate: 2 of CHA 30 / INT 25 / Karma 40', ok: (g) => [P(g).cha >= 30, P(g).int >= 25, P(g).karma >= 40].filter(Boolean).length >= 2 }],
     est: 50 },
   { id: 'main_bunker', ending: 'escape', door: 'The Bunker', style: 'Brains & secrets', who: 'reg', where: 'Crusty Reg, Under the Overpass',
-    reqs: [stat('int', 20), { label: '$500 (or CHA 25) for a keycard', ok: (g) => P(g).money >= 500 || P(g).cha >= 25 }, stat('int', 35), stat('int', 50), { label: 'Survive a tough fight', ok: (g) => P(g).str >= 25 || (P(g).weapons || []).some((w) => /pistol|revolver|shotgun|smg|rifle/.test(w)) }],
+    reqs: [stat('int', 20), { label: '$500 (or CHA 25) for a keycard', ok: (g) => P(g).money >= 500 || P(g).cha >= 25 }, { label: 'INT 35 (or someone who knows the door code)', ok: (g) => P(g).int >= 35 || !!g.state.getFlag('pickles_code') }, stat('int', 45), { label: 'Survive a tough fight', ok: (g) => P(g).str >= 25 || (P(g).weapons || []).some((w) => /pistol|revolver|shotgun|smg|rifle/.test(w)) }],
     est: 50 },
   { id: 'main_hobo', ending: 'hobo', door: 'The Crown', style: 'Joke ending: trials of the Crust', who: 'reg', where: 'Crusty Reg, Under the Overpass',
     reqs: [{ label: 'Paid Reg his $20', ok: (g) => !!g.state.getFlag('reg_paid') }, { label: 'Level 4', ok: (g) => P(g).level >= 4 }, { label: 'Win 5 brawls', ok: () => true }, stat('karma', 25)],

@@ -89,7 +89,7 @@ export function installHomes(game) {
     const hr = game.time.hour;
     const out = [
       // "until morning" only makes sense in the evening/night (at 7 AM it would skip a whole day)
-      ...(hr >= 17 || hr < 6 ? [{ label: 'Sleep until morning', hint: `until 7AM · ${Math.round(game.time.minutesUntil(7) / 60)}h`, run: () => sleep(loc, Math.max(60, game.time.minutesUntil(7))) }] : []),
+      ...(hr >= 17 || hr < 6 ? [{ label: 'Sleep until morning', hint: `until 7AM · ${Math.round(game.time.minutesUntil(7) / 60)}h`, run: () => sleep(loc, Math.max(60, game.time.minutesUntil(7)), true) }] : []),
       { label: 'Sleep 8 hours', run: () => sleep(loc, 480) },
       { label: 'Take a nap', hint: '2 hours', run: () => sleep(loc, 120) },
       { label: 'Stash', hint: 'safe from cops & muggers', run: () => openStash(loc) },
@@ -186,7 +186,7 @@ export function installHomes(game) {
   }
 
   // ---------------- sleep ----------------
-  async function sleep(loc, minutes) {
+  async function sleep(loc, minutes, morning = false) {
     const p = st.p;
     const h = loc.home;
     const restore = h.energyRestore ?? 0.8;
@@ -208,14 +208,15 @@ export function installHomes(game) {
       if (h.tier === 0 && chance(0.2)) notes.push(pick(['The neighbors had a screaming match until 4AM. You learned three new swears.', 'Something crawled into your ear. It crawled back out. You\'re fine. You\'re FINE.', 'The bed springs stabbed you all night. Acupuncture, basically.']));
     }
     game.bus.emit('home:slept', { id: loc.id, minutes });
-    const dream = minutes >= 360 ? pick([
+    const woke = minutes >= 360 || morning; // "sleep until morning" is a night's sleep even if it was only a few hours
+    const dream = woke ? pick([
       'You dream you\'re being chased by a giant Pizza Butt hat.',
       'You dream about money. It\'s the only thing you dream about now.',
       'You dream your teeth fall out and a dentist charges you for it.',
       'No dreams. Just the cold, black void. Refreshing.',
       'You dream you\'re CEO of Grimco. You fire everyone. It feels wonderful.',
     ]) : 'A quick power nap. You drool on yourself efficiently.';
-    await say(game, minutes >= 360 ? 'Good morning, sunshine' : 'Nap time', `${dream}<br><br>+${energyGain} energy. It's now ${game.time.label()}.${notes.length ? '<br><br>' + notes.join('<br>') : ''}`);
+    await say(game, woke ? 'Good morning, sunshine' : 'Nap time', `${dream}<br><br>+${energyGain} energy. It's now ${game.time.label()}.${notes.length ? '<br><br>' + notes.join('<br>') : ''}`);
     if (minutes >= 360) game.sysNews?.announce?.(true);
   }
 

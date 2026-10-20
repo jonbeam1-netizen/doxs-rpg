@@ -216,6 +216,16 @@ export class QuestEngine {
     if (this.trackedId() || !this.isDone('main_prologue')) return null;
     const ends = this.g.state.getFlag('endings', []) || [];
     const targets = []; const names = []; const seen = new Set();
+    // Just finished a story? Its epilogue (and the secret quest) come first: that's the obvious next step.
+    for (const d of Object.values(this.defs)) {
+      if (!/^(epi_|secret_)/.test(d.id) || this.store[d.id]) continue;
+      let ok = false; try { ok = !!d.available?.(this.g); } catch { ok = false; }
+      const p = ok && this.charPos(d.giver);
+      if (p) targets.push({ x: p.x, z: p.z, label: `${CHARACTERS[d.giver]?.name || d.giver}: ${d.title}` });
+    }
+    if (targets.length) {
+      return { title: 'After the Credits', text: `Your story isn't over: ${targets.map((t) => t.label.replace(/: (.*)$/, ' has "$1"')).join(', ')} (gold "!"). Or open another door (J → Goals).`, targets };
+    }
     for (const d of Object.values(this.defs)) {
       if (d.kind !== 'main' || d.id === 'main_prologue' || this.store[d.id] || seen.has(d.giver)) continue;
       let ok = true; try { ok = d.available ? !!d.available(this.g) : true; } catch { ok = false; }
@@ -564,6 +574,14 @@ export class QuestEngine {
   // ---------------------------------------------------------------- talking
   async talkTo(charId) {
     if (this._talking || this.g.ui.isBlocking()) return;
+    // Mid-heist (timer running, maybe a bag on your back): E near a quest character shouldn't
+    // pop open a chat or a new quest offer.
+    try {
+      if (this.g.heists?.active?.phase === 'active') {
+        this.g.ui.toast(`${esc(CHARACTERS[charId]?.name || 'They')} won't talk to a masked lunatic mid-job. Finish the heist first.`, 'info', 2200);
+        return;
+      }
+    } catch { /* heists module optional */ }
     this._talking = true;
     try { await this._talk(charId); } catch (e) { console.error('[quests] talk failed', charId, e); } finally { this._talking = false; this.changed(); }
   }
@@ -661,6 +679,8 @@ export class QuestEngine {
   async say(pages, ctx = {}) {
     if (!pages) return 'advance';
     if (!Array.isArray(pages)) pages = [pages];
+    // shared by nested `then` scripts: { committed (a choice was made), skip (✕ after committing) }
+    ctx.flow ??= {};
     for (let i = 0; i < pages.length; i++) {
       let page = pages[i];
       try { if (typeof page === 'function') page = page(this.g, ctx.q, ctx); } catch (e) { console.error(e); page = null; }
@@ -679,10 +699,19 @@ export class QuestEngine {
     const title = ctx.title || CHARACTERS[who]?.title || '';
     const speaker = this.speakerFor(who, ctx);
     const choices = (page.choices || []).filter((c) => { try { return !c.hide?.(g, ctx.q); } catch { return true; } });
+    const flow = ctx.flow || (ctx.flow = {});
     if (!choices.length) {
-      await g.ui.dialog({ title, speaker, html, options: [{ label: page.next || (isLast ? 'Okay.' : 'Continue') }] });
-      return 'advance';
+      if (flow.skip) return 'advance'; // ✕'d after a choice: skip the rest of the chatter
+      const i = await g.ui.dialog({ title, speaker, html, options: [{ label: page.next || (isLast ? 'Okay.' : 'Continue') }] });
+      if (i != null) return 'advance';
+      // ✕ / Esc ends the conversation (it used to just flip to the next page, so you couldn't
+      // back out of a long scene). Before any choice nothing is lost: the step stays put and you
+      // can talk again. Closing the final page still counts (you've seen the whole scene), and
+      // after a choice (you may already have paid / fought) it skips the remaining lines instead.
+      if (flow.committed) { flow.skip = true; return 'advance'; }
+      return isLast ? 'advance' : 'stay';
     }
+    flow.skip = false;
     const opts = choices.map((c) => {
       let ok = true;
       try { ok = !c.if || !!c.if(g, ctx.q); } catch { ok = false; }
@@ -693,6 +722,7 @@ export class QuestEngine {
     const i = await g.ui.dialog({ title, speaker, html, options: opts });
     if (i == null) return 'stay';
     const c = choices[i];
+    flow.committed = true;
     let r;
     try { r = c.do ? await c.do(g, ctx.q, ctx) : undefined; } catch (e) { console.error('[quests] choice failed', e); r = 'stay'; }
     if (r === undefined || r === null) r = c.result ?? 'advance';

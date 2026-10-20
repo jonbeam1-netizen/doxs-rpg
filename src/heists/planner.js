@@ -242,8 +242,10 @@ export class Planner {
     const p = this.g.state.p;
     const guns = (p.weapons || []).filter((w) => WEAPONS[w]?.kind === 'gun');
     const melee = (p.weapons || []).filter((w) => WEAPONS[w]?.kind === 'melee' && w !== 'fists').sort((a, b) => WEAPONS[b].damage - WEAPONS[a].damage)[0];
-    const ammo = guns.map((w) => (p.ammo?.[WEAPONS[w].ammo] || 0) + (p.mags?.[w] || 0)).reduce((a, b) => a + b, 0);
-    return `${melee ? WEAPONS[melee].name : 'bare fists'}${guns.length ? ` · ${WEAPONS[guns[0]].name} (${ammo} rounds)` : ' · no gun'}`;
+    // each gun with ITS ammo (reserve of its type + what's in its mag); best-stocked first
+    const rounds = (w) => (p.ammo?.[WEAPONS[w].ammo] || 0) + (p.mags?.[w] || 0);
+    const gunTxt = guns.sort((a, b) => rounds(b) - rounds(a)).slice(0, 2).map((w) => `${WEAPONS[w].name} (${rounds(w)} rounds)`).join(' · ');
+    return `${melee ? WEAPONS[melee].name : 'bare fists'}${guns.length ? ` · ${gunTxt}` : ' · no gun'}`;
   }
   buyHardware(id) {
     const g = this.g;
