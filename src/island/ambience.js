@@ -7,17 +7,25 @@ export function installAmbience(game) {
   const W = () => game.world?.island;
 
   // ---------------------------------------------------------------- sounds (WebAudio synthesis)
-  function out() { const a = game.audio; return a?.ctx && a.sfx ? a : null; }
+  // Ambience bus (ducked under dialogs, own slider); nothing is scheduled unless the context is running.
+  function out() { const a = game.audio; return a?.ctx && a.sfx && a.ctx.state === 'running' ? a : null; }
+  const dest = (a, pan = 0) => {
+    const bus = a.amb || a.sfx;
+    if (!pan || !a.ctx.createStereoPanner) return bus;
+    const p = a.ctx.createStereoPanner(); p.pan.value = pan; p.connect(bus); return p;
+  };
+  let waveBuf = null;
   function foghorn(vol = 1) {
     const a = out(); if (!a) return;
     const ctx = a.ctx, t = ctx.currentTime;
     const g = ctx.createGain();
+    g.gain.value = 0.0001;
     g.gain.setValueAtTime(0.0001, t);
-    g.gain.exponentialRampToValueAtTime(0.32 * vol, t + 0.35);
-    g.gain.setValueAtTime(0.32 * vol, t + 2.2);
+    g.gain.exponentialRampToValueAtTime(0.2 * vol, t + 0.35);
+    g.gain.setValueAtTime(0.2 * vol, t + 2.2);
     g.gain.exponentialRampToValueAtTime(0.0001, t + 3.4);
     const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 420; lp.Q.value = 2;
-    lp.connect(g).connect(a.sfx);
+    lp.connect(g).connect(dest(a));
     for (const [f, type] of [[82, 'sawtooth'], [83.2, 'sawtooth'], [123, 'square'], [41, 'sine']]) {
       const o = ctx.createOscillator(); o.type = type; o.frequency.setValueAtTime(f * 0.97, t); o.frequency.linearRampToValueAtTime(f, t + 0.4);
       const og = ctx.createGain(); og.gain.value = type === 'square' ? 0.15 : 0.5;
@@ -28,6 +36,7 @@ export function installAmbience(game) {
     const a = out(); if (!a) return;
     const ctx = a.ctx;
     const n = 2 + ((Math.random() * 3) | 0);
+    const out_ = dest(a, Math.random() * 1.4 - 0.7);
     for (let i = 0; i < n; i++) {
       const t = ctx.currentTime + i * (0.16 + Math.random() * 0.1);
       const o = ctx.createOscillator(), g = ctx.createGain(), bp = ctx.createBiquadFilter();
@@ -35,19 +44,23 @@ export function installAmbience(game) {
       const f0 = 1300 + Math.random() * 600;
       o.frequency.setValueAtTime(f0, t); o.frequency.exponentialRampToValueAtTime(f0 * 1.5, t + 0.04); o.frequency.exponentialRampToValueAtTime(f0 * 0.7, t + 0.14);
       bp.type = 'bandpass'; bp.frequency.value = 2000; bp.Q.value = 3;
-      g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.09 * vol, t + 0.02); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.15);
-      o.connect(bp).connect(g).connect(a.sfx); o.start(t); o.stop(t + 0.18);
+      g.gain.value = 0.0001; g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.09 * vol, t + 0.02); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.15);
+      o.connect(bp).connect(g).connect(out_); o.start(t); o.stop(t + 0.18);
     }
   }
   function waves(vol = 0.4) {
     const a = out(); if (!a) return;
     const ctx = a.ctx, t = ctx.currentTime, len = 2.6;
-    const buf = ctx.createBuffer(1, ctx.sampleRate * len, ctx.sampleRate), d = buf.getChannelData(0);
-    for (let i = 0; i < d.length; i++) d[i] = (Math.random() * 2 - 1) * Math.sin((i / d.length) * Math.PI);
+    if (!waveBuf || waveBuf.sampleRate !== ctx.sampleRate) { // built once, not every few seconds
+      waveBuf = ctx.createBuffer(1, ctx.sampleRate * len, ctx.sampleRate); const d = waveBuf.getChannelData(0);
+      for (let i = 0; i < d.length; i++) d[i] = (Math.random() * 2 - 1) * Math.sin((i / d.length) * Math.PI);
+    }
+    const buf = waveBuf;
     const s = ctx.createBufferSource(); s.buffer = buf;
-    const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 600;
+    const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 450 + Math.random() * 300;
     const g = ctx.createGain(); g.gain.value = 0.12 * vol;
-    s.connect(lp).connect(g).connect(a.sfx); s.start(t);
+    s.playbackRate.value = 0.85 + Math.random() * 0.3;
+    s.connect(lp).connect(g).connect(dest(a, Math.random() * 0.8 - 0.4)); s.start(t);
   }
 
   // ---------------------------------------------------------------- locals

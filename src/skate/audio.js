@@ -8,7 +8,8 @@ export class SkateAudio {
     this._noise = null;
   }
 
-  get ctx() { return this.game.audio?.ctx || null; }
+  // Only while running: a suspended context (?dev / ?mute) would pile up nodes that never stop.
+  get ctx() { const c = this.game.audio?.ctx; return c && c.state === 'running' ? c : null; }
   get out() { return this.game.audio?.sfx || null; }
 
   _noiseBuf() {
@@ -51,7 +52,7 @@ export class SkateAudio {
     if (!this.rumble) return;
     const now = ctx.currentTime;
     const k = Math.min(1, speed / 18);
-    const target = grounded && speed > 0.4 ? 0.05 + k * 0.32 : 0;
+    const target = grounded && speed > 0.4 ? 0.04 + k * 0.22 : 0;
     this.rumble.gain.gain.setTargetAtTime(target, now, 0.05);
     this.rumble.bp.frequency.setTargetAtTime(120 + k * 520 + Math.random() * 30, now, 0.05);
     if (this.motor) {
@@ -76,8 +77,10 @@ export class SkateAudio {
     if (!ctx || !out) return;
     const t = ctx.currentTime + delay;
     const src = ctx.createBufferSource(); src.buffer = this._noiseBuf();
-    const f = ctx.createBiquadFilter(); f.type = type; f.frequency.value = freq; f.Q.value = q;
+    const f = ctx.createBiquadFilter(); f.type = type; f.frequency.value = freq * (0.9 + Math.random() * 0.2); f.Q.value = q;
+    vol *= 0.6 * (0.85 + Math.random() * 0.3); // trimmed: the board was louder than gunfire
     const g = ctx.createGain();
+    g.gain.value = vol;
     g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(0.001, t + dur);
     src.connect(f); f.connect(g); g.connect(out);
     src.start(t, Math.random()); src.stop(t + dur + 0.02);
@@ -88,8 +91,9 @@ export class SkateAudio {
     if (!ctx || !out) return;
     const t = ctx.currentTime + delay;
     const o = ctx.createOscillator(); o.type = 'triangle';
-    o.frequency.setValueAtTime(f0, t); o.frequency.exponentialRampToValueAtTime(f1, t + dur);
-    const g = ctx.createGain(); g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(0.001, t + dur);
+    const pr = 0.92 + Math.random() * 0.16; vol *= 0.6;
+    o.frequency.setValueAtTime(f0 * pr, t); o.frequency.exponentialRampToValueAtTime(f1 * pr, t + dur);
+    const g = ctx.createGain(); g.gain.value = vol; g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(0.001, t + dur);
     o.connect(g); g.connect(out); o.start(t); o.stop(t + dur + 0.02);
   }
 

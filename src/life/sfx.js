@@ -1,5 +1,6 @@
 // Tiny synthesized critter sounds, positioned by distance + stereo pan from the camera.
-// All routed into game.audio.sfx so the volume setting (and ?dev mute) applies.
+// Routed into the ambience bus (game.audio.amb, ducked under dialogs) so the volume settings
+// (and ?dev mute) apply. Each call gets a small random pitch offset so repeats don't sound identical.
 
 let NOISE = null;
 function noise(ac) {
@@ -27,13 +28,13 @@ function out(game, x, z, maxD, vol) {
     const e = game.camera.matrixWorld.elements; // camera right axis = (e0, e1, e2)
     const rl = Math.hypot(e[0], e[2]) || 1;
     pan.pan.value = Math.max(-0.8, Math.min(0.8, ((dx * e[0] + dz * e[2]) / rl / (d || 1)) * 0.8));
-    gain.connect(pan); pan.connect(A.sfx);
-  } else gain.connect(A.sfx);
-  return { ac, dest: gain, t: ac.currentTime + 0.01 };
+    gain.connect(pan); pan.connect(A.amb || A.sfx);
+  } else gain.connect(A.amb || A.sfx);
+  return { ac, dest: gain, t: ac.currentTime + 0.01 + Math.random() * 0.02, p: 0.94 + Math.random() * 0.12 };
 }
 
 function env(ac, g, t, a, peak, dur) {
-  g.gain.setValueAtTime(0.0001, t);
+  g.gain.value = 0.0001; g.gain.setValueAtTime(0.0001, t);
   g.gain.exponentialRampToValueAtTime(peak, t + a);
   g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
 }
@@ -42,8 +43,9 @@ function tone(o, type, f0, f1, t, dur, peak, filt) {
   const { ac, dest } = o;
   const osc = ac.createOscillator(), g = ac.createGain();
   osc.type = type;
-  osc.frequency.setValueAtTime(f0, t);
-  osc.frequency.exponentialRampToValueAtTime(f1, t + dur);
+  const p = o.p || 1;
+  osc.frequency.setValueAtTime(f0 * p, t);
+  osc.frequency.exponentialRampToValueAtTime(f1 * p, t + dur);
   env(ac, g, t, Math.min(0.012, dur * 0.2), peak, dur);
   let n = osc;
   if (filt) { const f = ac.createBiquadFilter(); f.type = filt.type ?? 'bandpass'; f.frequency.value = filt.f; f.Q.value = filt.q ?? 1; osc.connect(f); n = f; }

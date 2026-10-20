@@ -65,9 +65,10 @@ export function installRadio(game) {
 
   function setup(c) {
     ctx = c;
-    radioBus = ctx.createGain(); radioBus.gain.value = radioVol; radioBus.connect(audio.master);
-    menuBus = ctx.createGain(); menuBus.gain.value = musicVol; menuBus.connect(audio.master);
-    audio.radio = radioBus; audio.music = menuBus;
+    const musicIn = audio.music || audio.master; // music bus (ducked under dialogs, own slider)
+    radioBus = ctx.createGain(); radioBus.gain.value = radioVol; radioBus.connect(musicIn);
+    menuBus = ctx.createGain(); menuBus.gain.value = musicVol; menuBus.connect(musicIn);
+    audio.radioOut = radioBus; audio.menuMusic = menuBus;
     const len = ctx.sampleRate * 2;
     noiseBuf = ctx.createBuffer(1, len, ctx.sampleRate);
     const d = noiseBuf.getChannelData(0);
@@ -103,7 +104,7 @@ export function installRadio(game) {
     if (cutoff) { const f = ctx.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = cutoff; f.Q.value = q; node.connect(f); node = f; }
     const g = ctx.createGain();
     const rel = r ?? Math.min(0.25, dur * 0.5);
-    g.gain.setValueAtTime(0.0001, t);
+    g.gain.value = 0.0001; g.gain.setValueAtTime(0.0001, t);
     g.gain.linearRampToValueAtTime(vol, t + a);
     g.gain.setValueAtTime(vol, t + Math.max(a, dur - rel));
     g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
@@ -114,19 +115,20 @@ export function installRadio(game) {
     if (!dest) return;
     const o = ctx.createOscillator(); o.type = type; o.frequency.value = freq;
     const g = ctx.createGain();
+    g.gain.value = vol;
     g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
     o.connect(g).connect(dest); o.start(t); o.stop(t + dur + 0.05);
   }
   function kick(t, vol = 0.5, dest = out) {
     const o = ctx.createOscillator(); o.type = 'sine';
     o.frequency.setValueAtTime(140, t); o.frequency.exponentialRampToValueAtTime(42, t + 0.14);
-    const g = ctx.createGain(); g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.3);
+    const g = ctx.createGain(); g.gain.value = vol; g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.3);
     o.connect(g).connect(dest); o.start(t); o.stop(t + 0.32);
   }
   function noise(t, dur, vol, { type = 'highpass', freq = 7000, q = 0.7, dest = out } = {}) {
     const s = ctx.createBufferSource(); s.buffer = noiseBuf;
     const f = ctx.createBiquadFilter(); f.type = type; f.frequency.value = freq; f.Q.value = q;
-    const g = ctx.createGain(); g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    const g = ctx.createGain(); g.gain.value = vol; g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
     s.connect(f).connect(g).connect(dest);
     s.start(t, Math.random() * 1.5); s.stop(t + dur + 0.02);
   }
@@ -285,6 +287,7 @@ export function installRadio(game) {
     out = null; gen = null; playing = id;
     if (!id) { updateHud(); return; }
     out = ctx.createGain();
+    out.gain.value = 0;
     out.gain.setValueAtTime(0, ctx.currentTime);
     out.gain.linearRampToValueAtTime(1, ctx.currentTime + (id === 'menu' ? 2.5 : 0.3));
     if (id === 'trash') {
@@ -320,7 +323,7 @@ export function installRadio(game) {
     talk.line = `<b>${speakerName(who)}:</b> ${esc(text)}`;
     talk.busy = true;
     updateHud();
-    const vol = radioVol * (audio.volume ?? 1);
+    const vol = radioVol * (audio.volume ?? 1) * (audio.getBusVolume?.('music') ?? 1);
     const synth = window.speechSynthesis;
     const done = () => { if (playing === 'talk') { talk.busy = false; talk.until = performance.now() + 450; } };
     if (synth && vol > 0.02 && typeof SpeechSynthesisUtterance !== 'undefined') {

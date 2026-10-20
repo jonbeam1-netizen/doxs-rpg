@@ -22,7 +22,7 @@ export { esc };
 export function sfx(game, name) { try { game.sysSfx?.play?.(name); } catch { /* cosmetic */ } }
 
 // Tiny synthesized blips for the arcade (WebAudio, through the shared sfx bus).
-export function beep(game, freq = 660, dur = 0.08, type = 'square', vol = 0.12) {
+export function beep(game, freq = 660, dur = 0.08, type = 'triangle', vol = 0.09) {
   const a = game.audio; const ctx = a?.ctx; if (!ctx || !a.sfx) return;
   try {
     const o = ctx.createOscillator(), g = ctx.createGain();

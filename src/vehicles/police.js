@@ -1097,7 +1097,7 @@ class PoliceAudio {
     if (!this.s) {
       if (vol < 0.01) return;
       const o1 = ctx.createOscillator(), o2 = ctx.createOscillator();
-      o1.type = 'square'; o2.type = 'sawtooth';
+      o1.type = 'triangle'; o2.type = 'triangle';
       const f = ctx.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = 2600; f.Q.value = 0.7;
       const g = ctx.createGain(); g.gain.value = 0;
       o1.connect(f); o2.connect(f); f.connect(g); g.connect(this.game.audio.sfx);

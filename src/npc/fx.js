@@ -67,7 +67,7 @@ export class Sfx {
     o.type = type;
     o.frequency.setValueAtTime(f0, t0);
     o.frequency.exponentialRampToValueAtTime(Math.max(20, f1), t0 + dur);
-    g.gain.setValueAtTime(vol, t0);
+    g.gain.value = vol; g.gain.setValueAtTime(vol, t0);
     g.gain.exponentialRampToValueAtTime(0.0008, t0 + dur);
     o.connect(g); g.connect(out);
     o.start(t0); o.stop(t0 + dur + 0.02);
@@ -83,7 +83,8 @@ export class Sfx {
     f.frequency.setValueAtTime(f0, t0);
     f.frequency.exponentialRampToValueAtTime(Math.max(30, f1), t0 + dur);
     const g = ctx.createGain();
-    g.gain.setValueAtTime(vol, t0);
+    g.gain.value = vol;
+    g.gain.value = vol; g.gain.setValueAtTime(vol, t0);
     g.gain.exponentialRampToValueAtTime(0.0008, t0 + dur);
     s.connect(f); f.connect(g); g.connect(out);
     s.start(t0, Math.random() * 0.5); s.stop(t0 + dur + 0.02);
@@ -92,12 +93,24 @@ export class Sfx {
   play(name, { pos = null, vol = 1 } = {}) {
     try {
       const ctx = this.ctx();
-      const out = this.out();
-      if (!ctx || !out || ctx.state !== 'running') return;
-      const v = this._vol(pos, vol);
-      if (v < 0.01) return;
-      const t = ctx.currentTime + 0.005;
+      if (!ctx || ctx.state !== 'running') return;
+      // Patches below were authored hot (peaks > 1.0); trim them so a brawl doesn't slam the limiter.
+      const TRIM = 0.45;
+      const A = this.game.audio;
+      let out, v;
+      if (pos && A?.spatial && A.ctx === ctx) {
+        // distance attenuation + stereo pan + distance muffling via the shared mixer
+        const sp = A.spatial(pos.x, pos.z, { maxDist: 70, refDist: 3, vol: vol * TRIM });
+        if (!sp) return;
+        out = sp.dest; v = 1;
+      } else {
+        out = this.out();
+        v = this._vol(pos, vol) * TRIM;
+        if (!out || v < 0.005) return;
+      }
+      const t = ctx.currentTime + 0.005 + Math.random() * 0.006;
       const r = rand(0.85, 1.15);
+      const r2 = rand(0.96, 1.04);
       switch (name) {
         case 'punch':
           this._osc(ctx, out, 'sine', 160 * r, 45, t, 0.14, 0.9 * v);
@@ -129,36 +142,37 @@ export class Sfx {
           break;
         case 'smg':
           this._noiseBurst(ctx, out, t, 0.12, 0.7 * v, 'lowpass', 6000, 400);
-          this._osc(ctx, out, 'square', 140 * r, 60, t, 0.05, 0.25 * v);
+          this._osc(ctx, out, 'triangle', 140 * r, 60, t, 0.05, 0.3 * v);
           break;
         case 'click':
-          this._osc(ctx, out, 'square', 1800, 900, t, 0.025, 0.2 * v);
+          this._osc(ctx, out, 'triangle', 1800 * r2, 900, t, 0.025, 0.22 * v);
+          this._noiseBurst(ctx, out, t, 0.02, 0.15 * v, 'highpass', 3000, 5000);
           break;
         case 'reload':
-          this._osc(ctx, out, 'square', 900, 500, t, 0.03, 0.2 * v);
-          this._osc(ctx, out, 'square', 1300, 700, t + 0.18, 0.03, 0.25 * v);
+          this._osc(ctx, out, 'triangle', 900 * r2, 500, t, 0.03, 0.22 * v);
+          this._osc(ctx, out, 'triangle', 1300 * r2, 700, t + 0.18, 0.03, 0.25 * v);
           this._noiseBurst(ctx, out, t + 0.2, 0.05, 0.25 * v, 'highpass', 2500, 4000);
           break;
         case 'hurt': { // player "oof"
           const o = this._osc(ctx, out, 'sawtooth', 260 * r, 110, t, 0.2, 0.0001);
           const f = ctx.createBiquadFilter(); f.type = 'bandpass'; f.frequency.value = 750; f.Q.value = 2;
-          const g = ctx.createGain(); g.gain.setValueAtTime(0.5 * v, t); g.gain.exponentialRampToValueAtTime(0.001, t + 0.22);
+          const g = ctx.createGain(); g.gain.value = 0.5 * v; g.gain.setValueAtTime(0.5 * v, t); g.gain.exponentialRampToValueAtTime(0.001, t + 0.22);
           o.disconnect(); o.connect(f); f.connect(g); g.connect(out);
           break;
         }
         case 'grunt': { // npc hurt, random pitch
           const o = this._osc(ctx, out, 'sawtooth', 330 * r * r, 150, t, 0.16, 0.0001);
           const f = ctx.createBiquadFilter(); f.type = 'bandpass'; f.frequency.value = 900 * r; f.Q.value = 3;
-          const g = ctx.createGain(); g.gain.setValueAtTime(0.35 * v, t); g.gain.exponentialRampToValueAtTime(0.001, t + 0.17);
+          const g = ctx.createGain(); g.gain.value = 0.35 * v; g.gain.setValueAtTime(0.35 * v, t); g.gain.exponentialRampToValueAtTime(0.001, t + 0.17);
           o.disconnect(); o.connect(f); f.connect(g); g.connect(out);
           break;
         }
         case 'cash':
-          this._osc(ctx, out, 'sine', 1320, 1300, t, 0.08, 0.3 * v);
-          this._osc(ctx, out, 'sine', 1760, 1740, t + 0.08, 0.14, 0.3 * v);
+          this._osc(ctx, out, 'sine', 1320 * r2, 1300 * r2, t, 0.08, 0.22 * v);
+          this._osc(ctx, out, 'sine', 1760 * r2, 1740 * r2, t + 0.08, 0.14, 0.22 * v);
           break;
         case 'pickup':
-          this._osc(ctx, out, 'triangle', 600, 1200, t, 0.12, 0.3 * v);
+          this._osc(ctx, out, 'triangle', 600 * r2, 1200 * r2, t, 0.12, 0.25 * v);
           break;
         case 'siren':
           this._osc(ctx, out, 'sine', 700, 1300, t, 0.35, 0.18 * v);
@@ -178,6 +192,7 @@ export class Sfx {
             }
             const fl = ctx.createBiquadFilter(); fl.type = 'lowpass'; fl.frequency.value = 1100;
             const g = ctx.createGain();
+            g.gain.value = 0.0001;
             g.gain.setValueAtTime(0.0001, st);
             g.gain.exponentialRampToValueAtTime(0.25 * v, st + 0.05);
             g.gain.exponentialRampToValueAtTime(0.001, st + dur);
@@ -198,28 +213,29 @@ export class Sfx {
         case 'heavy': // big meaty impact
           this._osc(ctx, out, 'sine', 95 * r, 28, t, 0.32, 1.2 * v);
           this._noiseBurst(ctx, out, t, 0.14, 0.9 * v, 'lowpass', 2400, 180);
-          this._osc(ctx, out, 'square', 60, 30, t, 0.12, 0.25 * v);
+          this._osc(ctx, out, 'triangle', 60, 30, t, 0.12, 0.3 * v);
           break;
         case 'kick':
           this._osc(ctx, out, 'sine', 130 * r, 40, t, 0.18, 1.0 * v);
           this._noiseBurst(ctx, out, t, 0.08, 0.7 * v, 'lowpass', 1500, 250);
           break;
         case 'charge': // wind-up whine
-          this._osc(ctx, out, 'sawtooth', 120, 340, t, 0.5, 0.06 * v);
+          this._osc(ctx, out, 'sawtooth', 120 * r2, 340 * r2, t, 0.5, 0.05 * v);
           break;
         case 'charged':
-          this._osc(ctx, out, 'triangle', 660, 990, t, 0.12, 0.22 * v);
+          this._osc(ctx, out, 'triangle', 660 * r2, 990 * r2, t, 0.12, 0.22 * v);
           break;
         case 'hitmark':
-          this._osc(ctx, out, 'square', 2400, 2200, t, 0.03, 0.12 * v);
+          this._osc(ctx, out, 'sine', 2400 * r2, 2000, t, 0.035, 0.14 * v);
+          this._noiseBurst(ctx, out, t, 0.02, 0.08 * v, 'highpass', 4000, 6000);
           break;
         case 'killmark':
-          this._osc(ctx, out, 'square', 2000, 1900, t, 0.04, 0.14 * v);
-          this._osc(ctx, out, 'square', 2700, 2600, t + 0.05, 0.05, 0.14 * v);
+          this._osc(ctx, out, 'sine', 2000 * r2, 1900, t, 0.05, 0.16 * v);
+          this._osc(ctx, out, 'sine', 2700 * r2, 2600, t + 0.05, 0.08, 0.16 * v);
           break;
         case 'taser': {
           const o = this._osc(ctx, out, 'sawtooth', 70, 60, t, 0.45, 0.0001);
-          const g = ctx.createGain(); g.gain.setValueAtTime(0.25 * v, t); g.gain.exponentialRampToValueAtTime(0.001, t + 0.45);
+          const g = ctx.createGain(); g.gain.value = 0.25 * v; g.gain.setValueAtTime(0.25 * v, t); g.gain.exponentialRampToValueAtTime(0.001, t + 0.45);
           o.disconnect(); o.connect(g); g.connect(out);
           this._noiseBurst(ctx, out, t, 0.4, 0.25 * v, 'highpass', 4000, 7000);
           break;
@@ -232,8 +248,8 @@ export class Sfx {
           this._osc(ctx, out, 'triangle', 520 * r, 760, t, 0.08, 0.12 * v);
           break;
         case 'heal':
-          this._osc(ctx, out, 'sine', 520, 780, t, 0.18, 0.2 * v);
-          this._osc(ctx, out, 'sine', 780, 1040, t + 0.12, 0.2, 0.18 * v);
+          this._osc(ctx, out, 'sine', 520 * r2, 780 * r2, t, 0.18, 0.2 * v);
+          this._osc(ctx, out, 'sine', 780 * r2, 1040 * r2, t + 0.12, 0.2, 0.18 * v);
           break;
         case 'bell': // boss intro
           this._osc(ctx, out, 'triangle', 392, 390, t, 1.2, 0.3 * v);
@@ -241,8 +257,8 @@ export class Sfx {
           this._osc(ctx, out, 'triangle', 392, 390, t + 0.35, 1.2, 0.3 * v);
           break;
         case 'bust':
-          this._osc(ctx, out, 'square', 520, 500, t, 0.18, 0.18 * v);
-          this._osc(ctx, out, 'square', 390, 380, t + 0.2, 0.3, 0.18 * v);
+          this._osc(ctx, out, 'triangle', 520, 500, t, 0.18, 0.22 * v);
+          this._osc(ctx, out, 'triangle', 390, 380, t + 0.2, 0.3, 0.22 * v);
           break;
         default: break;
       }

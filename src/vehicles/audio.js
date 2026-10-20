@@ -37,7 +37,7 @@ export class CarAudio {
 
   get ctx() {
     const a = this.game.audio;
-    if (a?.ctx) { if (a.ctx.state === 'suspended') a.ctx.resume?.(); return a.ctx; }
+    if (a?.ctx) { if (a.ctx.state === 'suspended') a.ctx.resume?.(); return a.ctx.state === 'running' ? a.ctx : null; } // suspended (?dev/?mute): schedule nothing
     if (a) return null; // audio module will create it on the first gesture
     if (!this.own) {
       try {
@@ -95,7 +95,7 @@ export class CarAudio {
     this._pendingDef = null;
     if (!e) return;
     this.engine = null;
-    const ctx = this.ctx;
+    const ctx = this.game.audio?.ctx || this.own; // not the running-only getter: always stop the nodes
     try {
       const t = ctx.currentTime;
       e.g.gain.setTargetAtTime(0, t, 0.08);
@@ -127,11 +127,11 @@ export class CarAudio {
     if (!ctx || !out) return;
     if (on && !this.hornNodes) {
       const g = ctx.createGain(); g.gain.value = 0;
-      const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 2200;
+      const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 1700; lp.Q.value = 0.6;
       const fs = meep ? [620, 780] : [347, 440];
       const os = fs.map((fr) => { const o = ctx.createOscillator(); o.type = 'square'; o.frequency.value = fr; o.connect(lp); o.start(); return o; });
       lp.connect(g).connect(out);
-      g.gain.setTargetAtTime(meep ? 0.06 : 0.1, ctx.currentTime, 0.01);
+      g.gain.setTargetAtTime(meep ? 0.05 : 0.08, ctx.currentTime, 0.01);
       this.hornNodes = { g, os };
     } else if (!on && this.hornNodes) {
       const { g, os } = this.hornNodes;
@@ -169,13 +169,13 @@ export class CarAudio {
   burst({ vol = 0.3, dur = 0.25, freq = 600, endFreq = 120, type = 'lowpass', dist = 0 } = {}) {
     const ctx = this.ctx, out = this.out;
     if (!ctx || !out) return;
-    const v = vol * Math.max(0, 1 - dist / 90);
+    const v = vol * Math.max(0, 1 - dist / 90) ** 1.5 * (0.9 + Math.random() * 0.2);
     if (v < 0.003) return;
     const t = ctx.currentTime;
     const n = ctx.createBufferSource(); n.buffer = this._noise(ctx);
     const f = ctx.createBiquadFilter(); f.type = type; f.frequency.setValueAtTime(freq, t);
     f.frequency.exponentialRampToValueAtTime(Math.max(30, endFreq), t + dur);
-    const g = ctx.createGain(); g.gain.setValueAtTime(v, t); g.gain.exponentialRampToValueAtTime(0.0005, t + dur);
+    const g = ctx.createGain(); g.gain.value = v; g.gain.setValueAtTime(v, t); g.gain.exponentialRampToValueAtTime(0.0005, t + dur);
     n.connect(f).connect(g).connect(out);
     n.start(t); n.stop(t + dur + 0.05);
   }
@@ -190,13 +190,14 @@ export class CarAudio {
   thud(dist = 0) { this.burst({ vol: 0.3, dur: 0.15, freq: 300, endFreq: 60, dist }); }
 
   explosion(dist = 0) {
-    this.burst({ vol: 0.9, dur: 1.6, freq: 1200, endFreq: 40, dist });
+    this.burst({ vol: 0.6, dur: 1.6, freq: 1200 * (0.9 + Math.random() * 0.2), endFreq: 40, dist });
+    this.burst({ vol: 0.12, dur: 0.25, freq: 5000, endFreq: 1500, type: 'highpass', dist });
     const ctx = this.ctx, out = this.out;
     if (!ctx || !out) return;
     const t = ctx.currentTime;
     const o = ctx.createOscillator(); o.type = 'sine';
     o.frequency.setValueAtTime(90, t); o.frequency.exponentialRampToValueAtTime(28, t + 0.8);
-    const g = ctx.createGain(); g.gain.setValueAtTime(0.5 * Math.max(0, 1 - dist / 90), t);
+    const g = ctx.createGain(); const ev = 0.35 * Math.max(0, 1 - dist / 90) ** 1.5; g.gain.value = ev; g.gain.setValueAtTime(ev, t);
     g.gain.exponentialRampToValueAtTime(0.0005, t + 0.9);
     o.connect(g).connect(out); o.start(t); o.stop(t + 1);
   }
@@ -207,8 +208,10 @@ export class CarAudio {
     const ctx = this.ctx, out = this.out;
     if (!ctx || !out) return;
     const t = ctx.currentTime;
-    const o = ctx.createOscillator(); o.type = 'square'; o.frequency.value = freq;
-    const g = ctx.createGain(); g.gain.setValueAtTime(vol, t); g.gain.setTargetAtTime(0, t + dur, 0.02);
-    o.connect(g).connect(out); o.start(t); o.stop(t + dur + 0.2);
+    // (was a raw square at full level: now a filtered triangle with a soft attack)
+    const o = ctx.createOscillator(); o.type = 'triangle'; o.frequency.value = freq;
+    const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 3000;
+    const g = ctx.createGain(); g.gain.value = 0.0001; g.gain.setValueAtTime(0.0001, t); g.gain.linearRampToValueAtTime(vol * 0.8, t + 0.006); g.gain.setTargetAtTime(0, t + dur, 0.02);
+    o.connect(lp).connect(g).connect(out); o.start(t); o.stop(t + dur + 0.2);
   }
 }

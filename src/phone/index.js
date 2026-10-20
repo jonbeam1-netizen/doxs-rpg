@@ -211,7 +211,9 @@ export async function installPhone(game) {
       case 'settings': {
         const R = game.radio, rig = game.cameraRig;
         const gfxBtn = game.ui.menuButtons.find((b) => /^Graphics/i.test(b.label));
-        return `<label class="ph-slider">Master volume <input type="range" min="0" max="1" step="0.05" data-set="master" value="${game.audio?.volume ?? 0.6}"></label>
+        const A = game.audio;
+        return `<label class="ph-slider">Master volume <input type="range" min="0" max="1" step="0.05" data-set="master" value="${A?.volume ?? 0.6}"></label>
+          ${(A?.BUSES || []).map((b) => `<label class="ph-slider">${A.BUS_LABELS[b]} <input type="range" min="0" max="1" step="0.05" data-set="bus:${b}" value="${A.getBusVolume(b)}"></label>`).join('')}
           ${R ? `<label class="ph-slider">Car radio <input type="range" min="0" max="1" step="0.05" data-set="radio" value="${R.volume}"></label>
           <label class="ph-slider">Menu music <input type="range" min="0" max="1" step="0.05" data-set="music" value="${R.musicVolume}"></label>` : ''}
           <label class="ph-slider">Mouse sensitivity <b data-out="sens">${(rig?.sensitivity ?? 1).toFixed(2)}×</b><input type="range" min="0.2" max="3" step="0.05" data-set="sens" value="${rig?.sensitivity ?? 1}"></label>
@@ -246,6 +248,7 @@ export async function installPhone(game) {
     if (!k) return;
     const v = e.target.type === 'checkbox' ? e.target.checked : Number(e.target.value);
     if (k === 'master') game.audio?.setVolume(v);
+    else if (k.startsWith('bus:')) game.audio?.setBusVolume?.(k.slice(4), v);
     else if (k === 'radio') game.radio?.setVolume(v);
     else if (k === 'music') game.radio?.setMusicVolume(v);
     else if (k === 'sens') { game.cameraRig?.setSensitivity(v); const o = entry.body.querySelector('[data-out=sens]'); if (o) o.textContent = `${Number(v).toFixed(2)}×`; }
