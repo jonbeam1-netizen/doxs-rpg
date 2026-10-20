@@ -1041,10 +1041,10 @@ export const QUESTS = {
   main_hobo: {
     kind: 'main', title: 'Long Live the Crust', giver: 'reg', ending: 'hobo',
     summary: 'Reg wants an heir. Pass the Trials of the Crust and inherit the Overpass: the burning barrel, the shopping cart, the cardboard throne, and the respect of every pigeon in Gutterside.',
-    available: (g) => g.quests.isDone('main_prologue') && !!g.state.getFlag('reg_paid') && g.state.p.level >= 4,
+    available: (g) => g.quests.isDone('main_prologue') && !!g.state.getFlag('reg_paid') && g.state.p.level >= 6,
     lockedText: (g) => (!g.quests.isDone('main_prologue') ? null
       : !g.state.getFlag('reg_paid') ? 'You still owe me twenty bucks, Plunger. A king doesn\'t name an heir who stiffs him.'
-        : 'You\'re not ready for the crown, Plunger. Live a little. Bleed a little. (Reach level 4.)'),
+        : 'You\'re not ready for the crown, Plunger. Live a little. Bleed a little. (Reach level 6.)'),
     offer: [
       ['Plunger. I\'m old. My knees are crunchy. My liver\'s been repossessed. A king needs an heir.', '*He taps his beer-can crown.* This crown has been passed down for generations. Well. Since Tuesday. I made it Tuesday.'],
       { t: ['Pass the Trials of the Crust and the Overpass is yours. All of it. The burning barrel. The shopping cart. The cardboard throne. The respect of every pigeon in Gutterside.'],

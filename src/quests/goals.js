@@ -24,7 +24,7 @@ export const PATHS = [
     reqs: [stat('int', 20), { label: '$500 (or CHA 25) for a keycard', ok: (g) => P(g).money >= 500 || P(g).cha >= 25 }, { label: 'INT 35 (or someone who knows the door code)', ok: (g) => P(g).int >= 35 || !!g.state.getFlag('pickles_code') }, stat('int', 45), { label: 'Survive a tough fight', ok: (g) => P(g).str >= 25 || (P(g).weapons || []).some((w) => /pistol|revolver|shotgun|smg|rifle/.test(w)) }],
     est: 50 },
   { id: 'main_hobo', ending: 'hobo', door: 'The Crown', style: 'Joke ending: trials of the Crust', who: 'reg', where: 'Crusty Reg, Under the Overpass',
-    reqs: [{ label: 'Paid Reg his $20', ok: (g) => !!g.state.getFlag('reg_paid') }, { label: 'Level 4', ok: (g) => P(g).level >= 4 }, { label: 'Win 5 brawls', ok: () => true }, stat('karma', 25)],
+    reqs: [{ label: 'Paid Reg his $20', ok: (g) => !!g.state.getFlag('reg_paid') }, { label: 'Level 6', ok: (g) => P(g).level >= 6 }, { label: 'Win 5 brawls', ok: () => true }, stat('karma', 25)],
     est: 35 },
 ];
 

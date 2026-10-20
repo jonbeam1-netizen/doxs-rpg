@@ -634,6 +634,7 @@ export class HeistManager {
     const headline = pick(def.headlines).replace('{take}', fmtMoney(take)).replace('{mask}', (MASKS[h.mask]?.name || 'mask').toUpperCase());
     h.news.push({ headline, body: `Police describe the suspect${crewN > 1 ? 's' : ''} as "${pick(['stick-thin', 'smelly', 'surprisingly polite', 'very, very sweaty', 'probably idiots'])}" and "wearing ${MASKS[h.mask]?.name.toLowerCase() || 'masks'}". Chief Lardner promises an investigation "right after lunch".` });
     setTimeout(() => this.toast(`📰 <b>ROTWELL RAG EXTRA:</b> ${esc(headline)}`, 'info', 8000), 2500);
+    this.unmask();
     g.state.changed('heists');
     g.bus.emit('heist:completed', { id: def.id, take, share, quiet: !!msg.quiet });
   }
@@ -644,6 +645,7 @@ export class HeistManager {
     g.ui.bigText('HEIST FAILED', esc(reason || 'It all went sideways.'), 3500);
     this.combatSfx('trombone');
     this.toast(pick(RADIO.fail), 'bad', 5000);
+    this.unmask();
     g.state.changed('heists');
     g.bus.emit('heist:failed', { id, reason });
   }
@@ -834,6 +836,13 @@ export class HeistManager {
     else if (this.s) this.s.timeLeft = Math.max(0, this.s.timeLeft - dt);
     if (!this.s) { this.applyCarry(false); this.hud.hide(); return; }
     try { this.tickLocal(dt); } catch (e) { if (!this._le) { console.error('[heists] local tick failed', e); this._le = true; } }
+  }
+
+  // Job's over (won or lost): the mask comes off on its own.
+  unmask() {
+    if (!this.masked) return;
+    this.masked = false;
+    this.onMaskChanged();
   }
 
   toggleMask() {
