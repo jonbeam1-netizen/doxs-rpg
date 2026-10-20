@@ -15,6 +15,8 @@
 import { VENTURES, VENTURE_ORDER, LEGACY, LEGACY_ORDER, HOME_UPGRADES, HOME_UPGRADE_ORDER, STATUS, STYLE_CAP, ACTIVE_ENERGY, LAZY_MULT, ODDITIES, ODDITY_ORDER } from '../data/ventures.js';
 import { CARS } from '../data/cars.js';
 import { fmtMoney, pick, chance, rand } from '../core/util.js';
+import { chip } from '../ui/visual.js';
+import { sect, tile } from '../ui/visual2.js';
 import { say, choose, shopPanel } from './ui-kit.js';
 import { train } from './common.js';
 
@@ -407,11 +409,12 @@ export function installVentures(game) {
       const cps = game.jobs?.earnedPerks?.() || [];
       if (!vs.length && !cps.length && !(s.style > 0)) return '';
       const daily = vs.reduce((a, id) => a + ventureDaily(id), 0) + (game.jobs?.dailyIncome?.() || 0);
-      return `<div class="sheet-sect"><b>Lifestyle</b><br>
-        ${vs.length ? `Businesses: ${vs.map((id) => VENTURES[id].name.replace(/\s*\(.*\)$/, '')).join(', ')}<br>` : ''}
-        ${daily ? `Passive income: ~${fmtMoney(daily)}/active day · fence cut ${Math.round(fenceCut() * 100)}%<br>` : ''}
-        ${cps.length ? `Career perks: ${cps.map((c) => `<span title="${c.text.replace(/"/g, '&quot;')}">${game.jobs.JOBS[c.jobId]?.ranks?.[c.rank]?.title || c.jobId}</span>`).join(', ')}<br>` : ''}
-        Style Charm: ${Math.min(STYLE_CAP, Math.round(s.style || 0))}/${STYLE_CAP}</div>`;
+      const style = Math.min(STYLE_CAP, Math.round(s.style || 0));
+      return `${sect('work', 'Ventures &amp; career')}<div class="vx2-tiles">
+        ${daily ? tile({ icon: 'money', color: 'var(--cash)', value: `~${fmtMoney(daily)}`, label: 'Per active day', sub: `fence cut ${Math.round(fenceCut() * 100)}%` }) : ''}
+        ${tile({ icon: 'shirt', color: '#d84a8a', value: `${style}<small>/${STYLE_CAP}</small>`, label: 'Style charm', bar: [style, STYLE_CAP] })}
+        ${vs.map((id) => tile({ icon: 'work', color: 'var(--g-work)', value: VENTURES[id].name.replace(/\s*\(.*\)$/, ''), label: 'Business' })).join('')}</div>
+        ${cps.length ? `<div class="vx2-chip-row" style="margin-top:5px">${cps.map((c) => chip('up', game.jobs.JOBS[c.jobId]?.ranks?.[c.rank]?.title || c.jobId, 'gain', c.text)).join('')}</div>` : ''}`;
     });
   } catch (e) { console.error('[lifestyle] sheet failed', e); }
   game.bus.on('state:reset', () => { const p = st.p; if (p.sys) p.sys.style = null; S(); });

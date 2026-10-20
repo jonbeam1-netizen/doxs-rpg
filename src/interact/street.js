@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { makeProp, softDot } from './meshes.js';
 import { createStickman } from '../entities/stickman.js';
+import { tile } from '../ui/visual2.js';
 
 // Street furniture you can actually use: vending machines, ATMs, payphones,
 // newspaper boxes, dumpsters & trash cans, parking meters, fire hydrants,
@@ -593,5 +594,8 @@ export function installStreet(game, I) {
   });
 
   // sheet
-  I.hooks.sheet.push((s) => `Dumpsters dived <b>${s.n.dives || 0}</b> · Meters busted <b>${s.n.meters || 0}</b> · Hydrants opened <b>${s.n.hydrants || 0}</b> · Busker tips <b>${fmt(s.n.tipped || 0)}</b>`);
+  I.hooks.sheet.push((s) => tile({ icon: 'crate', color: 'var(--g-food)', value: s.n.dives || 0, label: 'Dumpsters dived' })
+    + tile({ icon: 'money', color: 'var(--cash)', value: s.n.meters || 0, label: 'Meters busted' })
+    + tile({ icon: 'drop', color: '#60c0ff', value: s.n.hydrants || 0, label: 'Hydrants opened' })
+    + tile({ icon: 'music', color: 'var(--g-play)', value: fmt(s.n.tipped || 0), label: 'Busker tips' }));
 }

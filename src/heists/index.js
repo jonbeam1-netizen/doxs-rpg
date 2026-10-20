@@ -23,6 +23,7 @@ import { HEISTS } from '../data/heists.js';
 import { HeistManager } from './manager.js';
 import { Planner } from './planner.js';
 import { esc, fmtMoney } from '../core/util.js';
+import { sect, tile } from '../ui/visual2.js';
 
 export async function installHeists(game) {
   const mgr = new HeistManager(game);
@@ -157,7 +158,9 @@ export async function installHeists(game) {
     const h = mgr.h;
     const jobs = Object.entries(h.done).filter(([, n]) => n > 0);
     if (!jobs.length && !h.total) return '';
-    return `<div class="ui-section">Heists</div><div class="ui-muted">${jobs.map(([id, n]) => `${esc(HEISTS[id]?.name || id)} ×${n} (best ${fmtMoney(h.best[id] || 0)})`).join(' · ')}<br>Lifetime crime income: <b>${fmtMoney(h.total || 0)}</b></div>`;
+    return `${sect('key', 'Heists')}<div class="vx2-tiles">
+      ${tile({ icon: 'money', color: 'var(--cash)', value: fmtMoney(h.total || 0), label: 'Crime income' })}
+      ${jobs.map(([id, n]) => tile({ icon: 'key', color: 'var(--g-work)', value: `×${n}`, label: esc(HEISTS[id]?.name || id), sub: `best ${fmtMoney(h.best[id] || 0)}` })).join('')}</div>`;
   });
 
   mgr.ensure();

@@ -10,6 +10,7 @@
 //   island:smuggle {ok, inmate, pay}, island:ferry {to}, island:special {id}
 // Persistent state: game.state.p.island (see common.js isle()).
 import { pick, randInt, chance } from '../core/util.js';
+import { sect, tile } from '../ui/visual2.js';
 import { BOTTLE_NOTES } from './data.js';
 import { isle, $, sfx } from './common.js';
 import { installArcade } from './arcade.js';
@@ -70,7 +71,9 @@ export async function installIsland(game) {
       const s = isle(g);
       const fish = Object.values(s.caught).reduce((a, b) => a + b, 0);
       if (!fish && !s.ticketsTotal && !Object.keys(s.inmates).length) return '';
-      return `<div class="ui-section">Blackwater Isle</div><div class="ui-muted">Fish caught: ${fish}${s.rustjaw ? ' · <b>Old Rustjaw landed</b>' : ''} · Arcade tickets: ${s.tickets} (${s.ticketsTotal} lifetime)</div>`;
+      return `${sect('anchor', 'Blackwater Isle')}<div class="vx2-tiles">
+        ${tile({ icon: 'fish', color: '#60c0ff', value: fish, label: 'Fish caught', sub: s.rustjaw ? '<b>Old Rustjaw landed</b>' : '' })}
+        ${tile({ icon: 'ticket', color: '#ff70d0', value: s.tickets, label: 'Arcade tickets', sub: `${s.ticketsTotal} lifetime` })}</div>`;
     });
   } catch { /* optional */ }
 

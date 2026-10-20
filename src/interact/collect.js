@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { makeProp } from './meshes.js';
+import { tile } from '../ui/visual2.js';
 
 // Collectibles: 40 golden "Rotwell Rat" figurines tucked into alleys and odd
 // corners of every district + Blackwater Isle, and 20 graffiti spots where you
@@ -274,6 +275,7 @@ export function installCollect(game, I) {
   game.bus.on('game:start', () => { syncRats(); syncTags(); });
   game.bus.on('look:change', () => syncTags());
 
-  I.hooks.sheet.unshift((s) => `<span class="ix-rats">🐀 Rotwell Rats <b>${s.rats.length}/${RAT_TOTAL}</b></span> · 🎨 Tags <b>${Object.keys(s.tags).length}/${TAG_TOTAL}</b>`);
+  I.hooks.sheet.unshift((s) => tile({ icon: 'rat', color: '#e0b23a', value: `${s.rats.length}<small>/${RAT_TOTAL}</small>`, label: 'Rotwell Rats', bar: [s.rats.length, RAT_TOTAL] })
+    + tile({ icon: 'spray', color: '#ff60e0', value: `${Object.keys(s.tags).length}<small>/${TAG_TOTAL}</small>`, label: 'Tags', bar: [Object.keys(s.tags).length, TAG_TOTAL] }));
   I.rats = rats; I.tags = tags;
 }

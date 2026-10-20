@@ -20,6 +20,7 @@ import { installCollect } from './collect.js';
 import { installJobs } from './jobs.js';
 import { installEvents } from './events.js';
 import { fmtMoney, esc } from '../core/util.js';
+import { sect } from '../ui/visual2.js';
 
 const CSS = `
 .ix-hold { position: fixed; left: 50%; bottom: 148px; transform: translateX(-50%); width: 260px; z-index: 40;
@@ -243,8 +244,8 @@ export async function installInteract(game) {
   // ---------------------------------------------------------------- character sheet
   game.ui.sheetSections.push(() => {
     const s = S();
-    const rows = I.hooks.sheet.map((fn) => { try { return fn(s); } catch { return ''; } }).filter(Boolean).join('<br>');
-    return `<div class="ui-section">Street Life</div><div class="ix-sheet">${rows}</div>`;
+    const rows = I.hooks.sheet.map((fn) => { try { return fn(s); } catch { return ''; } }).filter(Boolean).join('');
+    return `${sect('spray', 'Street life')}<div class="vx2-tiles ix-sheet">${rows}</div>`;
   });
 
   game.cityInteract = {

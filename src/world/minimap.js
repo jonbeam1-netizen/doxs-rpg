@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { DISTRICTS, CITY_NAME } from '../data/locations.js';
 import { esc } from '../core/util.js';
+import { ic, ensureStyles as ensureVx2 } from '../ui/visual2.js';
 import { districtAt, WATER_X, HALF } from './layout.js';
 import { GROUND_COL } from './roads.js';
 
@@ -26,6 +27,18 @@ const TYPE_LABEL = {
   liquor: 'Liquor', tattoo: 'Tattoo', fortune: 'Fortune teller', pawn: 'Pawn shop', hobo_camp: 'Hobo camp', dealer: 'Dealer',
   isle_arcade: 'Arcade', isle_seafood: 'Seafood', isle_pier: 'Pier', isle_lighthouse: 'Lighthouse', isle_cove: 'Smugglers cove', isle_prison: 'Prison',
 };
+// Legend groups (the full map's side panel): each can be hidden on the big map.
+const CATS = [
+  ['food', 'Food & drink', 'food', ['diner', 'pizza', 'bar', 'liquor', 'nightclub', 'isle_seafood']],
+  ['shop', 'Shops', 'bag', ['store', 'clothing', 'pawn', 'gas', 'gun_shop', 'car_dealer', 'tattoo']],
+  ['fun', 'Money & games', 'dice', ['bank', 'casino', 'race', 'fortune', 'isle_arcade']],
+  ['work', 'Work & training', 'gym', ['gym', 'fight_club', 'library', 'university', 'office', 'factory', 'warehouse', 'junkyard', 'chop_shop']],
+  ['civic', 'Home & services', 'home', ['home', 'hospital', 'police', 'city_hall', 'church']],
+  ['under', 'Underworld', 'skull', ['gang_hq', 'dealer', 'hobo_camp', 'bunker', 'isle_cove', 'isle_prison']],
+  ['sights', 'Landmarks', 'anchor', ['isle_pier', 'isle_lighthouse']],
+];
+const CAT_OF = {};
+for (const [id, , , types] of CATS) for (const t of types) CAT_OF[t] = id;
 const LABEL_TRIES = [[0, 0]];
 for (let r = 12; r <= 60; r += 12) for (let a = 0; a < 8; a++) LABEL_TRIES.push([Math.round(Math.cos(a * Math.PI / 4) * r * 1.6), Math.round(Math.sin(a * Math.PI / 4) * r)]);
 const DIST_LABEL_POS = { downtown: [0, -15], hilltop: [0, -520], rustyards: [470, 0], gutterside: [0, 600], dustbowl: [-500, 40], blackwater: [1060, -245] };
@@ -48,6 +61,9 @@ export class MapSystem {
     game.scene.add(this.beacon);
     this.district = null;
     this._card = this._makeCard();
+    this.hiddenCats = new Set();
+    this.legendTab = 'legend';
+    game.cityMap = this; // quest log "Show on map" opens the map centred on a spot
   }
 
   _buildBase() {
@@ -266,9 +282,17 @@ export class MapSystem {
   // Fills the viewport. Drag / wheel / pinch to pan and zoom, click or tap to drop a waypoint, right-click to
   // clear it. The static layer (ground, roads, blocks, district names) is cached per view; icons, markers,
   // friends and the player are redrawn on top at a constant screen size.
-  openFull() {
+  // opts.focus = { x, z, label }: open (or re-centre) the map on that spot with a pulsing ring.
+  openFull(opts = {}) {
     const g = this.game;
-    if (this.panel && !this.panel.closed) { this.panel.close(); return; }
+    const focusOn = (f) => {
+      const V = this.mv; if (!V || !f) return;
+      V.k = Math.max(V.k, 1.7); V.fitted = false; V.cx = f.x; V.cz = f.z;
+      this._flash = { x: f.x, z: f.z, until: performance.now() + 3500 };
+      this._clampView(); this.drawFull();
+    };
+    if (this.panel && !this.panel.closed) { if (opts.focus) focusOn(opts.focus); else this.panel.close(); return; }
+    ensureVx2();
     const wrap = document.createElement('div');
     wrap.className = 'map-full';
     wrap.innerHTML = `<div class="map-view"><canvas></canvas>
@@ -277,15 +301,30 @@ export class MapSystem {
           <button class="map-btn" data-act="out" title="Zoom out">−</button>
           <button class="map-btn" data-act="me" title="Center on me">◎</button>
           <button class="map-btn" data-act="fit" title="Whole city">⤢</button>
-          <button class="map-btn wide" data-act="legend" title="Legend">Legend</button>
+          <button class="map-btn wide" data-act="legend" title="Legend &amp; places">${ic('list')}<span>Legend</span></button>
         </div>
-        <div class="map-legend${this.legendOn ? '' : ' hidden'}"></div>
+        <div class="map-legend ml2${this.legendOn ? '' : ' hidden'}"></div>
       </div>
       <div class="map-hint">Click to set a waypoint · right-click clears · drag to pan · wheel or pinch to zoom · M / Esc closes</div>`;
     const view = wrap.querySelector('.map-view');
     const cv = wrap.querySelector('canvas');
     const legend = wrap.querySelector('.map-legend');
-    legend.innerHTML = this._legendHtml();
+    const renderLegend = () => { const sc = legend.querySelector('.ml2-body')?.scrollTop || 0; legend.innerHTML = this._legendHtml(); const b = legend.querySelector('.ml2-body'); if (b) b.scrollTop = sc; };
+    renderLegend();
+    legend.addEventListener('click', (ev) => {
+      const t = ev.target.closest('button');
+      if (!t) return;
+      if (t.dataset.ltab) { this.legendTab = t.dataset.ltab; renderLegend(); return; }
+      if (t.dataset.cat) {
+        const c = t.dataset.cat;
+        if (this.hiddenCats.has(c)) this.hiddenCats.delete(c); else this.hiddenCats.add(c);
+        renderLegend(); this.drawFull(); return;
+      }
+      if (t.dataset.loc) {
+        const l = g.locations.get(t.dataset.loc);
+        if (l) focusOn({ x: l.doorX ?? l.x, z: l.doorZ ?? l.z });
+      }
+    });
     this.fullCanvas = cv; this.fullView = view;
     this.mv = null; // view: { cx, cz, k (css px per meter), W, H, dpr }
     this.panel = g.ui.openPanel({
@@ -313,6 +352,7 @@ export class MapSystem {
     this._ro = new ResizeObserver(() => resize());
     this._ro.observe(view);
     resize();
+    if (opts.focus) focusOn(opts.focus);
 
     const toWorld = (cx, cy) => { const r = cv.getBoundingClientRect(), V = this.mv; return [V.cx + (cx - r.left - V.W / 2) / V.k, V.cz + (cy - r.top - V.H / 2) / V.k]; };
     const zoomAt = (f, sx, sy) => {
@@ -415,14 +455,44 @@ export class MapSystem {
     V.cz = clampAx(V.cz, E.minZ, E.maxZ, hh);
   }
 
+  // Side panel: "Legend" = pin key grouped by category, each group can be hidden on the map;
+  // "Places" = every location as a compact row (tap to centre the map on it), grouped by district.
   _legendHtml() {
-    const types = [...new Set(this.game.locations.list.map((l) => l.type))].filter((t) => TYPE_ICON[t]);
-    types.sort((a, b) => (TYPE_LABEL[a] ?? a).localeCompare(TYPE_LABEL[b] ?? b));
-    const row = (ch, col, label, shape = 'pin') => `<div class="ml-row"><span class="ml-ico ${shape}" style="--c:${col}">${ch}</span>${esc(label)}</div>`;
-    return `<div class="ml-sec">Places</div>${types.map((t) => row(TYPE_ICON[t][0], TYPE_ICON[t][1], TYPE_LABEL[t] ?? t.replace(/_/g, ' '))).join('')}
-      <div class="ml-sec">Markers</div>
-      ${row('➤', '#f0e8d0', 'You', 'me')}${row('', '#40e0ff', 'Friend', 'dot')}${row('✚', '#ffd040', 'Waypoint', 'dia')}
-      ${row('★', '#ffd040', 'Main quest', 'dia')}${row('!', '#e8dcc0', 'Side quest / lead', 'dia')}`;
+    const locs = this.game.locations.list;
+    const tabs = `<div class="ml2-tabs"><button data-ltab="legend" class="${this.legendTab === 'legend' ? 'sel' : ''}">${ic('list')}Legend</button><button data-ltab="places" class="${this.legendTab === 'places' ? 'sel' : ''}">${ic('pin')}Places</button></div>`;
+    const pin = (t) => { const [ch, col] = TYPE_ICON[t] ?? ['•', '#ccc']; return `<span class="ml-ico pin" style="--c:${col}">${ch}</span>`; };
+    let body = '';
+    if (this.legendTab === 'places') {
+      const by = new Map();
+      for (const l of locs) {
+        const d = districtAt(l.doorX ?? l.x, l.doorZ ?? l.z) || 'other';
+        if (!by.has(d)) by.set(d, []);
+        by.get(d).push(l);
+      }
+      for (const id of [...Object.keys(DISTRICTS), 'other']) {
+        const list = by.get(id); if (!list?.length) continue;
+        list.sort((a, b) => String(a.name).localeCompare(String(b.name)));
+        body += `<div class="ml2-dist" style="--dc:${DISTRICTS[id]?.palette?.accent || 'var(--bone-dim)'}">${esc(DISTRICTS[id]?.name || 'Elsewhere')}</div>`;
+        body += list.map((l) => `<button class="ml2-pl" data-loc="${esc(l.id)}" title="${esc(TYPE_LABEL[l.type] ?? l.type)}">${pin(l.type)}<span>${esc(l.name)}</span><small>${esc(TYPE_LABEL[l.type] ?? '')}</small></button>`).join('');
+      }
+    } else {
+      const present = new Set(locs.map((l) => l.type));
+      const cats = CATS.map(([id, name, ico, types]) => [id, name, ico, types.filter((t) => present.has(t) && TYPE_ICON[t])]);
+      const other = [...present].filter((t) => TYPE_ICON[t] && !CAT_OF[t]);
+      if (other.length) cats.push(['other', 'Other', 'star', other]);
+      for (const [id, name, ico, types] of cats) {
+        if (!types.length) continue;
+        const off = this.hiddenCats.has(id);
+        const n = locs.filter((l) => types.includes(l.type)).length;
+        body += `<div class="ml2-cat${off ? ' off' : ''}"><button class="ml2-ch" data-cat="${id}" title="${off ? 'Show' : 'Hide'} on the map">${ic(ico)}<span>${name}</span><small>${n}</small><i class="ml2-eye">${ic(off ? 'eye_off' : 'eye')}</i></button>
+          <div class="ml2-items">${types.map((t) => `<div class="ml2-it">${pin(t)}<span>${esc(TYPE_LABEL[t] ?? t.replace(/_/g, ' '))}</span></div>`).join('')}</div></div>`;
+      }
+      const row = (ch, col, label, shape) => `<div class="ml2-it"><span class="ml-ico ${shape}" style="--c:${col}">${ch}</span><span>${esc(label)}</span></div>`;
+      body += `<div class="ml2-cat"><div class="ml2-ch" style="cursor:default">${ic('flag')}<span>Markers</span></div><div class="ml2-items">
+        ${row('➤', '#f0e8d0', 'You', 'me')}${row('', '#40e0ff', 'Friend', 'dot')}${row('✚', '#ffd040', 'Waypoint', 'dia')}
+        ${row('★', '#ffd040', 'Main quest', 'dia')}${row('!', '#e8dcc0', 'Side quest', 'dia')}${row('?', '#4fc3d9', 'Rumor lead', 'dia')}</div></div>`;
+    }
+    return `${tabs}<div class="ml2-body">${body}</div>`;
   }
 
   // Static layer for the current view (cached until the view or size changes).
@@ -512,7 +582,9 @@ export class MapSystem {
     if (f) { me = P(f.x, f.z); taken.push([me[0] - 14, me[1] - 14, me[0] + 14, me[1] + 14]); }
     // location pins
     const R = 8.5;
-    const locs = g.locations.list.map((l) => ({ l, p: P(l.doorX ?? l.x, l.doorZ ?? l.z) })).filter((o) => onScreen(o.p[0], o.p[1]));
+    const hid = this.hiddenCats;
+    const locs = g.locations.list.filter((l) => !hid.size || !hid.has(CAT_OF[l.type] || 'other'))
+      .map((l) => ({ l, p: P(l.doorX ?? l.x, l.doorZ ?? l.z) })).filter((o) => onScreen(o.p[0], o.p[1]));
     for (const { p: [sx, sy] } of locs) taken.push([sx - R, sy - R, sx + R, sy + R]);
     // markers (quests, heists, waypoint) and friends come before place names
     const marks = [...(g.world.markers ?? [])].filter(([, m]) => m && Number.isFinite(m.x));
@@ -585,6 +657,17 @@ export class MapSystem {
       x.beginPath(); x.moveTo(s, 0); x.lineTo(-s * 0.7, s * 0.7); x.lineTo(-s * 0.3, 0); x.lineTo(-s * 0.7, -s * 0.7); x.closePath(); x.stroke(); x.fill();
       x.restore();
     }
+    // "Show on map" / place-list focus: a pulsing ring for a few seconds
+    const fl = this._flash;
+    if (fl && performance.now() < fl.until) {
+      const [sx, sy] = P(fl.x, fl.z);
+      const t = (performance.now() % 1000) / 1000;
+      x.save();
+      x.strokeStyle = '#ffd040'; x.lineWidth = 2.5;
+      x.globalAlpha = 1 - t; x.beginPath(); x.arc(sx, sy, 12 + t * 22, 0, 7); x.stroke();
+      x.globalAlpha = 0.9; x.beginPath(); x.arc(sx, sy, 13, 0, 7); x.stroke();
+      x.restore();
+    } else this._flash = null;
   }
 }
 

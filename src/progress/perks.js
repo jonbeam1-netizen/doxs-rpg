@@ -1,6 +1,8 @@
 import { esc, fmtMoney } from '../core/util.js';
 import { BACKGROUNDS } from '../ui/creator.js';
 import { JOBS } from '../data/jobs.js';
+import { chip, bar } from '../ui/visual.js';
+import { ic, ok, ensureStyles as ensureVx2 } from '../ui/visual2.js';
 
 // Perk trees. One perk point per level-up (+ background bonus points).
 //
@@ -73,6 +75,14 @@ export const PERKS = {
   second_wind: { tree: 'brain', row: 1, name: 'Second Wind', desc: '+20 max energy. Coffee is a food group.', once: { maxEnergy: 20 }, lvl: 3 },
   compound_interest: { tree: 'brain', row: 2, name: 'Compound Interest', desc: 'Your bank balance earns 1% a day (max $750/day). Money makes money. Gross.', req: ['bookworm'], lvl: 5 },
   galaxy_brain: { tree: 'brain', row: 3, name: 'Galaxy Brain', desc: '+10% to ALL stat gains and +10% XP. You\'ve transcended. Mostly into debt.', mult: { statGain: 1.1, xpGain: 1.1 }, req: ['fast_learner'], lvl: 8 },
+};
+
+// Panel icons (presentation only)
+const TREE_ICON = { brawler: 'fist', hustler: 'money', brain: 'bulb' };
+const PERK_ICON = {
+  knuckle_sandwich: 'fist', thick_skull: 'skull', cardio: 'pulse', trigger_happy: 'gun', pain_sponge: 'badge', bar_brawler: 'bottle', swole: 'gym', cockroach: 'heart',
+  haggler: 'bag', street_pharma: 'pill', brown_noser: 'work', wholesale: 'crate', lucky_foot: 'dice', lawyered: 'scale', getaway: 'car', low_profile: 'eye', safecracker: 'key',
+  bookworm: 'book', silver_tongue: 'talk', fast_learner: 'up', power_nap: 'bed', second_wind: 'bolt', compound_interest: 'money', galaxy_brain: 'bulb',
 };
 
 const SPEND_SHOP = new Set(['shop', 'bar', 'food', 'cover', 'drink', 'black market', 'bottle service', 'date']);
@@ -216,46 +226,157 @@ export function installPerks(game) {
 
   // ---------------------------------------------------------------- panel
   let panel = null;
+  let selPerk = null;
+  const reqParts = (d) => {
+    const out = [];
+    if (d.lvl) out.push(ok(`LV ${d.lvl}`, st.p.level >= d.lvl));
+    for (const r of d.req || []) out.push(ok(esc(PERKS[r]?.name || r), perks.has(r)));
+    return out.join('');
+  };
+  // Three skill-tree columns of icon nodes, tier by tier; prerequisite links are drawn after layout.
   function perksHtml() {
     const pts = perks.points();
     const bg = BACKGROUNDS[st.p.background];
-    let html = `<div class="perk-head"><div><b class="perk-pts">${pts}</b> perk point${pts === 1 ? '' : 's'} to spend</div>
-      <div class="ui-muted">One point per level. ${bg ? `Background: <b>${bg.name}</b>` : ''}</div></div><div class="perk-trees">`;
+    const owned = perks.owned().length;
+    let html = `<div class="px-head">
+        <div class="px-pts${pts ? ' on' : ''}"><b>${pts}</b><span>perk point${pts === 1 ? '' : 's'}<em>${pts ? 'Pick a glowing perk' : 'Level up to earn more'}</em></span></div>
+        <div class="pm-chips">${chip('star', `${owned}/${Object.keys(PERKS).length} owned`, 'muted')}${chip('up', 'one point per level', 'muted')}${bg ? chip('person', esc(bg.name), 'muted', 'background') : ''}</div>
+      </div><div class="px-trees">`;
     for (const [tid, T] of Object.entries(TREES)) {
-      html += `<div class="perk-tree" style="--tree:${T.color}"><div class="perk-tree-name">${T.name}</div><div class="ui-muted perk-tree-blurb">${T.blurb}</div>`;
-      for (const [id, d] of Object.entries(PERKS)) {
-        if (d.tree !== tid) continue;
-        const s = perks.status(id);
-        const reqs = [];
-        if (d.lvl) reqs.push(`LV ${d.lvl}`);
-        if (d.req) reqs.push(...d.req.map((r) => PERKS[r]?.name || r));
-        html += `<button class="perk ${s}" data-perk="${id}" ${s === 'available' ? '' : 'disabled'}>
-          <span class="perk-name">${d.name}</span><span class="perk-desc">${d.desc}</span>
-          ${s === 'owned' ? '<span class="perk-tag">OWNED</span>' : reqs.length ? `<span class="perk-req">Needs: ${reqs.map(esc).join(', ')}</span>` : ''}
-        </button>`;
+      const list = Object.entries(PERKS).filter(([, d]) => d.tree === tid);
+      const have = list.filter(([id]) => perks.has(id)).length;
+      html += `<div class="px-tree" data-tree="${tid}" style="--tree:${T.color}" title="${esc(T.blurb)}">
+        <svg class="px-svg"></svg>
+        <div class="px-th"><span class="vx2-ibox">${ic(TREE_ICON[tid])}</span><b>${T.name}</b><small>${have}/${list.length}</small>${bar(have, list.length)}</div>`;
+      // three columns per tier; a perk sits under the perk it needs when it can
+      const col = {};
+      for (let row = 0; row <= 3; row++) {
+        const tier = list.filter(([, d]) => d.row === row);
+        if (!tier.length) continue;
+        const taken = new Set();
+        const pref = tier.length === 1 ? [2, 1, 3] : tier.length === 2 ? [1, 3, 2] : [1, 2, 3];
+        for (const [id, d] of tier) { const pc = col[d.req?.[0]]; if (pc && !taken.has(pc)) { col[id] = pc; taken.add(pc); } }
+        for (const [id] of tier) if (!col[id]) { const c = pref.find((x) => !taken.has(x)); col[id] = c; taken.add(c); }
+        html += '<div class="px-tier">';
+        for (const [id, d] of tier) {
+          const s = perks.status(id);
+          const badge = s === 'owned' ? ic('check') : s === 'locked' ? (d.lvl && st.p.level < d.lvl ? `LV${d.lvl}` : ic('lock')) : '';
+          html += `<button class="px-node ${s}${selPerk === id ? ' sel' : ''}" style="grid-column:${col[id]}" data-perk="${id}" data-req="${(d.req || []).join(',')}" aria-label="${esc(d.name)}">
+            <span class="px-orb">${ic(PERK_ICON[id] || 'star')}${badge ? `<span class="px-badge">${badge}</span>` : ''}</span><span class="px-nm">${d.name}</span></button>`;
+        }
+        html += '</div>';
       }
       html += '</div>';
     }
-    return html + '</div>';
+    return html + `</div><div class="px-detail empty">Hover or tap a perk to see what it does.</div>`;
+  }
+
+  function detailHtml(id) {
+    const d = PERKS[id];
+    if (!d) return null;
+    const s = perks.status(id);
+    const T = TREES[d.tree];
+    const btn = s === 'owned' ? `<button class="ui-btn vx2-btn" disabled>${ic('check')}<span>Owned</span></button>`
+      : s === 'available' ? `<button class="ui-btn vx2-btn primary" data-buy="${id}">${ic('star')}<span>Unlock · 1 point</span></button>`
+        : s === 'nopoints' ? `<button class="ui-btn vx2-btn" disabled>${ic('star')}<span>No points</span></button>`
+          : `<button class="ui-btn vx2-btn" disabled>${ic('lock')}<span>Locked</span></button>`;
+    const reqs = reqParts(d);
+    return { tree: T.color, html: `<span class="vx2-ibox">${ic(PERK_ICON[id] || 'star')}</span>
+      <div class="px-dn">${d.name}<small>${T.name}</small></div>
+      <div class="px-dd">${d.desc}${reqs ? `<div class="pm-chips">${reqs}</div>` : ''}</div>${btn}` };
+  }
+
+  function drawLinks(root) {
+    for (const tree of root.querySelectorAll('.px-tree')) {
+      const svg = tree.querySelector('.px-svg');
+      if (!svg) continue;
+      const tr = tree.getBoundingClientRect();
+      const k = tr.width / (tree.offsetWidth || tr.width || 1) || 1; // the panel may still be mid scale-in
+      const f = (v) => (v / k).toFixed(1);
+      const X = (v) => f(v - tr.left), Y = (v) => f(v - tr.top);
+      const nodes = [...tree.querySelectorAll('.px-node')];
+      let lines = '';
+      for (const n of nodes) {
+        const reqs = n.dataset.req ? n.dataset.req.split(',') : [];
+        const orb = n.querySelector('.px-orb').getBoundingClientRect();
+        for (const r of reqs) {
+          const srcNode = tree.querySelector(`.px-node[data-perk="${r}"]`);
+          if (!srcNode) continue;
+          const sr = srcNode.querySelector('.px-orb').getBoundingClientRect();
+          const on = perks.has(r);
+          const x1 = sr.left + sr.width / 2, y1 = srcNode.getBoundingClientRect().bottom - 2, x2 = orb.left + orb.width / 2, y2 = orb.top;
+          // a link that skips a tier steps around whatever node sits in its way
+          const block = nodes.find((o) => {
+            if (o === n || o === srcNode) return false;
+            const b = o.getBoundingClientRect();
+            return b.top > y1 && b.bottom < y2 && b.left < Math.max(x1, x2) && b.right > Math.min(x1, x2);
+          });
+          let d;
+          if (block) {
+            const b = block.getBoundingClientRect();
+            const gx = b.left - 3;
+            d = `M${X(x1)} ${Y(y1)} L${X(x1)} ${Y(b.top - 4)} L${X(gx)} ${Y(b.top - 4)} L${X(gx)} ${Y(b.bottom + 2)} L${X(x2)} ${Y(b.bottom + 2)} L${X(x2)} ${Y(y2)}`;
+          } else d = `M${X(x1)} ${Y(y1)} L${X(x2)} ${Y(y2)}`;
+          lines += `<path class="${on ? 'on' : ''}" d="${d}"/>`;
+        }
+      }
+      svg.innerHTML = lines;
+    }
   }
 
   function openPanel(tab = 'perks') {
     if (panel && !panel.closed) panel.close();
+    ensureVx2();
     const body = document.createElement('div');
-    body.innerHTML = `<div class="tabs"><button class="tab" data-tab="perks">Perks</button><button class="tab" data-tab="ach">Achievements</button></div><div class="tab-body"></div>`;
+    const tabsHtml = () => {
+      const pts = perks.points();
+      const an = game.achievements?.count?.() ?? 0;
+      return `<button class="tab" data-tab="perks">${ic('star')}<span class="lbl">Perks</span>${pts ? `<span class="vx2-n hot">${pts}</span>` : ''}</button><button class="tab" data-tab="ach">${ic('trophy')}<span class="lbl">Achievements</span><span class="vx2-n">${an}</span></button>`;
+    };
+    body.innerHTML = `<div class="tabs vx2-tabs"></div><div class="tab-body"></div>`;
     const tb = body.querySelector('.tab-body');
+    let ro = null;
     const show = (t) => {
       tab = t;
+      body.querySelector('.tabs').innerHTML = tabsHtml();
       body.querySelectorAll('.tab').forEach((b) => b.classList.toggle('sel', b.dataset.tab === t));
       tb.innerHTML = t === 'perks' ? perksHtml() : (game.achievements?.html() || '');
+      ro?.disconnect(); ro = null;
+      if (t === 'perks') {
+        drawLinks(tb);
+        if (selPerk) setDetail(selPerk);
+        try { ro = new ResizeObserver(() => drawLinks(tb)); ro.observe(tb); } catch { /* old browser */ }
+      }
     };
+    const setDetail = (id) => {
+      const el = tb.querySelector('.px-detail');
+      const d = id && detailHtml(id);
+      if (!el || !d) return;
+      el.className = 'px-detail';
+      el.style.setProperty('--tree', d.tree);
+      el.innerHTML = d.html;
+    };
+    const hover = (e) => { const n = e.target.closest?.('.px-node'); if (n) setDetail(n.dataset.perk); };
+    body.addEventListener('mouseover', hover);
+    body.addEventListener('focusin', hover);
     body.addEventListener('click', (e) => {
       const tbtn = e.target.closest('[data-tab]');
       if (tbtn) { show(tbtn.dataset.tab); return; }
+      const bb = e.target.closest('[data-buy]');
+      if (bb) { if (perks.buy(bb.dataset.buy)) show('perks'); return; }
+      const af = e.target.closest('[data-af]');
+      if (af) { game.achievements.filter = af.dataset.af; show('ach'); return; }
+      // first tap selects (shows the details + Unlock); tapping the selected, available perk again buys it
       const pb = e.target.closest('[data-perk]');
-      if (pb && !pb.disabled) { if (perks.buy(pb.dataset.perk)) show('perks'); }
+      if (!pb) return;
+      const id = pb.dataset.perk;
+      if (selPerk === id && perks.status(id) === 'available') { if (perks.buy(id)) show('perks'); return; }
+      selPerk = id;
+      tb.querySelectorAll('.px-node.sel').forEach((n) => n.classList.remove('sel'));
+      pb.classList.add('sel');
+      setDetail(id);
     });
-    panel = game.ui.openPanel({ title: 'Perks & Achievements', body, width: 980, className: 'perk-modal' });
+    panel = game.ui.openPanel({ title: 'Perks & Achievements', body, width: 980, className: 'perk-modal', onClose: () => { ro?.disconnect(); ro = null; } });
     panel.isPerks = true;
     show(tab);
     return panel;
@@ -276,8 +397,9 @@ export function installPerks(game) {
   game.ui.sheetSections.push(() => {
     const owned = perks.owned();
     const pts = perks.points();
-    return `<div class="ui-section">Perks ${pts ? `<span class="ui-good" style="font-size:15px">(${pts} unspent — press P)</span>` : ''}</div>
-      ${owned.length ? `<div class="ui-grid">${owned.map((id) => `<div class="ui-card" style="border-left:3px solid ${TREES[PERKS[id]?.tree]?.color}">${PERKS[id]?.name || id}</div>`).join('')}</div>` : '<div class="ui-muted">No perks yet. You are perfectly, tragically average.</div>'}`;
+    ensureVx2();
+    return `<div class="pm-sect cs-h vx2-sect">${ic('star')}<span>Perks</span><small>${pts ? `<span class="ui-good">${pts} unspent</span>` : ''}<span class="kb-only"> <kbd>P</kbd></span></small></div>
+      ${owned.length ? `<div class="vx2-cards">${owned.map((id) => { const d = PERKS[id]; const col = TREES[d?.tree]?.color || 'var(--rust)'; return `<div class="vx2-mini" title="${esc(d?.desc || '')}"><span class="vx2-ibox" style="--gc:${col}">${ic(PERK_ICON[id] || 'star')}</span><span class="vx2-rt"><b>${d?.name || id}</b><span>${TREES[d?.tree]?.name || ''}</span></span></div>`; }).join('')}</div>` : '<div class="cs-empty">No perks yet. You are perfectly, tragically average.</div>'}`;
   });
   return perks;
 }

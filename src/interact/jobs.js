@@ -4,6 +4,8 @@
 //   - Parcel Drop (Rustyards): run a package to a building across town
 // Active job lives in state.p.interact.job (plain JSON).
 
+import { tile } from '../ui/visual2.js';
+
 const CSS = `.ix-job { position: fixed; top: 74px; left: 50%; transform: translateX(-50%); z-index: 30; pointer-events: none;
   background: rgba(10,9,8,.82); border: 1px solid #3b342b; padding: 4px 12px; color: var(--bone, #e6dfcf);
   font-family: var(--font-body, sans-serif); font-size: 15px; white-space: nowrap; }
@@ -214,5 +216,5 @@ export function installJobs(game, I) {
   game.bus.on('game:start', () => { if (job()?.kind === 'parcel') setWp(); });
   game.bus.on('player:arrested', () => { const j = job(); if (j) { I.S().job = null; clearWp(); I.toast('Your odd job got confiscated along with your dignity.', 'bad'); } });
 
-  I.hooks.sheet.push((s) => `Odd jobs done <b>${s.n.jobs || 0}</b>`);
+  I.hooks.sheet.push((s) => tile({ icon: 'work', color: 'var(--g-work)', value: s.n.jobs || 0, label: 'Odd jobs' }));
 }

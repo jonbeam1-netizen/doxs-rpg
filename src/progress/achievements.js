@@ -1,5 +1,7 @@
 import { esc } from '../core/util.js';
 import { ensureProgress, PERKS, TREES } from './perks.js';
+import { chip, bar } from '../ui/visual.js';
+import { ic, ensureStyles as ensureVx2 } from '../ui/visual2.js';
 
 // Achievements tracked from bus events. Saved in state.p.progress.ach[id] = day unlocked,
 // counters in state.p.progress.c. Emits 'achievement:unlocked' {id, name}.
@@ -55,6 +57,22 @@ export const ACHIEVEMENTS = [
   { id: 'nap_pro', name: 'Professional Napper', desc: 'Sleep 10 times.', c: 'sleeps', n: 10 },
 ];
 
+// Panel presentation: an icon per achievement, and how far along the stat-checked ones are.
+const ACH_ICON = {
+  fist_contact: 'fist', knuckle_dragger: 'fist', concrete_nap: 'skull', frequent_flyer: 'medical', orange_new_stick: 'bars', repeat_offender: 'bars', most_wanted: 'star', ghosted: 'eye',
+  pharma: 'pill', kingpin: 'crown', wage_slave: 'work', failing_upward: 'up', thousandaire: 'money', filthy_rich: 'gem', basement: 'x', gamblers_fallacy: 'dice', house_loses: 'slots',
+  overeducated: 'school', swipe_right: 'heart', friendzoned: 'x', four_wheels: 'car', insurance_fraud: 'flame', fast_fecal: 'flag', landlord: 'home', body_count: 'skull',
+  did_a_thing: 'check', errand_boy: 'list', roll_credits: 'trophy', oceans_eleventy: 'key', gym_rat: 'gym', big_brain: 'bulb', smooth_op: 'smile', literally_jesus: 'church',
+  devils_intern: 'flame', level_10: 'star', specialist: 'star', tree_hugger: 'up', still_breathing: 'pulse', doomscroller: 'phone', piss_cab: 'car', radio_gaga: 'music', nap_pro: 'bed',
+};
+const PROG = {
+  most_wanted: (g) => [g.state.p.heat | 0, 5], kingpin: (g) => [g.state.p.totals?.drugsSold || 0, 300], thousandaire: (g) => [Math.floor(g.state.p.money), 1000],
+  filthy_rich: (g) => [Math.floor(g.state.p.money + g.state.p.bank), 1e6], gym_rat: (g) => [Math.floor(g.state.p.str), 50], big_brain: (g) => [Math.floor(g.state.p.int), 50],
+  smooth_op: (g) => [Math.floor(g.state.p.cha), 50], literally_jesus: (g) => [g.state.p.karma, 75], devils_intern: (g) => [-g.state.p.karma, 75], level_10: (g) => [g.state.p.level, 10],
+  still_breathing: (g) => [g.time.day, 30], radio_gaga: (g) => [(g.state.p.progress?.c?.stations || []).length, 4],
+};
+const fmtShort = (n) => (n >= 1e6 ? (n / 1e6).toFixed(n % 1e6 ? 1 : 0) + 'M' : n >= 10000 ? Math.round(n / 1000) + 'k' : String(n));
+
 const BY_ID = Object.fromEntries(ACHIEVEMENTS.map((a) => [a.id, a]));
 
 export function installAchievements(game) {
@@ -90,7 +108,7 @@ export function installAchievements(game) {
     showing = true;
     const el = document.createElement('div');
     el.className = 'ach-toast';
-    el.innerHTML = `<div class="ach-icon">🏆</div><div><div class="ach-k">ACHIEVEMENT UNLOCKED</div><div class="ach-n">${esc(a.name)}</div><div class="ach-d">${esc(a.desc)}</div></div>`;
+    el.innerHTML = `<div class="ach-icon" style="display:flex;color:var(--energy)">${ic('trophy').replace('class="pr-ico"', 'class="pr-ico" style="width:34px;height:34px"')}</div><div><div class="ach-k">ACHIEVEMENT UNLOCKED</div><div class="ach-n">${esc(a.name)}</div><div class="ach-d">${esc(a.desc)}</div></div>`;
     (document.getElementById('ui-root') || document.body).appendChild(el);
     game.audio?.ui?.('achievement');
     setTimeout(() => { el.classList.add('out'); }, 3800);
@@ -103,15 +121,27 @@ export function installAchievements(game) {
     for (const a of ACHIEVEMENTS) if (a.c === key && c[key] >= a.n) unlock(a.id);
   }
 
+  // Tile grid: trophy icons, locked ones greyed with a progress bar where we can measure it.
   function html() {
+    ensureVx2();
     const got = pr().ach;
     const n = api.count();
-    return `<div class="perk-head"><div><b class="perk-pts">${n}</b> / ${ACHIEVEMENTS.length} unlocked</div><div class="ui-muted">Participation trophies for terrible people.</div></div>
-      <div class="ach-grid">${ACHIEVEMENTS.map((a) => {
-        const d = got[a.id];
-        const c = a.c && !d ? ` <span class="ui-muted">(${Math.min(a.n, Math.floor(pr().c[a.c] || 0))}/${a.n})</span>` : '';
-        return `<div class="ach ${d ? 'got' : ''}"><b>${d ? '🏆 ' : ''}${esc(a.name)}</b><span>${esc(a.desc)}${c}</span>${d ? `<small>Day ${d}</small>` : ''}</div>`;
-      }).join('')}</div>`;
+    const f = api.filter || 'all';
+    const list = ACHIEVEMENTS.filter((a) => f === 'all' || (f === 'got' ? got[a.id] : !got[a.id]));
+    const tiles = list.map((a) => {
+      const d = got[a.id];
+      let prog = '';
+      if (!d) {
+        let cur = null, max = null;
+        if (a.c) { cur = Math.floor(pr().c[a.c] || 0); max = a.n; } else if (PROG[a.id]) { try { [cur, max] = PROG[a.id](game); } catch { cur = null; } }
+        if (cur != null && max > 1) prog = `<span class="ax-p">${bar(Math.max(0, Math.min(max, cur)), max)}<span>${fmtShort(Math.max(0, Math.min(max, cur)))}/${fmtShort(max)}</span></span>`;
+      }
+      return `<div class="ax${d ? ' got' : ''}" title="${esc(a.desc)}"><span class="ax-i">${ic(d ? 'trophy' : ACH_ICON[a.id] || 'trophy')}</span><b>${esc(a.name)}</b><span>${esc(a.desc)}</span>${d ? `<span class="ax-d">Day ${d}</span>` : prog}</div>`;
+    }).join('');
+    const fb = (k, l) => `<button class="ui-btn ${f === k ? 'on' : ''}" data-af="${k}">${l}</button>`;
+    return `<div class="ax-head"><div class="px-pts${n ? ' on' : ''}" style="--toxic:var(--energy)"><b>${n}</b><span>of ${ACHIEVEMENTS.length}<em>unlocked</em></span></div>${bar(n, ACHIEVEMENTS.length)}
+        <div class="ax-filter">${fb('all', 'All')}${fb('got', 'Unlocked')}${fb('todo', 'Locked')}</div></div>
+      <div class="ax-grid">${tiles || '<div class="vx2-empty">Nothing here.</div>'}</div>`;
   }
 
   // ---------------------------------------------------------------- event wiring
@@ -166,8 +196,10 @@ export function installAchievements(game) {
   game.ui.sheetSections.push(() => {
     const got = pr().ach;
     const list = ACHIEVEMENTS.filter((a) => got[a.id]);
-    return `<div class="ui-section">Achievements <span class="ui-muted" style="font-size:15px">${list.length}/${ACHIEVEMENTS.length} — full list on P</span></div>
-      ${list.length ? `<div class="ui-row">${list.map((a) => `<span class="ach-chip" title="${esc(a.desc)}">🏆 ${esc(a.name)}</span>`).join('')}</div>` : '<div class="ui-muted">Nothing yet. Even your mom is unimpressed.</div>'}`;
+    ensureVx2();
+    return `<div class="pm-sect cs-h vx2-sect">${ic('trophy')}<span>Achievements</span><small>${list.length}/${ACHIEVEMENTS.length} <span class="kb-only">· <kbd>P</kbd></span></small></div>
+      <div class="ax-head" style="margin-bottom:6px">${bar(list.length, ACHIEVEMENTS.length)}</div>
+      ${list.length ? `<div class="vx2-chip-row">${list.map((a) => chip('trophy', esc(a.name), 'gold', a.desc)).join('')}</div>` : '<div class="cs-empty">Nothing yet. Even your mom is unimpressed.</div>'}`;
   });
   return api;
 }

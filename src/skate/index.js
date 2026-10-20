@@ -15,6 +15,8 @@ import { poseRider, resetRider } from './pose.js';
 import { SkateAudio } from './audio.js';
 import { SkateVendor } from './vendor.js';
 import { clamp, lerp, pick, angleLerp, chance } from '../core/util.js';
+import { chip } from '../ui/visual.js';
+import { sect, tile } from '../ui/visual2.js';
 
 const GRAV = 18;
 const TRICKS = {
@@ -667,8 +669,13 @@ export async function installSkate(game) {
     const d = skate.data();
     if (!d.owned.length) return '';
     const st = d.stats;
-    const tricks = Object.entries(st.tricks || {}).filter(([, n]) => n > 0).map(([k, n]) => `${TRICKS[k]?.label?.toLowerCase() || k} ×${n}`).join(' · ');
-    return `<div class="ui-section">Skateboarding</div><div class="ui-muted">Board: ${BOARDS[d.board]?.name || '—'} · Tricks landed ${st.landed || 0} · Bails ${st.bails || 0} · Best combo ${st.bestCombo || 0}</div>${tricks ? `<div class="ui-muted">${tricks}</div>` : ''}`;
+    const tricks = Object.entries(st.tricks || {}).filter(([, n]) => n > 0).map(([k, n]) => chip('', `${TRICKS[k]?.label?.toLowerCase() || k} ×${n}`, 'muted')).join('');
+    return `${sect('board', 'Skateboarding', '<span class="kb-only"><kbd>G</kbd> ride</span>')}<div class="vx2-tiles">
+      ${tile({ icon: 'board', color: 'var(--g-play)', value: BOARDS[d.board]?.name || '—', label: 'Board' })}
+      ${tile({ icon: 'check', color: 'var(--cash)', value: st.landed || 0, label: 'Tricks landed' })}
+      ${tile({ icon: 'x', color: 'var(--blood-bright)', value: st.bails || 0, label: 'Bails' })}
+      ${tile({ icon: 'star', color: 'var(--energy)', value: st.bestCombo || 0, label: 'Best combo' })}</div>
+      ${tricks ? `<div class="vx2-chip-row" style="margin-top:5px">${tricks}</div>` : ''}`;
   });
   game.ui.helpKeys?.push(['G', 'Skateboard on/off (Space ollie · Click kickflip)']);
 }

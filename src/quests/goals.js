@@ -4,6 +4,8 @@
 import { ENDINGS, CHARACTERS } from '../data/quests.js';
 import { nextMilestones } from '../progress/milestones.js';
 import { esc, fmtMoney } from '../core/util.js';
+import { chip, bar } from '../ui/visual.js';
+import { ic, sect, tile, ok } from '../ui/visual2.js';
 
 const $ = fmtMoney;
 const P = (g) => g.state.p;
@@ -103,52 +105,111 @@ export function suggestions(g) {
   return out.slice(0, 7);
 }
 
+// ---------------------------------------------------------------- presentation
 const STATUS = {
-  done: '<b style="color:#8fbf4a">ENDING REACHED</b>',
-  finale: '<b style="color:#f2c53d">FINALE</b>',
-  active: '<b style="color:#e0b23a">IN PROGRESS</b>',
-  available: '<b style="color:#4fc3d9">AVAILABLE</b>',
-  locked: '<span class="ui-muted">LOCKED</span>',
+  done: ['done', 'Ending reached'],
+  finale: ['finale', 'Finale'],
+  active: ['active', 'In progress'],
+  available: ['available', 'Available'],
+  locked: ['locked', 'Locked'],
 };
+const DOOR_ICON = { main_rats: 'skull', main_corp: 'gem', main_mayor: 'badge', main_bunker: 'hatch', main_hobo: 'crown' };
+const MILE = {
+  str: ['gym', 'var(--g-train)', 'STR'], int: ['bulb', 'var(--g-shop)', 'INT'], cha: ['smile', '#d84a8a', 'CHA'],
+  karma: ['scale', 'var(--g-social)', 'Karma'], level: ['star', 'var(--xp)', 'Level'],
+};
+// suggestion text -> [icon, color]
+const SUG_ICON = [
+  [/perk point/i, 'star', 'var(--toxic)'], [/^Remaining endings/i, 'trophy', '#e0b23a'], [/^Secret/i, 'eye', '#c080ff'], [/^Epilogue/i, 'book', '#e0b23a'],
+  [/energy/i, 'bolt', 'var(--energy)'], [/heist/i, 'money', 'var(--cash)'], [/skateboard/i, 'board', 'var(--g-play)'], [/gang/i, 'skull', 'var(--blood-bright)'],
+  [/Blackwater/i, 'anchor', '#60c0ff'], [/bank/i, 'hall', 'var(--cash)'], [/bag/i, 'bag', 'var(--g-shop)'], [/University/i, 'school', 'var(--g-shop)'],
+  [/job|Work at/i, 'work', 'var(--g-work)'],
+];
+function sugIcon(t, tracked) {
+  if (tracked) return ['target', '#f2c53d'];
+  for (const [re, ic2, col] of SUG_ICON) if (re.test(t)) return [ic2, col];
+  return ['flag', 'var(--rust)'];
+}
+
+function todoRows(g, list) {
+  const q = g.quests;
+  const tr = q.trackedId();
+  const trTitle = tr ? q.def(tr)?.title : null;
+  return `<div class="vx2-rows qx-todo">${list.map((s) => {
+    const [ico, col] = sugIcon(s.t, trTitle && s.t.startsWith(trTitle + ':'));
+    return `<div class="vx2-row" style="--gc:${col}"><span class="vx2-ibox">${ic(ico)}</span><span class="vx2-rt"><b>${esc(s.t)}</b>${s.why ? `<span>${esc(s.why)}</span>` : ''}</span></div>`;
+  }).join('')}</div>`;
+}
+
+function endsMeter(g) {
+  const ends = g.state.getFlag('endings', []) || [];
+  const total = Object.keys(ENDINGS).length;
+  return `<div class="qx-ends" title="Endings found"><div class="qx-ends-row">${Object.entries(ENDINGS).map(([id, E]) => `<i class="${ends.includes(id) ? 'on' : ''}" style="--ec:${E.color}" title="${ends.includes(id) ? esc(E.title) : '???'}">${ic(ends.includes(id) ? 'trophy' : 'door')}</i>`).join('')}</div><small>${ends.length}/${total} endings</small></div>`;
+}
+
+function heroHtml(g, ch, small = false) {
+  const ends = g.state.getFlag('endings', []) || [];
+  const goal = ends.length ? 'Rotwell is yours. Now finish the job.' : 'Get out of rock bottom and reach an ending.';
+  const sum = ends.length
+    ? `You've beaten the game (${ends.length}/${Object.keys(ENDINGS).length} endings). Your stuff, stats and money stay. Every new ending grants +2 perk points.`
+    : 'Five doors lead out of this toilet bowl. Finish one storyline\'s FINALE to see the credits; the city keeps going afterwards.';
+  return `<div class="qx-hero" title="${esc(sum)}">
+    <div class="qx-chap"><small>Ch.</small><b>${ch.n}</b></div>
+    <div class="qx-hero-t"><div class="qx-hero-k">${esc(goal)}</div><div class="qx-hero-n">${esc(ch.name)}</div>${small ? '' : `<div class="qx-hero-s">${esc(ch.text || '')}</div>`}</div>
+    ${endsMeter(g)}
+  </div>`;
+}
+
+function doorHtml(g, path) {
+  const i = pathInfo(g, path);
+  const E = ENDINGS[path.ending];
+  const [cls, label] = STATUS[i.status] || STATUS.locked;
+  const met = i.reqs.filter((r) => r.ok).length;
+  let prog;
+  if (i.status === 'done') prog = `${bar(1, 1)}<span>${ic('check')} done</span>`;
+  else if (i.step) prog = `${bar(i.step - 1, i.steps)}<span>Step ${i.step}/${i.steps}</span>`;
+  else prog = `${bar(met, i.reqs.length)}<span>${met}/${i.reqs.length} ready</span>`;
+  const mapBtn = i.status === 'active' || i.status === 'finale'
+    ? `<button class="ui-btn vx2-btn" data-mapq="${path.id}">${ic('pin')}<span>Show on map</span></button>`
+    : i.status === 'available' ? `<button class="ui-btn vx2-btn" data-mapc="${path.who}">${ic('pin')}<span>Find ${esc(CHARACTERS[path.who]?.name?.split(' ').slice(-1)[0] || 'them')}</span></button>` : '';
+  return `<div class="qx-door ${cls}" style="--dc:${E.color}">
+    <div class="qx-dh"><span class="vx2-ibox">${ic(DOOR_ICON[path.id] || 'door')}</span><span class="qx-dn"><b>${esc(path.door)}</b><span>${esc(path.style)}</span></span></div>
+    <div class="qx-dq">${esc(i.title)} <em>→</em> ${esc(E.title)}${i.endingDone && i.status !== 'done' ? ` ${chip('trophy', 'seen', 'muted')}` : ''}</div>
+    <div class="qx-dp"><span class="qx-st ${cls}">${label}</span>${prog}</div>
+    ${i.next ? `<div class="qx-dx">${ic('flag')}<span>${esc(i.next)}</span></div>` : i.why && i.status !== 'done' ? `<div class="qx-dx why" title="${esc(i.why)}">${ic(i.status === 'available' ? 'talk' : 'lock')}<span>${esc(i.why)}</span></div>` : ''}
+    ${i.status === 'done' ? '' : `<div class="pm-chips">${i.reqs.map((r) => ok(esc(r.label) + (r.cur != null && !r.ok ? ` <small>(${r.cur})</small>` : ''), r.ok)).join('')}${chip('clock', `~${path.est} min`, 'muted', 'once started')}</div>`}
+    ${mapBtn ? `<div class="qx-btns">${mapBtn}</div>` : ''}
+  </div>`;
+}
 
 export function goalsHtml(g) {
   const p = P(g);
   const ch = chapter(g);
-  const ends = g.state.getFlag('endings', []) || [];
-  const total = Object.keys(ENDINGS).length;
-  let html = `<div class="q-goal-main"><div class="q-kind">Main goal</div>
-    <h3>${ends.length ? 'Rotwell is yours. Now finish the job.' : 'Get out of rock bottom and reach an ending.'}</h3>
-    <div class="q-sum">${ends.length
-    ? `You've beaten the game (${ends.length}/${total} endings). Your stuff, stats and money stay. Every new ending grants +2 perk points.`
-    : 'Five doors lead out of this toilet bowl. Finish one storyline\'s FINALE to see the credits; the city keeps going afterwards.'}</div>
-    <div class="q-obj"><b>Chapter ${ch.n}: ${esc(ch.name)}</b> · ${esc(ch.text || '')}</div></div>`;
+  let html = heroHtml(g, ch);
+  const sug = suggestions(g).slice(0, 5);
+  html += sect('flag', 'Do this next');
+  html += sug.length ? todoRows(g, sug) : `<div class="vx2-empty">Go cause trouble.</div>`;
 
-  html += '<div class="ui-section">Do this next</div>';
-  html += suggestions(g).map((s) => `<div class="q-lead">▸ ${esc(s.t)}${s.why ? ` <span class="ui-muted">${esc(s.why)}</span>` : ''}</div>`).join('') || '<div class="ui-muted">Go cause trouble.</div>';
+  html += sect('door', 'The five doors', 'each one is a storyline with its own ending');
+  html += `<div class="qx-doors">${PATHS.map((path) => doorHtml(g, path)).join('')}</div>`;
 
-  html += '<div class="ui-section">The five doors</div>';
-  for (const path of PATHS) {
-    const i = pathInfo(g, path);
-    const E = ENDINGS[path.ending];
-    html += `<div class="q-card q-path" style="border-left-color:${E.color}">
-      <div class="q-kind">${esc(path.door)} · ${esc(path.style)} · ${STATUS[i.status] || ''}${i.endingDone && i.status !== 'done' ? ' · ending seen' : ''}</div>
-      <h3 style="color:${E.color}">${esc(i.title)} <span class="ui-muted" style="font-size:15px">→ ${esc(E.title)}</span></h3>
-      ${i.next ? `<div class="q-obj"><b>▸</b> Step ${i.step}/${i.steps}: ${esc(i.next)}</div>` : i.why ? `<div class="q-sum">${esc(i.why)}</div>` : ''}
-      ${i.status === 'done' ? '' : `<div class="q-reqs">${i.reqs.map((r) => `<span class="sys-req ${r.ok ? 'ok' : 'no'}">${esc(r.label)}${r.cur != null && !r.ok ? ` (${r.cur})` : ''}</span>`).join(' ')}</div>
-      <div class="ui-muted" style="font-size:13px">About ${path.est} min once started.</div>`}
-    </div>`;
-  }
-
-  html += '<div class="ui-section">Next milestones</div>';
+  html += sect('up', 'Next milestones');
+  let miles = '';
   for (const k of ['str', 'int', 'cha', 'karma', 'level']) {
     const nx = nextMilestones(g, k, 1)[0];
     if (!nx) continue;
     const cur = k === 'level' ? p.level : Math.floor(p[k]);
-    html += `<div class="q-lead"><b>${k === 'level' ? 'LV' : k.toUpperCase()} ${nx.at}</b> <span class="ui-muted">(now ${cur})</span>: ${esc(nx.texts.slice(0, 2).join(' · '))}${nx.texts.length > 2 ? ` <span class="ui-muted">+${nx.texts.length - 2} more</span>` : ''}</div>`;
+    const [ico, col, lbl] = MILE[k];
+    const more = nx.texts.length > 1 ? ` <b>+${nx.texts.length - 1}</b>` : '';
+    miles += tile({ icon: ico, color: col, value: `${lbl} ${nx.at}`, label: `now ${cur}`, sub: esc(nx.texts[0]) + more, bar: [Math.max(0, cur), nx.at], title: nx.texts.join(' · ') });
   }
+  html += `<div class="qx-miles">${miles}</div>`;
   const ach = g.achievements;
   if (ach?.list && ach.count) {
-    try { html += `<div class="q-lead" style="margin-top:6px">Achievements: <b>${ach.count()}/${ach.list.length}</b> <span class="ui-muted">(P)</span></div>`; } catch { /* ignore */ }
+    try {
+      const n = ach.count();
+      html += `<div class="qx-note">${ic('trophy')}<span>Achievements: <b>${n}/${ach.list.length}</b> · full list on <kbd>P</kbd></span></div>`;
+    } catch { /* ignore */ }
   }
   return html;
 }
@@ -156,9 +217,6 @@ export function goalsHtml(g) {
 // Compact block for the character sheet.
 export function goalsSheetHtml(g) {
   const ch = chapter(g);
-  const ends = g.state.getFlag('endings', []) || [];
   const sug = suggestions(g).slice(0, 3);
-  return `<div class="ui-section">Goals <span class="ui-muted" style="font-size:14px">(J → Goals)</span></div>
-    <div class="q-lead"><b>Chapter ${ch.n}: ${esc(ch.name)}</b>${ends.length ? ` · ${ends.length}/${Object.keys(ENDINGS).length} endings` : ''}</div>
-    ${sug.map((s) => `<div class="q-lead">▸ ${esc(s.t)}</div>`).join('')}`;
+  return `${sect('flag', 'Goals', '<span class="kb-only"><kbd>J</kbd> full list</span>')}${heroHtml(g, ch, true)}${sug.length ? `<div style="margin-top:5px">${todoRows(g, sug)}</div>` : ''}`;
 }

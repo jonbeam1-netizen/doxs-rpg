@@ -1,6 +1,8 @@
 import * as THREE from 'three';
 import { DISTRICTS } from '../data/locations.js';
 import { esc, fmtMoney, clamp } from '../core/util.js';
+import { chip, bar } from '../ui/visual.js';
+import { ic, chip2, ensureStyles as ensureVx2 } from '../ui/visual2.js';
 
 // Crew panel (K): who's online, their level / district / current quest, send cash, spar, race, find.
 // Crew pot: a shared stash kept in the HOST's save (host-authoritative).
@@ -254,7 +256,7 @@ export function installCrew(game, U) {
     const p = game.state.p;
     const out = [{
       id: null, name: U.myName(), me: true, host: net.isHost, lv: p.level, d: district(pp.x, pp.z), q: questTitle(),
-      hp: `${Math.ceil(p.hp)}/${p.maxHp}`, dist: '—', v: myMode(),
+      hp: `${Math.ceil(p.hp)}/${p.maxHp}`, hpN: p.hp, hpMax: p.maxHp, dist: '—', v: myMode(),
     }];
     for (const peer of U.peers()) {
       const rp = U.live(peer.id);
@@ -262,7 +264,7 @@ export function installCrew(game, U) {
       const d = rp ? Math.round(Math.hypot(rp.pos.x - pp.x, rp.pos.z - pp.z)) : null;
       out.push({
         id: peer.id, name: peer.name, host: peer.isHost, lv: inf?.lv ?? '?', d: inf?.d || (rp ? district(rp.pos.x, rp.pos.z) : null),
-        q: inf?.q || '', hp: rp ? `${Math.ceil(rp.hp)}/${rp.maxHp}` : '…', dist: d == null ? '…' : d >= 1000 ? (d / 1000).toFixed(1) + ' km' : d + ' m',
+        q: inf?.q || '', hp: rp ? `${Math.ceil(rp.hp)}/${rp.maxHp}` : '…', hpN: rp ? rp.hp : null, hpMax: rp?.maxHp, dist: d == null ? '…' : d >= 1000 ? (d / 1000).toFixed(1) + ' km' : d + ' m',
         v: rp?.ride ? 'ride' : rp?.vehicle ? 'car' : inf?.v || 'foot', ping: peer.ping,
       });
     }
@@ -270,35 +272,38 @@ export function installCrew(game, U) {
   }
 
   function body() {
+    ensureVx2();
     const rs = rows();
-    const mode = { foot: 'on foot', car: 'driving', ride: 'riding shotgun' };
-    const tr = rs.map((r) => `<tr>
-      <td><b>${esc(r.name)}</b>${r.me ? ' <span class="ui-muted">(you)</span>' : ''}${r.host ? ' <span class="ui-muted">(host)</span>' : ''}<br><span class="ui-muted" style="font-size:12px">${mode[r.v] || ''}</span></td>
-      <td>${esc(String(r.lv))}</td>
-      <td>${esc(districtName(r.d))}${r.me ? '' : `<br><span class="ui-muted" style="font-size:12px">${esc(r.dist)}</span>`}</td>
-      <td style="max-width:150px">${r.q ? esc(r.q) : '<span class="ui-muted">loafing</span>'}</td>
-      <td>${esc(r.hp)}</td>
-      <td style="white-space:nowrap">${r.me ? '' : `
-        <button class="ui-btn" data-act="cash" data-id="${esc(r.id)}" title="Give cash">$</button>
-        <button class="ui-btn" data-act="spar" data-id="${esc(r.id)}" title="Friendly 1v1, non-lethal">Spar</button>
-        <button class="ui-btn" data-act="race" data-id="${esc(r.id)}" title="Drag race at the Drag Strip">Race</button>
-        <button class="ui-btn" data-act="find" data-id="${esc(r.id)}" title="Waypoint to them">Find</button>`}</td></tr>`).join('');
+    const mode = { foot: ['person', 'on foot'], car: ['car', 'driving'], ride: ['car', 'riding shotgun'] };
+    const cards = rs.map((r) => {
+      const [mi, ml] = mode[r.v] || mode.foot;
+      const hp = r.hpN != null ? `<div class="cw-hp">${ic('heart')}${bar(r.hpN, r.hpMax || 1, 'hp')}<span>${esc(r.hp)}</span></div>` : `<div class="cw-hp">${ic('heart')}${bar(0, 1, 'hp')}<span>…</span></div>`;
+      return `<div class="cw-card${r.me ? ' me' : ''}">
+        <span class="cw-av">${esc(String(r.name || '?').trim().charAt(0).toUpperCase() || '?')}<span class="cw-lv" title="Level">${esc(String(r.lv))}</span></span>
+        <div class="cw-top"><b>${esc(r.name)}</b>${r.me ? '<span class="cw-tag">you</span>' : ''}${r.host ? '<span class="cw-tag">host</span>' : ''}</div>
+        ${hp}
+        <div class="cw-meta">${chip2('pin', esc(districtName(r.d)), 'muted', 'district')}${chip2(mi, ml, 'muted')}${r.me ? '' : chip2('target', esc(r.dist), 'muted', 'distance')}${r.ping != null ? chip2('pulse', `${r.ping} ms`, 'muted', 'ping') : ''}${chip2('flag', r.q ? esc(r.q) : 'loafing', r.q ? 'info' : 'muted', 'tracked quest')}</div>
+        ${r.me ? '' : `<div class="cw-acts">
+          <button class="ui-btn" data-act="cash" data-id="${esc(r.id)}" title="Give cash">${ic('money')}<span>Cash</span></button>
+          <button class="ui-btn" data-act="spar" data-id="${esc(r.id)}" title="Friendly 1v1, non-lethal">${ic('fist')}<span>Spar</span></button>
+          <button class="ui-btn" data-act="race" data-id="${esc(r.id)}" title="Drag race at the Drag Strip">${ic('flag')}<span>Race</span></button>
+          <button class="ui-btn" data-act="find" data-id="${esc(r.id)}" title="Waypoint to them">${ic('pin')}<span>Find</span></button></div>`}
+      </div>`;
+    }).join('');
     const potHtml = net.connected ? `
-      <div class="ui-section">Crew pot · <b>${fmtMoney(potAmount())}</b></div>
-      <div class="ui-row" style="gap:8px;align-items:center">
-        <button class="ui-btn primary" data-act="dep">Chip in</button>
-        <button class="ui-btn" data-act="wd">Take some</button>
-        <span class="ui-muted" style="font-size:12px">Shared stash kept in the host's save. Anyone can take. Trust issues sold separately.</span>
-      </div>
-      ${potEntries().length ? `<div class="ui-muted" style="font-size:12px;margin-top:4px">${potEntries().map(([n, a]) => `${esc(n)} ${a >= 0 ? '+' : '−'}${fmtMoney(Math.abs(a))}`).join(' · ')}</div>` : ''}` : '';
-    const bonus = game.coop?.bonus?.near ? '<div class="ui-good" style="margin-top:6px">Crew bonus active: +10% cash &amp; XP from jobs, fights and heists while a friend is within 40 m.</div>' : '';
+      <div class="cw-pot"><span class="vx2-ibox">${ic('money')}</span>
+        <b>${fmtMoney(potAmount())}<small>crew pot</small></b>
+        <span class="cw-pb"><button class="ui-btn vx2-btn go" data-act="dep">${ic('up')}<span>Chip in</span></button><button class="ui-btn vx2-btn" data-act="wd">${ic('bag')}<span>Take some</span></button></span>
+        <span class="pm-chips">${potEntries().length ? potEntries().map(([n, a]) => chip('', `${esc(n)} ${a >= 0 ? '+' : '−'}${fmtMoney(Math.abs(a))}`, a >= 0 ? 'gain' : 'cost')).join('') : '<span class="ui-muted" style="font-size:13px">Shared stash kept in the host&#39;s save. Anyone can take. Trust issues sold separately.</span>'}</span>
+      </div>` : '';
+    const bonus = game.coop?.bonus?.near ? `<div class="cw-bonus">${ic('up')}<span>Crew bonus active: +10% cash &amp; XP from jobs, fights and heists while a friend is within 40 m.</span></div>` : '';
     return `
-      ${net.connected ? '' : '<div class="ui-muted" style="margin-bottom:8px">Just you out here. Pause menu → <b>Co-op: invite friends</b> to bring your crew.</div>'}
-      <table class="ui-table"><tr><th>Name</th><th>Lv</th><th>Where</th><th>Doing</th><th>HP</th><th></th></tr>${tr}</table>
+      ${net.connected ? '' : `<div class="cw-solo">${ic('users')}<span>Just you out here. Pause menu → <b>Co-op: invite friends</b> to bring your crew.</span></div>`}
+      <div class="cw-list">${cards}</div>
       ${potHtml}${bonus}
-      <div class="ui-muted" style="font-size:12px;margin-top:10px">
-        <kbd>L</kbd> ping where you're looking · <kbd>M</kbd> map click shares a pin · <kbd>F</kbd> at a friend's passenger door rides shotgun ·
-        friends within 40 m give +10% cash/XP on jobs, fights &amp; heists · <kbd>K</kbd> toggles this panel</div>`;
+      <div class="cw-keys kb-only">
+        <span><kbd>L</kbd>ping where you're looking</span><span><kbd>M</kbd>map click shares a pin</span><span><kbd>F</kbd>at a friend's passenger door: ride shotgun</span>
+        <span>${ic('users').replace('class="pr-ico"', 'class="pr-ico" style="width:13px;height:13px;vertical-align:-2px"')} friends within 40 m: +10% cash/XP</span><span><kbd>K</kbd>toggles this panel</span></div>`;
   }
 
   function refresh(force = false) {

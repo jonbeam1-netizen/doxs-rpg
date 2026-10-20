@@ -2,6 +2,8 @@ import { clamp, esc, fmtMoney, pick } from '../core/util.js';
 import { NetSession, cleanName, friendlyError, MAX_CLIENTS } from './transport.js';
 import { Avatars, EMOTES } from './avatars.js';
 import { Chat } from './chat.js';
+import { bar, chip } from '../ui/visual.js';
+import { ic, sect } from '../ui/visual2.js';
 
 // Co-op module. Mutates the existing game.net (NetBase) facade — never replaces it.
 //
@@ -583,9 +585,10 @@ export async function installNet(game) {
     if (!net.connected) return '';
     const rows = net.peers().map((p) => {
       const rp = net.remotePlayers.get(p.id);
-      return `<tr><td>${esc(p.name)}${p.isHost ? ' <span class="ui-muted">(host)</span>' : ''}</td><td>${rp ? `HP ${Math.ceil(rp.hp)}/${rp.maxHp}` : ''}</td><td>${p.ping != null ? p.ping + ' ms' : ''}</td></tr>`;
+      return `<div class="vx2-mini"><span class="vx2-ibox" style="--gc:#40e0ff">${ic('person')}</span><span class="vx2-rt"><b>${esc(p.name)}${p.isHost ? ' <span class="cw-tag">host</span>' : ''}</b>
+        ${rp ? bar(rp.hp, rp.maxHp || 1, 'hp') : ''}<span class="pm-chips">${rp ? chip('heart', `${Math.ceil(rp.hp)}/${rp.maxHp}`, 'muted') : ''}${p.ping != null ? chip('pulse', p.ping + ' ms', 'muted') : ''}</span></span></div>`;
     }).join('');
-    return `<div class="ui-section">Co-op crew</div><table class="ui-table">${rows || '<tr><td class="ui-muted">Nobody yet.</td></tr>'}</table>`;
+    return `${sect('users', 'Co-op crew', '<span class="kb-only"><kbd>K</kbd></span>')}<div class="vx2-cards">${rows || '<div class="cs-empty">Nobody yet.</div>'}</div>`;
   });
 
   // Say goodbye properly when the tab closes so others don't wait for a timeout.

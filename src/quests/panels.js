@@ -2,6 +2,8 @@ import { CHARACTERS, ENDINGS, FACTIONS, QUEST_ITEMS, INTRO, TUTORIAL } from '../
 import { esc, fmtMoney } from '../core/util.js';
 import { KIND_COLORS } from './engine.js';
 import { goalsHtml, goalsSheetHtml, PATHS } from './goals.js';
+import { chip, bar } from '../ui/visual.js';
+import { ic, chip2, sect, tile, pips, faceSlot, fillFaces, rewardChips, KIND_ICON } from '../ui/visual2.js';
 
 const CSS = `
 .ui-text p, .ui-body p.q-say, .ui-body p.q-nar, .ui-body p.q-you { margin: 0 0 8px; }
@@ -71,7 +73,7 @@ export function injectStyles() {
   document.head.appendChild(s);
 }
 
-const KIND_LABEL = { main: 'Story', side: 'Side quest', job: 'Job', faction: 'Faction' };
+const KIND_LABEL = { main: 'Story', side: 'Side quest', job: 'Job', faction: 'Gang', epilogue: 'Epilogue', secret: 'Secret' };
 
 export class QuestPanels {
   constructor(game, engine) {
@@ -138,96 +140,160 @@ export class QuestPanels {
   openLog() {
     if (this.logEntry && !this.logEntry.closed) return this.logEntry;
     const wrap = document.createElement('div');
-    this.logEntry = this.g.ui.openPanel({ title: 'Quest Log', body: wrap, width: 780, onClose: () => { this.logEntry = null; } });
+    this.logEntry = this.g.ui.openPanel({ title: 'Quest Log', body: wrap, width: 800, className: 'qx-modal', onClose: () => { this.logEntry = null; } });
     this.logEntry.isQuestLog = true;
+    this.logEntry.body.addEventListener('click', (e) => this._onLogClick(e));
     this._renderLog();
     return this.logEntry;
+  }
+
+  _onLogClick(e) {
+    const q = this.q, b = e.target.closest('button');
+    if (!b) return;
+    if (b.dataset.tab) { this.logTab = b.dataset.tab; this._renderLog(); return; }
+    if (b.dataset.track) { q.track(b.dataset.track); return; }
+    if (b.dataset.abandon) { q.abandon(b.dataset.abandon); return; }
+    let pt = null, what = '';
+    try {
+      if (b.dataset.mapq) { pt = q.targets(b.dataset.mapq)[0] || null; what = q.def(b.dataset.mapq)?.title || ''; }
+      else if (b.dataset.mapc) { pt = q.charPos(b.dataset.mapc); what = CHARACTERS[b.dataset.mapc]?.name || ''; }
+      else if (b.dataset.mapl) { pt = q.locPos(b.dataset.mapl); what = pt?.label || ''; }
+      else return;
+    } catch { pt = null; }
+    if (!pt || !Number.isFinite(pt.x)) { this.g.ui.toast('No marker for that one yet. Follow the objective.', 'info', 2200); return; }
+    this.logEntry?.close();
+    const map = this.g.cityMap;
+    if (map?.openFull) map.openFull({ focus: { x: pt.x, z: pt.z, label: what } });
+    else this.g.world?.openMap?.();
+  }
+
+  _kindOf(id, d) {
+    const k = /^epi_/.test(id) ? 'epilogue' : /^secret_/.test(id) ? 'secret' : d?.kind || 'side';
+    return { key: k, label: KIND_LABEL[k] || k, icon: KIND_ICON[k] || 'flag', color: KIND_COLORS[d?.kind] || '#888' };
+  }
+
+  _questCard(id, tracked) {
+    const q = this.q;
+    const d = q.def(id); const qq = q.get(id);
+    const K = this._kindOf(id, d);
+    const giver = CHARACTERS[d.giver]?.name;
+    const steps = q.steps(id).length;
+    const tl = qq.sd?.timeLeft;
+    const fin = !!q.current(id)?.finale;
+    let hasPt = false; try { hasPt = q.targets(id).length > 0; } catch { hasPt = false; }
+    const brief = qq.data?.brief || d.summary;
+    const timer = tl != null ? ` <span class="qx-timer">${Math.floor(Math.ceil(tl) / 60)}:${String(Math.ceil(tl) % 60).padStart(2, '0')}</span>` : '';
+    return `<div class="qx-card${id === tracked ? ' tracked' : ''}" style="--qc:${K.color}">
+      ${faceSlot(giver || '', K.icon)}
+      <div class="qx-id">
+        <div class="qx-kind"><span class="k">${ic(K.icon)}${esc(K.label)}</span>${giver ? `<span>from ${esc(giver)}</span>` : ''}${fin ? chip('star', 'FINALE', 'gold') : ''}${id === tracked ? chip2('target', 'Tracked', 'gold') : ''}</div>
+        <div class="qx-title">${esc(d.title)}</div>
+        <div class="qx-step">${pips(qq.step, steps)}<span>Step ${qq.step + 1}/${steps}</span></div>
+      </div>
+      <div class="qx-obj">${ic('flag')}<span>${esc(q.objectiveText(id).replace(/^FINALE: /, ''))}${timer}</span></div>
+      ${brief ? `<div class="qx-sum" title="${esc(brief)}">${esc(brief)}</div>` : ''}
+      <div class="qx-foot">
+        <span class="pm-chips">${rewardChips(d.reward && typeof d.reward === 'object' ? d.reward : null, d.rewardText, { pay: qq.data?.payText })}</span>
+        <span class="qx-btns">
+          ${hasPt ? `<button class="ui-btn vx2-btn go" data-mapq="${id}">${ic('pin')}<span>Show on map</span></button>` : ''}
+          ${id !== tracked ? `<button class="ui-btn vx2-btn" data-track="${id}">${ic('target')}<span>Track</span></button>` : ''}
+          ${d.repeatable ? `<button class="ui-btn vx2-btn" data-abandon="${id}">${ic('x')}<span>Abandon</span></button>` : ''}
+        </span>
+      </div>
+    </div>`;
+  }
+
+  _leadsCount() {
+    let n = 0;
+    try { for (const cid of Object.keys(CHARACTERS)) n += this.q.offersFor(cid).length; } catch { /* ignore */ }
+    return n;
   }
 
   _renderLog() {
     const g = this.g, q = this.q, body = this.logEntry?.body;
     if (!body) return;
-    const tabs = [['goals', 'Goals'], ['active', 'Active'], ['leads', 'Leads'], ['done', 'Completed'], ['factions', 'Factions & Endings']];
-    let html = `<div class="q-log-tabs">${tabs.map(([k, l]) => `<button class="ui-btn ${this.logTab === k ? 'on' : ''}" data-tab="${k}">${l}</button>`).join('')}</div>`;
+    const nAct = q.activeIds().length;
+    const nLead = this._leadsCount();
+    const tabs = [['goals', 'flag', 'Goals', ''], ['active', 'list', 'Active', nAct], ['leads', 'talk', 'Leads', nLead], ['done', 'trophy', 'Done', ''], ['factions', 'skull', 'Gangs & endings', '']];
+    let html = `<div class="tabs vx2-tabs">${tabs.map(([k, ico, l, n]) => `<button class="tab ${this.logTab === k ? 'sel' : ''}" data-tab="${k}">${ic(ico)}<span class="lbl">${l}</span>${n ? `<span class="vx2-n${k === 'leads' ? ' hot' : ''}">${n}</span>` : ''}</button>`).join('')}</div>`;
     if (this.logTab === 'goals') {
       try { html += goalsHtml(g); } catch (e) { console.error('[quests] goals failed', e); html += '<div class="ui-muted">Goals unavailable.</div>'; }
     } else if (this.logTab === 'active') {
-      const ids = q.activeIds().sort((a, b) => rank(q.def(a)) - rank(q.def(b)));
+      const tracked = q.trackedId();
+      const ids = q.activeIds().sort((a, b) => (b === tracked) - (a === tracked) || rank(q.def(a)) - rank(q.def(b)));
       // Kev's skateboard job lives in the skate module; list it here so the log isn't missing it.
       let skateQ = null;
       try { const sq = g.skate?.data?.()?.quest; if (sq && (sq.stage === 'hunt' || sq.stage === 'won')) skateQ = sq; } catch { /* no skate module */ }
+      html += '<div class="qx-list">';
+      for (const id of ids) html += this._questCard(id, tracked);
       if (skateQ) {
-        html += `<div class="q-card" style="border-left-color:${KIND_COLORS.side}"><div class="q-kind">Side job · from Skidmark Kev</div><h3 style="color:${KIND_COLORS.side}">Board Thieves</h3>
-          <div class="q-obj"><b>▸</b> ${skateQ.stage === 'won' ? 'Bring the board back to Skidmark Kev near Threads &amp; Dreads (Downtown).' : 'Get Kev\'s board back from the goons in Gutterside (marked on your map).'}</div>
-          <div class="q-rew">Reward: a skateboard (G to ride) and Kev's shop</div></div>`;
+        html += `<div class="qx-card" style="--qc:${KIND_COLORS.side}">${faceSlot('Skidmark Kev', 'board')}
+          <div class="qx-id"><div class="qx-kind"><span class="k">${ic('board')}Side job</span><span>from Skidmark Kev</span></div><div class="qx-title">Board Thieves</div>
+            <div class="qx-step">${pips(skateQ.stage === 'won' ? 1 : 0, 2)}<span>Step ${skateQ.stage === 'won' ? 2 : 1}/2</span></div></div>
+          <div class="qx-obj">${ic('flag')}<span>${skateQ.stage === 'won' ? 'Bring the board back to Skidmark Kev near Threads &amp; Dreads (Downtown).' : 'Get Kev\'s board back from the goons in Gutterside (marked on your map).'}</span></div>
+          <div class="qx-foot"><span class="pm-chips">${chip2('board', 'skateboard (G to ride)', 'gain')}${chip('bag', 'Kev\'s shop', 'gain')}</span></div></div>`;
       }
-      if (!ids.length && !skateQ) html += '<div class="ui-muted">Nothing on your plate. Go bother somebody with a "!" over their head.</div>';
-      const tracked = q.trackedId();
-      for (const id of ids) {
-        const d = q.def(id); const qq = q.get(id);
-        const giver = CHARACTERS[d.giver]?.name;
-        const steps = q.steps(id).length;
-        const color = KIND_COLORS[d.kind] || '#888';
-        const tl = qq.sd?.timeLeft;
-        html += `<div class="q-card" style="border-left-color:${color}">
-          <div class="q-kind">${KIND_LABEL[d.kind] || d.kind}${giver ? ' · from ' + esc(giver) : ''} · step ${qq.step + 1}/${steps}${id === tracked ? ' · <b style="color:#f2c53d">TRACKED</b>' : ''}</div>
-          <h3 style="color:${color}">${esc(d.title)}</h3>
-          ${d.summary || qq.data?.brief ? `<div class="q-sum">${esc(qq.data?.brief || d.summary)}</div>` : ''}
-          <div class="q-obj"><b>▸</b> ${esc(q.objectiveText(id))}${tl != null ? ` <span class="ui-bad">(${Math.ceil(tl)}s left)</span>` : ''}</div>
-          ${d.rewardText || qq.data?.payText ? `<div class="q-rew">Reward: ${esc(qq.data?.payText || d.rewardText)}</div>` : ''}
-          <div class="q-row">${id !== tracked ? `<button class="ui-btn" data-track="${id}">Track</button>` : ''}${d.repeatable ? `<button class="ui-btn" data-abandon="${id}">Abandon</button>` : ''}</div>
-        </div>`;
-      }
+      html += '</div>';
+      if (!ids.length && !skateQ) html += `<div class="vx2-empty">${ic('list')}Nothing on your plate. Go bother somebody with a "!" over their head.</div>`;
     } else if (this.logTab === 'leads') {
-      html += '<div class="ui-muted" style="margin-bottom:8px">People who might have work for you right now:</div>';
-      let n = 0;
+      let rows = '';
       for (const [cid, c] of Object.entries(CHARACTERS)) {
         const offers = q.offersFor(cid);
         if (!offers.length) continue;
         const loc = g.locations.get(c.loc);
         for (const d of offers) {
-          n++;
-          html += `<div class="q-lead"><b>!</b> <span style="color:${KIND_COLORS[d.kind]}">${esc(d.title)}</span> — ${esc(c.name)}${loc ? `, near <i>${esc(loc.name)}</i>` : ''}</div>`;
+          const K = this._kindOf(d.id, d);
+          rows += `<div class="vx2-row" style="--gc:${K.color}">${faceSlot(c.name, K.icon, 'sm')}<span class="vx2-rt"><b style="color:${K.color}">${esc(d.title)}</b><span>${esc(K.label)} · ${esc(c.name)}${loc ? ` · near ${esc(loc.name)}` : ''}</span></span>
+            <button class="ui-btn vx2-iconbtn" data-mapc="${cid}" title="Show on map">${ic('pin')}</button></div>`;
         }
       }
       const f = q.faction();
-      if (f) html += `<div class="q-lead"><b>$</b> Repeatable jobs for the ${esc(FACTIONS[f].name)} at <i>${esc(g.locations.get(FACTIONS[f].hq)?.name || 'their HQ')}</i></div>`;
-      else html += `<div class="q-lead"><b>$</b> Gangs pay for muscle: the Gutter Rats Clubhouse (Gutterside) or the Velvet Syndicate (Hilltop).</div>`;
-      html += `<div class="q-lead"><b>$</b> Smuggling runs at Warehouse 13 in the Rustyards. Bring a car.</div>`;
-      if (!n) html += '<div class="ui-muted" style="margin-top:8px">No new leads right now. Level up your stats, karma, or finish what you started.</div>';
+      const gang = f
+        ? `<div class="vx2-row" style="--gc:${FACTIONS[f].color}"><span class="vx2-ibox" style="--gc:${FACTIONS[f].color}">${ic('skull')}</span><span class="vx2-rt"><b>Repeatable jobs for the ${esc(FACTIONS[f].name)}</b><span>at ${esc(g.locations.get(FACTIONS[f].hq)?.name || 'their HQ')}</span></span>${g.locations.get(FACTIONS[f].hq) ? `<button class="ui-btn vx2-iconbtn" data-mapl="${FACTIONS[f].hq}" title="Show on map">${ic('pin')}</button>` : ''}</div>`
+        : `<div class="vx2-row" style="--gc:var(--blood-bright)"><span class="vx2-ibox" style="--gc:var(--blood-bright)">${ic('skull')}</span><span class="vx2-rt"><b>Gangs pay for muscle</b><span>the Gutter Rats Clubhouse (Gutterside) or the Velvet Syndicate (Hilltop)</span></span></div>`;
+      const smug = `<div class="vx2-row" style="--gc:var(--g-work)"><span class="vx2-ibox" style="--gc:var(--g-work)">${ic('car')}</span><span class="vx2-rt"><b>Smuggling runs</b><span>Warehouse 13 in the Rustyards. Bring a car.</span></span></div>`;
+      html += `${sect('talk', 'People with work for you', 'right now')}<div class="vx2-rows two">${rows || `<div class="vx2-empty">${ic('talk')}No new leads right now. Level up your stats, karma, or finish what you started.</div>`}</div>`;
+      html += `${sect('money', 'Steady money')}<div class="vx2-rows">${gang}${smug}</div>`;
     } else if (this.logTab === 'done') {
       const done = Object.entries(q.store).filter(([id, s]) => s.done && q.def(id));
-      if (!done.length) html += '<div class="ui-muted">You haven\'t finished anything. Classic.</div>';
-      for (const [id] of done) {
-        const d = q.def(id);
-        html += `<div class="q-card done" style="border-left-color:${KIND_COLORS[d.kind]}"><div class="q-kind">${KIND_LABEL[d.kind] || d.kind} · completed</div><h3>${esc(d.title)}</h3>${d.rewardText ? `<div class="q-rew">${esc(d.rewardText)}</div>` : ''}</div>`;
+      if (!done.length) html += `<div class="vx2-empty">${ic('trophy')}You haven't finished anything. Classic.</div>`;
+      else {
+        html += `${sect('check', 'Completed', `${done.length}`)}<div class="vx2-cards">`;
+        for (const [id] of done) {
+          const d = q.def(id); const K = this._kindOf(id, d);
+          html += `<div class="vx2-mini" style="--gc:${K.color}"${d.rewardText ? ` title="${esc(d.rewardText)}"` : ''}><span class="vx2-ibox">${ic('check')}</span><span class="vx2-rt"><b>${esc(d.title)}</b><span>${esc(K.label)}</span></span></div>`;
+        }
+        html += '</div>';
       }
       const jobs = ['job_rats', 'job_syndicate', 'smuggle'].map((k) => [k, g.state.getFlag('done_' + k, 0)]).filter(([, n]) => n);
-      if (jobs.length) html += `<div class="ui-section">Odd jobs</div>` + jobs.map(([k, n]) => `<div class="q-lead">${esc(q.def(k)?.title || k)}: <b>${n}</b> done</div>`).join('');
+      if (jobs.length) html += sect('work', 'Odd jobs') + `<div class="vx2-tiles">${jobs.map(([k, n]) => tile({ icon: k === 'smuggle' ? 'car' : 'skull', value: n, label: esc(q.def(k)?.title || k), color: k === 'smuggle' ? 'var(--g-work)' : FACTIONS[k.slice(4)]?.color || 'var(--rust)' })).join('')}</div>`;
     } else {
       html += this._factionHtml();
     }
     body.innerHTML = html;
-    body.querySelectorAll('[data-tab]').forEach((b) => b.addEventListener('click', () => { this.logTab = b.dataset.tab; this._renderLog(); }));
-    body.querySelectorAll('[data-track]').forEach((b) => b.addEventListener('click', () => { q.track(b.dataset.track); }));
-    body.querySelectorAll('[data-abandon]').forEach((b) => b.addEventListener('click', () => { q.abandon(b.dataset.abandon); }));
+    fillFaces(body, g);
   }
 
   _factionHtml() {
     const g = this.g, q = this.q;
     const mine = q.faction();
-    let html = '<div class="ui-section">Factions</div>';
+    let html = sect('skull', 'Gangs');
+    html += '<div class="vx2-rows">';
     for (const F of Object.values(FACTIONS)) {
       const rep = q.rep(F.id);
-      const pct = Math.max(0, Math.min(100, (rep / 220) * 100));
-      html += `<div class="q-rep"><span style="width:170px;color:${F.color}">${esc(F.name)}${mine === F.id ? ' ★' : ''}</span>
-        <span class="bar"><i style="width:${pct}%;background:${rep < 0 ? '#e2402f' : F.color}"></i></span>
-        <span style="width:200px">${rep < 0 ? '<span class="ui-bad">Hostile</span>' : mine === F.id ? esc(q.rankName(F.id)) : 'Neutral'} (${rep})</span></div>`;
+      const st = rep < 0 ? chip('warn', 'Hostile', 'cost') : mine === F.id ? chip('star', esc(q.rankName(F.id)), 'gold') : chip('', 'Neutral', 'muted');
+      html += `<div class="qx-fac${rep < 0 ? ' hostile' : ''}" style="--gc:${F.color}"><span class="vx2-ibox">${ic('skull')}</span>
+        <span><b>${esc(F.name)}</b>${mine === F.id ? ' <span class="cw-tag">member</span>' : ''}</span>
+        <span class="pm-chips">${st}${chip('', `${rep} rep`, 'muted')}</span>
+        ${bar(Math.max(0, rep), 220)}</div>`;
     }
-    html += `<div class="ui-muted" style="font-size:15px">Joining one gang makes the other hate you. Detective Thorne won't work with gang members.</div>`;
-    html += '<div class="ui-section">Endings reached</div>';
+    html += '</div>';
+    html += `<div class="qx-note">${ic('warn')}<span>Joining one gang makes the other hate you. Detective Thorne won't work with gang members.</span></div>`;
     const ends = g.state.getFlag('endings', []) || [];
-    html += Object.entries(ENDINGS).map(([id, e]) => `<div class="q-lead">${ends.includes(id) ? `<b style="color:${e.color}">✔ ${esc(e.title)}</b>` : '<span class="ui-muted">??? — ' + esc(e.sub) + '</span>'}</div>`).join('');
+    html += sect('trophy', 'Endings', `${ends.length}/${Object.keys(ENDINGS).length}`);
+    html += `<div class="vx2-cards">${Object.entries(ENDINGS).map(([id, e]) => ends.includes(id)
+      ? `<div class="vx2-mini" style="--gc:${e.color}"><span class="vx2-ibox">${ic('trophy')}</span><span class="vx2-rt"><b style="color:${e.color}">${esc(e.title)}</b><span>${esc(e.sub)}</span></span></div>`
+      : `<div class="vx2-mini dim"><span class="vx2-ibox" style="--gc:#6b6253">${ic('lock')}</span><span class="vx2-rt"><b>???</b><span>${esc(e.sub)}</span></span></div>`).join('')}</div>`;
     return html;
   }
 
@@ -238,11 +304,15 @@ export class QuestPanels {
     const ends = g.state.getFlag('endings', []) || [];
     let html = '';
     try { html += goalsSheetHtml(g); } catch (e) { console.error('[quests] goals sheet failed', e); }
-    html += '<div class="ui-section">Street cred</div><table class="ui-table">';
-    html += `<tr><td>Gang</td><td>${f ? `${esc(FACTIONS[f].name)} — ${esc(q.rankName(f))} (${q.rep(f)} rep)` : 'Unaffiliated'}</td></tr>`;
-    if (ends.length) html += `<tr><td>Titles</td><td>${ends.map((e) => esc(ENDINGS[e]?.title || e)).join(', ')}</td></tr>`;
-    html += '</table>';
-    if (items.length) html += `<div class="ui-section">Quest items</div><div class="ui-grid">${items.map(([id, n]) => `<div class="ui-card" title="${esc(QUEST_ITEMS[id].desc)}">${esc(QUEST_ITEMS[id].name)}${n > 1 ? ` <span class="ui-muted">×${n}</span>` : ''}<div class="ui-muted" style="font-size:14px">${esc(QUEST_ITEMS[id].desc)}</div></div>`).join('')}</div>`;
+    html += sect('skull', 'Street cred');
+    html += '<div class="vx2-tiles">';
+    if (f) {
+      const F = FACTIONS[f];
+      html += tile({ icon: 'skull', color: F.color, value: esc(q.rankName(f)), label: esc(F.name), bar: [Math.max(0, q.rep(f)), 220], title: `${q.rep(f)} rep` });
+    } else html += tile({ icon: 'skull', color: '#6b6253', value: 'Unaffiliated', label: 'Gang' });
+    html += tile({ icon: 'trophy', color: '#e0b23a', value: `${ends.length}<small>/${Object.keys(ENDINGS).length}</small>`, label: 'Endings', sub: ends.map((e) => esc(ENDINGS[e]?.title || e)).join(' · ') });
+    html += '</div>';
+    if (items.length) html += sect('key', 'Quest items') + `<div class="cs-slots">${items.map(([id, n]) => `<div class="cs-slot" title="${esc(QUEST_ITEMS[id].desc)}"><span class="cs-si">${ic('key')}</span><span class="cs-sn">${esc(QUEST_ITEMS[id].name)}</span>${n > 1 ? `<b class="cs-sq">×${n}</b>` : ''}</div>`).join('')}</div>`;
     return html;
   }
 

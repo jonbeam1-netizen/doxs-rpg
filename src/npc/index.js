@@ -24,6 +24,8 @@ import { Talk } from './talk.js';
 import { FX } from './fx.js';
 import { WEAPONS } from '../data/weapons.js';
 import { clamp } from '../core/util.js';
+import { chip } from '../ui/visual.js';
+import { ic, sect } from '../ui/visual2.js';
 
 export async function installNPCs(game) {
   const ctx = {};
@@ -183,8 +185,9 @@ export async function installNPCs(game) {
     const p = g.state.p;
     const ws = (p.weapons || []).filter((w) => WEAPONS[w]);
     const ammo = Object.entries(p.ammo || {}).filter(([, n]) => n > 0);
-    return `<div class="ui-section">Arsenal</div><div class="ui-grid">${ws.map((w) => `<div class="ui-card">${WEAPONS[w].name}${w === combat.weaponId ? ' <span class="ui-muted">(equipped)</span>' : ''}<br><span class="ui-muted">DMG ${WEAPONS[w].damage}${WEAPONS[w].kind === 'gun' ? ` · mag ${p.mags?.[w] ?? 0}/${WEAPONS[w].mag}` : ''}</span></div>`).join('')}</div>`
-      + (ammo.length ? `<div class="ui-muted" style="margin-top:6px">Ammo: ${ammo.map(([k, n]) => `${k} ×${n}`).join(' · ')}</div>` : '');
+    const wIcon = (w) => (w === 'fists' ? 'fist' : WEAPONS[w].kind === 'gun' ? 'gun' : /knife|blade|machete|shiv|razor|switch/i.test(WEAPONS[w].name) ? 'knife' : 'wrench');
+    return `${sect('gun', 'Arsenal', '<span class="kb-only"><kbd>Q</kbd> switch</span>')}<div class="cs-slots">${ws.map((w) => `<div class="cs-slot" title="${WEAPONS[w].name}"${w === combat.weaponId ? ' style="border-color:var(--rust)"' : ''}><span class="cs-si">${ic(wIcon(w))}</span><span class="cs-sn">${WEAPONS[w].name}</span><span class="pm-chips">${chip('fist', WEAPONS[w].damage, 'muted', 'damage')}${WEAPONS[w].kind === 'gun' ? chip('ammo', `${p.mags?.[w] ?? 0}/${WEAPONS[w].mag}`, 'muted', 'magazine') : ''}</span></div>`).join('')}</div>`
+      + (ammo.length ? `<div class="vx2-chip-row" style="margin-top:5px">${ammo.map(([k, n]) => chip('ammo', `${k} ×${n}`, 'muted')).join('')}</div>` : '');
   });
 
   // Dealers need the world's locations; place now if they exist, else on game:start.
