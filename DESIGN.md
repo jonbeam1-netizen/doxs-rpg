@@ -205,3 +205,5 @@ Also owns `src/data/barks.js` (`bark(kind)` one-liners).
   dating first date after 4 interactions (progress shown); stat gains x1.4 below 15, diminishing past 25,
   soreness cap ~2 pts per sleep; fights/heists/dates also raise stats.
 - Audio (round 5): src/audio/mixer.js buses (sfx/ambience/music/ui) + limiter; game.audio.play3D(preset|fn, x, z, opts).
+- Minigames (src/systems/minigame.js + mg/): job shifts and training are 15-45s skill games (grade F-S; pay 0.6-1.5x,
+  skip = 0.8x). Event 'minigame:result' {id, grade, score, skipped, newBest}. Save: p.mg.

@@ -9,7 +9,11 @@
 //
 // Events emitted: job:hired / job:worked / job:promoted {jobId, rank, pay}, item:bought / item:used {id, qty},
 //   drug:bought / drug:sold {drugId, qty, price, district}, drug:used {drugId}, home:bought / home:slept {id},
-//   casino:result {game, amount}, course:completed {courseId}, date:result {success, npc}, look:change (look)
+//   casino:result {game, amount}, course:completed {courseId}, date:result {success, npc}, look:change (look),
+//   minigame:result {id, grade ('F'..'S' | 'AUTO'), score, skipped, newBest, context}
+//
+// Minigames (src/systems/minigame.js + mg/*.js): game.minigames.run(id, opts) wraps job shifts, gym, library,
+//   classes and the dance floor in 15-45s skill games (always skippable at 80%). p.mg = { best, top, plays, sGrades }.
 //
 // ---------------------------------------------------------------------------------------------
 // Persistent state added under game.state.p (all plain JSON):
@@ -49,6 +53,9 @@ import { installNightlife } from './nightlife.js';
 import { installFightClub } from './fightclub.js';
 import { installPlaces } from './places.js';
 import { installNews } from './news.js';
+import { installMinigames } from './minigame.js';
+import { registerWorkGames } from './mg/work.js';
+import { registerTrainGames } from './mg/train.js';
 
 export async function installSystems(game) {
   injectStyles();
@@ -57,7 +64,7 @@ export async function installSystems(game) {
 
   const parts = {};
   const steps = [
-    ['sfx', installSfx], ['effects', installEffects], ['items', installItems], ['market', installMarket],
+    ['sfx', installSfx], ['minigames', (g) => { const m = installMinigames(g); registerWorkGames(m); registerTrainGames(m); return m; }], ['effects', installEffects], ['items', installItems], ['market', installMarket],
     ['jobs', installJobs], ['delivery', installDelivery], ['homes', installHomes], ['shops', installShops],
     ['civic', installCivic], ['training', installTraining], ['casino', installCasino], ['dating', installDating],
     ['nightlife', installNightlife], ['fightclub', installFightClub], ['places', installPlaces], ['news', installNews],

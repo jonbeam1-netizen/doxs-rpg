@@ -6,6 +6,7 @@ import { JOBS } from '../data/jobs.js';
 import { fmtMoney, pick, chance, rand } from '../core/util.js';
 import { reqCheck, reqHtml, reqMissing, train, isOpen, hoursLabel, hasCourse, ensureState } from './common.js';
 import { say, choose } from './ui-kit.js';
+import { payMult, gainMult } from './minigame.js';
 
 export function installJobs(game) {
   const st = game.state;
@@ -87,24 +88,67 @@ export function installJobs(game) {
         choices: [2, 4, 8].map((h) => ({ label: `${h}-hour shift`, hint: `${fmtMoney(r.pay * h)} · -${d.energy * h} energy`, disabled: p.energy < d.energy * h, value: h })),
       });
       if (!hours) return;
-      await doShift(id, hours);
+      const mg = jobGame(id, p.job.rank);
+      if (mg && game.minigames?.has(mg.id)) {
+        await game.minigames.run(mg.id, {
+          title: `${d.name} — ${r.title}`,
+          intro: SHIFT_INTRO[mg.id] || '',
+          stakes: `${hours}-hour shift · base pay <b>${fmtMoney(r.pay * hours)}</b>${d.tips ? ' + tips' : ''} · -${d.energy * hours} energy · ${hours}h pass either way.`,
+          diff: mg.diff, playLabel: 'Clock in', skipLabel: 'Skip (auto, 80% pay)',
+          skipLine: 'You zone out and let muscle memory do the shift. Muscle memory is not great at this.',
+          context: { jobId: id, rank: p.job.rank, hours },
+          apply: (res) => doShift(id, hours, res),
+        });
+        return;
+      }
+      await say(game, `${d.name} — shift over`, doShift(id, hours, null), d.boss);
     },
   };
   game.jobs = jobs;
 
-  async function doShift(id, hours) {
+  // Which minigame each career plays (rank raises the difficulty). diff 0..1.
+  function jobGame(id, rank) {
+    const n = JOBS[id]?.ranks.length || 1;
+    const diff = n > 1 ? rank / (n - 1) : 0;
+    if (id === 'diner') return rank === 0 ? { id: 'dishwash', diff: 0 } : { id: 'linecook', diff: rank === 1 ? 0.1 : 0.6 };
+    const g = { factory: 'conveyor', office: 'email', bartender: 'mixdrink', cop: 'lineup', bouncer: 'idcheck', scrapper: 'scrapsort', fish_gutter: 'gutfish' }[id];
+    return g ? { id: g, diff } : null;
+  }
+  jobs.jobGame = jobGame;
+
+  const SHIFT_INTRO = {
+    dishwash: 'Big Marge points at a tower of plates that has its own weather system. "Scrub. In rhythm. Like your mama taught you, if she taught you anything."',
+    linecook: 'Tickets are piling up on the rail. The flat top hisses like it knows your name. Marge: "Burgers go bun, stuff, bun. It ain\'t rocket surgery."',
+    conveyor: 'The belt groans to life. Foreman Gristle cracks his knuckles, then somebody else\'s. "Good meat in the box. Gross stuff in the bin. Hot dogs get the rest."',
+    email: 'Your inbox has 4,000 unread emails and one of them is just the word "hey". Mr. Grimsby wants Inbox Zero by lunch. It is 12:58.',
+    mixdrink: 'One-Eyed Sal slides you the recipe book. It\'s mostly stains. "Customers order by name. You find the name. You pour. You don\'t ask what Gristle\'s Gargle is for."',
+    lineup: 'Chief Hamhock drops a stack of witness statements on your desk. One is written on a napkin, in mustard. "Find the perp. Any perp. THE perp, ideally."',
+    idcheck: 'The line around Club Velvet reaches the next zip code. Vince hands you a flashlight. "21 and up. Valid ID. And for the love of God, check the SHOES."',
+    scrapsort: 'Scrapper Pete fires up the big magnet. Mr. Chompers watches you from atop a dead minivan. "Copper\'s money. Steel\'s money. Trash is trash. Don\'t sort Chompers."',
+    gutfish: 'Mama Barnacle hands you a knife older than you. "Cut on the lines, sweetie. Hit the bile sac and you\'re mopping it with your tongue."',
+  };
+
+  // Pays out a shift. res = minigame result (null = no minigame). Returns the summary html.
+  function doShift(id, hours, res) {
     const d = JOBS[id];
     const p = st.p;
     const r = d.ranks[p.job.rank];
     st.addStat('energy', -d.energy * hours);
     game.time.advance(hours * 60);
-    let pay = r.pay * hours;
+    const mult = res ? payMult(res) : 1;
+    const base = r.pay * hours;
+    let pay = base * mult;
     let extra = '';
     if (hasCourse(p, 'bs101')) pay *= 1.1;
+    let perfLine = '';
+    if (res) {
+      perfLine = `Base ${fmtMoney(base)} × <b>${res.skipped ? 'autopilot' : 'grade ' + res.grade}</b> (${mult.toFixed(2)}×${hasCourse(p, 'bs101') ? ', +10% BS degree' : ''})`;
+    }
     if (d.tips) {
-      const tips = Math.round(rand(0.2, 1) * (2 + p.cha * 0.12) * hours);
+      const tipMult = res ? (res.skipped ? 0.8 : 0.5 + res.score) : 1;
+      const tips = Math.round(rand(0.2, 1) * (2 + p.cha * 0.12) * hours * tipMult);
       pay += tips;
-      extra += `<br>Tips: <b>${fmtMoney(tips)}</b> (and a phone number written on a napkin in what you hope is ketchup).`;
+      extra += `<br>Tips: <b>${fmtMoney(tips)}</b>${res && !res.skipped && res.score >= 0.82 ? ' (great service = great tips)' : ''} (and a phone number written on a napkin in what you hope is ketchup).`;
     }
     pay = Math.round(pay);
     // random event
@@ -119,9 +163,11 @@ export function installJobs(game) {
       if (ev.item) { st.addItem(ev.item, 1); extra += ` <span class="ui-good">(+${game.items?.name(ev.item)})</span>`; }
     }
     st.addMoney(pay, 'job');
-    for (const [k, v] of Object.entries(d.gain || {})) train(game, k, v * hours, 'job:' + id);
+    const gm = res ? gainMult(res) : 1;
+    for (const [k, v] of Object.entries(d.gain || {})) train(game, k, v * hours * gm, 'job:' + id);
     if (id === 'cop') st.addStat('karma', 1);
-    st.addXP(hours * 6 + p.job.rank * 4);
+    const bonusXp = res && !res.skipped ? Math.round(res.score * 10) : 0;
+    st.addXP(hours * 6 + p.job.rank * 4 + bonusXp);
     p.job.shifts++;
     const c = career(id);
     c.shifts = p.job.shifts;
@@ -130,7 +176,7 @@ export function installJobs(game) {
     st.changed('job');
     game.bus.emit('job:worked', { jobId: id, rank: p.job.rank, pay, hours });
     const promo = checkPromotion(id);
-    await say(game, `${d.name} — shift over`, `${pick(d.lines)}${extra}<br><br>You worked <b>${hours} hours</b> as ${r.title} and earned <b class="ui-good">${fmtMoney(pay)}</b>.${promo ? `<br><br>${promo}` : ''}`, d.boss);
+    return `${pick(d.lines)}${extra}<br><br>You worked <b>${hours} hours</b> as ${r.title} and earned <b class="ui-good">${fmtMoney(pay)}</b>.${perfLine ? `<br><span class="sys-hint">${perfLine}${bonusXp ? ` · +${bonusXp} bonus XP` : ''}</span>` : ''}${promo ? `<br><br>${promo}` : ''}`;
   }
 
   function checkPromotion(id) {

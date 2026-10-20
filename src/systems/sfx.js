@@ -57,6 +57,26 @@ export function installSfx(game) {
     buzz: (a) => tone(a, { f: 110, dur: 0.3, vol: 0.12, type: 'square' }),
     spray: (a) => noise(a, { dur: 0.35, freq: 5000, vol: 0.15, q: 0.4 }),
     dart: (a) => { noise(a, { dur: 0.05, freq: 4000, vol: 0.2 }); tone(a, { f: 160, t0: 0.04, dur: 0.08, vol: 0.15, type: 'sine' }); },
+    // minigames
+    mgStart: (a) => { tone(a, { f: 440, dur: 0.08, vol: 0.08, type: 'triangle' }); tone(a, { f: 660, t0: 0.09, dur: 0.12, vol: 0.08, type: 'triangle' }); },
+    mgGreat: (a) => [523, 659, 784, 1047, 1319].forEach((f, i) => tone(a, { f, t0: i * 0.07, dur: 0.18, vol: 0.09, type: 'triangle' })),
+    mgOk: (a) => { tone(a, { f: 523, dur: 0.1, vol: 0.08, type: 'triangle' }); tone(a, { f: 659, t0: 0.1, dur: 0.18, vol: 0.08, type: 'triangle' }); },
+    mgBad: (a) => { tone(a, { f: 260, f2: 180, dur: 0.3, vol: 0.1, type: 'sawtooth' }); tone(a, { f: 175, f2: 90, t0: 0.3, dur: 0.5, vol: 0.1, type: 'sawtooth' }); },
+    mgBest: (a) => { for (let i = 0; i < 6; i++) tone(a, { f: [784, 988, 1175][i % 3] * (i > 2 ? 2 : 1), t0: i * 0.06, dur: 0.12, vol: 0.07 }); },
+    hit: (a) => tone(a, { f: 880, dur: 0.06, vol: 0.07, type: 'triangle' }),
+    perfect: (a) => { tone(a, { f: 1175, dur: 0.06, vol: 0.07, type: 'triangle' }); tone(a, { f: 1568, t0: 0.05, dur: 0.1, vol: 0.06, type: 'triangle' }); },
+    miss: (a) => tone(a, { f: 150, f2: 90, dur: 0.16, vol: 0.1, type: 'square' }),
+    scrub: (a) => noise(a, { dur: 0.09, freq: 2200 + Math.random() * 1200, vol: 0.22, q: 1.4 }),
+    squeak: (a) => tone(a, { f: 1900, f2: 2600, dur: 0.07, vol: 0.05, type: 'sine' }),
+    sizzle: (a) => noise(a, { dur: 0.45, freq: 6000, vol: 0.12, q: 0.5 }),
+    flip: (a) => { noise(a, { dur: 0.05, freq: 900, vol: 0.25 }); tone(a, { f: 300, f2: 500, dur: 0.08, vol: 0.06, type: 'sine' }); },
+    squish: (a) => { noise(a, { dur: 0.14, freq: 500, vol: 0.35, q: 2 }); tone(a, { f: 180, f2: 70, dur: 0.14, vol: 0.1, type: 'sine' }); },
+    clank: (a) => { tone(a, { f: 620, dur: 0.18, vol: 0.06, type: 'square' }); tone(a, { f: 931, dur: 0.14, vol: 0.05, type: 'square' }); noise(a, { dur: 0.05, freq: 3000, vol: 0.2 }); },
+    pour: (a) => noise(a, { dur: 0.3, freq: 900, vol: 0.18, q: 0.6 }),
+    stamp: (a) => { noise(a, { dur: 0.06, freq: 700, vol: 0.4 }); tone(a, { f: 110, f2: 60, dur: 0.1, vol: 0.12, type: 'sine' }); },
+    whoosh: (a) => noise(a, { dur: 0.18, freq: 1500, vol: 0.15, q: 0.4 }),
+    grunt: (a) => { tone(a, { f: 140, f2: 95, dur: 0.22, vol: 0.12, type: 'sawtooth' }); noise(a, { dur: 0.12, freq: 600, vol: 0.12 }); },
+    tickTock: (a) => tone(a, { f: 1200, dur: 0.025, vol: 0.05, type: 'square' }),
   };
 
   const sfx = {

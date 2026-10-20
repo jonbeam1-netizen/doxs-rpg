@@ -25,7 +25,7 @@ export function installDelivery(game) {
         choices: [1, 3, 5].map((k) => ({ label: `${k} pizza${k > 1 ? 's' : ''}`, hint: `-${d.energy * k} energy`, disabled: p.energy < d.energy * k, value: k })),
       });
       if (!n) return;
-      this.active = { left: n, total: n, done: 0, earned: 0, late: 0, target: null, t: 0, limit: 60 };
+      this.active = { left: n, total: n, done: 0, earned: 0, late: 0, tips: 0, perf: [], target: null, t: 0, limit: 60 };
       game.ui.closeAll();
       nextTarget();
       game.ui.toast(`Run started: ${n} pizza${n > 1 ? 's' : ''}. Follow the red beacon!`, 'good', 3500);
@@ -113,11 +113,15 @@ export function installDelivery(game) {
     let pay = r.pay;
     let tip = 0;
     const late = a.t > a.limit;
-    if (late) { pay = Math.round(pay * 0.5); a.late++; }
+    let speedTag = '';
+    if (late) { pay = Math.round(pay * 0.5); a.late++; a.perf.push(0.15); }
     else {
       const speed = 1 - a.t / a.limit;
       tip = Math.round(rand(0.4, 1) * (3 + p.cha * 0.18) * (0.5 + speed));
       if (game.player?.vehicle) tip = Math.round(tip * 0.9);
+      a.perf.push(0.45 + 0.55 * speed);
+      speedTag = speed >= 0.6 ? ' ⚡ <b>BLAZING</b>' : speed >= 0.35 ? ' ⚡ fast' : '';
+      a.tips += tip;
     }
     const total = pay + tip;
     st.addMoney(total, 'pizza');
@@ -126,7 +130,7 @@ export function installDelivery(game) {
     a.earned += total;
     a.done++;
     a.left--;
-    game.ui.toast(`<b>${a.target.name}:</b> ${late ? '"It\'s COLD. Like my ex-wife\'s heart." (half pay)' : a.target.line} <span class="ui-good">+${fmtMoney(total)}${tip ? ` (${fmtMoney(tip)} tip)` : ''}</span>`, late ? 'bad' : 'money', 5000);
+    game.ui.toast(`<b>${a.target.name}:</b> ${late ? '"It\'s COLD. Like my ex-wife\'s heart." (half pay)' : a.target.line} <span class="ui-good">+${fmtMoney(total)}${tip ? ` (${fmtMoney(tip)} tip${speedTag})` : ''}</span>`, late ? 'bad' : 'money', 5000);
     if (a.left > 0) { nextTarget(); return; }
     finish();
   }
@@ -144,7 +148,13 @@ export function installDelivery(game) {
     st.addXP(6 * a.total);
     game.bus.emit('job:worked', { jobId: 'pizza', rank: p.job.rank, pay: a.earned, deliveries: a.done });
     const promo = game.jobs.checkPromotion('pizza');
-    game.ui.bigText('RUN COMPLETE', `${a.done} delivered · ${fmtMoney(a.earned)} earned${a.late ? ` · ${a.late} late` : ''}`, 2600);
+    let gradeTxt = '';
+    if (a.perf.length && game.minigames?.record) {
+      const sc = a.perf.reduce((x, y) => x + y, 0) / a.perf.length;
+      const { grade, newBest } = game.minigames.record('pizza', sc, { jobId: 'pizza', deliveries: a.done });
+      gradeTxt = ` · grade ${grade}${newBest ? ' (NEW BEST!)' : ''}`;
+    }
+    game.ui.bigText('RUN COMPLETE', `${a.done} delivered · ${fmtMoney(a.earned)} earned${a.tips ? ` (${fmtMoney(a.tips)} tips)` : ''}${a.late ? ` · ${a.late} late` : ''}${gradeTxt}`, 3000);
     if (promo) setTimeout(() => say(game, 'Pizza Butt', promo, 'Tony Butt'), 1200);
   }
 
@@ -173,7 +183,11 @@ export function installDelivery(game) {
       const ang = Math.atan2(dx * fwdZ - dz * fwdX, dx * fwdX + dz * fwdZ);
       const left = a.limit - a.t;
       const timer = left > 0 ? `<b>${Math.ceil(left)}s</b>` : '<b class="ui-bad">LATE</b>';
-      game.sysFx.missionHtml = `<div class="mission">🍕 ${a.done + 1}/${a.total} · <span class="arrow" style="transform:rotate(${(-ang * 180 / Math.PI).toFixed(0)}deg)">⬆</span> ${Math.round(dist)}m · ${timer}</div>`;
+      // live tip estimate (average of the tip roll) + speed bonus tier, so hustling is visible
+      const speed = Math.max(0, 1 - a.t / a.limit);
+      const estTip = left > 0 ? Math.round(0.7 * (3 + st.p.cha * 0.18) * (0.5 + speed) * (game.player?.vehicle ? 0.9 : 1)) : 0;
+      const tier = left <= 0 ? '<span class="ui-bad">half pay</span>' : speed >= 0.6 ? '<span style="color:#ffd84a">⚡⚡ BLAZING</span>' : speed >= 0.35 ? '<span style="color:#7fbf4d">⚡ FAST</span>' : '<span style="color:#a9a291">slow</span>';
+      game.sysFx.missionHtml = `<div class="mission">🍕 ${a.done + 1}/${a.total} · <span class="arrow" style="transform:rotate(${(-ang * 180 / Math.PI).toFixed(0)}deg)">⬆</span> ${Math.round(dist)}m · ${timer} · tip ~${fmtMoney(estTip)} ${tier}</div>`;
     },
   });
 

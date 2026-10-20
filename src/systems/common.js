@@ -35,6 +35,7 @@ export function ensureState(p) {
   p.dating ??= {};
   p.market ??= null;          // built by market.js
   p.education ??= {};
+  p.mg ??= { best: {}, top: {}, plays: {}, sGrades: 0 };   // minigame best grades (src/systems/minigame.js)
   p.totals.drugsSold ??= 0;
   return p;
 }

@@ -4,6 +4,7 @@
 import { fmtMoney, pick, chance, rand, randInt, clamp } from '../core/util.js';
 import { today, train, byTime, activity, brawlSpot } from './common.js';
 import { placeMenu, say, choose, gamePanel, betInput, shopPanel } from './ui-kit.js';
+import { gainMult } from './minigame.js';
 
 const BARS = {
   rusty_nail: {
@@ -305,6 +306,24 @@ export function installNightlife(game) {
     });
   });
 
+  // Dance floor payout (res = minigame result or null). Returns the summary html.
+  function danceApply(g, res) {
+    const p = st.p;
+    if (!activity(g, { minutes: 60, energy: 12 })) return 'Your legs file a formal complaint. Too tired to dance.';
+    const gm = res ? gainMult(res) : 1;
+    const gain = train(g, 'cha', 1.3 * gm, 'dancing');
+    let ev = '';
+    const s = res && !res.skipped ? res.score : 0.5;
+    if (chance(0.15 + 0.15 * s)) {
+      const win = chance(clamp(p.cha / 80 + (s - 0.5) * 0.6, 0.1, 0.9));
+      ev = win ? '<br><br>A dance-off breaks out! You do the worm. The crowd chants your name (they get it wrong). You win a free bottle of Fancy Bubbles!' : '<br><br>A dance-off breaks out! You attempt a split. Something tears. It\'s your pants. And maybe a hamstring.';
+      if (win) st.addItem('champagne', 1); else st.damage(5, 'dance');
+    }
+    const line = s >= 0.82 ? pick(['The crowd parts like you\'re a sweaty Moses. Phones come out. You\'re going viral. In a good way, this time.', 'You move like liquid. Greasy, beautiful liquid. A bachelorette party adopts you.'])
+      : pick(['You dance like nobody\'s watching. Everybody is watching. Some are filming.', 'You do the robot. A real robot would be embarrassed for you. Still, people clap.', 'You grind on a pillar. The pillar grinds back. It\'s a man in a gray outfit.']);
+    return `${line}${gain ? `<br><br>+${Math.round(gain * 100) / 100} CHA` : ''}${res ? `<br><span class="sys-hint">Gains ×${gm.toFixed(2)} (${res.skipped ? 'autopilot' : 'grade ' + res.grade})</span>` : ''}${ev}`;
+  }
+
   // ================= CLUB VELVET =================
   game.locations.register('nightclub', (g, loc) => {
     const p = st.p;
@@ -335,16 +354,19 @@ export function installNightlife(game) {
           ];
         }
         const out = [
-          { label: 'Hit the dance floor', hint: '1h · -12 energy · +CHA', run: async () => {
-            if (!activity(g, { minutes: 60, energy: 12 })) return;
-            const gain = train(g, 'cha', 1.3, 'dancing');
-            let ev = '';
-            if (chance(0.2)) {
-              const win = chance(clamp(p.cha / 80, 0.1, 0.85));
-              ev = win ? '<br><br>A dance-off breaks out! You do the worm. The crowd chants your name (they get it wrong). You win a free bottle of Fancy Bubbles!' : '<br><br>A dance-off breaks out! You attempt a split. Something tears. It\'s your pants. And maybe a hamstring.';
-              if (win) st.addItem('champagne', 1); else st.damage(5, 'dance');
-            }
-            return say(g, 'Dance Floor', `${pick(['You dance like nobody\'s watching. Everybody is watching. Some are filming.', 'You do the robot. A real robot would be embarrassed for you. Still, people clap.', 'You grind on a pillar. The pillar grinds back. It\'s a man in a gray outfit.'])}${gain ? `<br><br>+${Math.round(gain * 100) / 100} CHA` : ''}${ev}`);
+          { label: 'Hit the dance floor', hint: '1h · -12 energy · +CHA · rhythm game', run: async () => {
+            if (p.energy < 12) { st.useEnergy(12); return; }
+            const apply = (res) => danceApply(g, res);
+            if (!game.minigames?.has('dance')) return say(g, 'Dance Floor', apply(null));
+            return game.minigames.run('dance', {
+              title: 'Club Velvet — Dance Floor',
+              intro: 'DJ Moist drops a beat that sounds like a car alarm having a breakdown. The floor is sticky. The lights are lasers. Your body is ready. Your body is wrong, but ready.',
+              stakes: '1h · -12 energy · base +1.3 CHA (before soreness/diminishing returns)',
+              diff: clamp((p.cha || 0) / 120, 0, 1),
+              skipLabel: 'Skip (auto, 80% gains)', skipLine: 'You sway in the corner holding a drink, nodding like you know the song. You don\'t. Nobody does.',
+              context: { place: 'nightclub' },
+              apply,
+            });
           } },
           { label: 'Velvet Martini', hint: '$15', run: () => drink('Velvet Martini', 15, 1.5, 'It\'s red, it\'s velvety, it tastes like cough syrup and ambition.') },
           { label: 'Bottle service', hint: '$500 · VIP booth · +CHA', disabled: p.cha < 30, run: async () => {

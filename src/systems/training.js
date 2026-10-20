@@ -5,6 +5,7 @@ import { COURSES } from '../data/courses.js';
 import { fmtMoney, pick, chance, randInt, clamp } from '../core/util.js';
 import { train, today, hasCourse, reqCheck, reqHtml, reqMissing, activity, hourName, byTime, rest, soreHint, soreMult } from './common.js';
 import { placeMenu, say, choose, shopPanel } from './ui-kit.js';
+import { gainMult } from './minigame.js';
 
 export function installTraining(game) {
   const st = game.state;
@@ -35,15 +36,33 @@ export function installTraining(game) {
       cardio: { min: 60, energy: 10, str: 0.45, text: ['You run on the treadmill watching a cooking show. You burn 300 calories and gain 400 in envy.', 'The treadmill next to you is a 70-year-old woman. She laps you. On a treadmill. Somehow.'] },
       spar: { min: 60, energy: 16, str: 1.5, hp: 10, text: ['Brick spars with you. "Hands up! HANDS UP!" Your hands are up. They were always up. He hits you anyway.', 'You land one punch on Brick. He laughs, then sits on you. For 20 minutes.'] },
     }[kind];
-    if (!activity(game, { minutes: W.min, energy: W.energy })) return;
+    if (p.energy < W.energy) { st.useEnergy(W.energy); return; }
+    if (game.minigames?.has('reps')) {
+      return game.minigames.run('reps', {
+        title: { lift: 'Pump Iron', heavy: 'Heavy Session with Brick', cardio: 'Treadmill', spar: 'Sparring with Brick' }[kind],
+        intro: { lift: 'Brick loads the bar with plates and one suspicious hubcap. "Form first. Ego second. Screaming third."', heavy: 'Brick cracks his neck. It sounds like a car crash. "Three hours. Fourteen BIG reps. If you puke, puke in rhythm."', cardio: 'The treadmill has a sticker: "MAX SPEED: REGRET". Find the pace and stay in the zone.', spar: 'Brick slips on gloves the size of microwaves. "Time your punches. Hit the opening. Don\'t hit my face, I\'m modeling Thursday."' }[kind],
+        stakes: `${W.min / 60}h · -${W.energy} energy · base +${W.str} STR (before soreness/diminishing returns)${sh('str')}`,
+        variant: kind, diff: Math.min(1, (p.str || 0) / 150) + (kind === 'heavy' ? 0.15 : 0),
+        skipLabel: 'Skip (auto, 80% gains)', skipLine: 'You go through the motions while watching the TV. It\'s a cooking show. You learn about risotto.',
+        context: { place: 'gym', kind },
+        apply: (res) => workoutApply(kind, W, res),
+      });
+    }
+    return say(game, 'Iron Lung Gym', workoutApply(kind, W, null));
+  }
+
+  function workoutApply(kind, W, res) {
+    const p = st.p;
+    if (!activity(game, { minutes: W.min, energy: W.energy })) return 'Too tired.';
     if (W.hp) st.damage(W.hp, 'spar');
-    const gained = train(game, 'str', W.str, 'gym');
-    st.addXP(Math.round(W.min / 10));
-    let extra = '';
+    const gm = res ? gainMult(res) : 1;
+    const gained = train(game, 'str', W.str * gm, 'gym');
+    st.addXP(Math.round(W.min / 10) + (res && !res.skipped ? Math.round(res.score * 4) : 0));
+    let extra = res ? `<br><span class="sys-hint">Gains ×${gm.toFixed(2)} (${res.skipped ? 'autopilot' : 'grade ' + res.grade})</span>` : '';
     if (st.p.str >= 15 && soreMult(st.p, 'str') < 0.97) extra += `<br><span class="sys-hint">Sore (${soreHint(st.p, 'str')}). Sleep it off, or go use those muscles: fights, the meat plant, The Pit.</span>`;
-    if (kind === 'cardio' && p.maxEnergy < 200 && chance(0.3)) { p.maxEnergy += 1; st.changed('energy'); extra = '<br><span class="ui-good">Your stamina improves: +1 max energy.</span>'; }
+    if (kind === 'cardio' && p.maxEnergy < 200 && chance(res && !res.skipped ? 0.15 + 0.3 * res.score : 0.3)) { p.maxEnergy += 1; st.changed('energy'); extra += '<br><span class="ui-good">Your stamina improves: +1 max energy.</span>'; }
     if (game.sysFx.has('roids') && chance(0.25)) extra += '<br><em>Roid rage! You scream at a water fountain. It had it coming.</em>';
-    await say(game, 'Iron Lung Gym', `${pick(W.text)}${gained ? `<br><br>+${Math.round(gained * 100) / 100} STR` : ''}${extra}`);
+    return `${pick(W.text)}${gained ? `<br><br>+${Math.round(gained * 100) / 100} STR` : ''}${extra}`;
   }
 
   game.locations.register('gym', (g, loc) => placeMenu(g, loc, {
@@ -98,6 +117,30 @@ export function installTraining(game) {
   }
 
   // ================= LIBRARY =================
+  async function study(g, hard) {
+    const S = hard ? { min: 180, energy: 18, int: 2.8, xp: 14 } : { min: 60, energy: 5, int: 0.8, xp: 4 };
+    if (st.p.energy < S.energy) { st.useEnergy(S.energy); return; }
+    const apply = (res) => {
+      if (!activity(g, { minutes: S.min, energy: S.energy })) return 'Too tired to read. You stare at the cover.';
+      const gm = res ? gainMult(res) : 1;
+      const gain = train(g, 'int', S.int * gm, 'library', 40);
+      st.addXP(S.xp + (res && !res.skipped ? Math.round(res.score * (hard ? 6 : 3)) : 0));
+      const txt = hard ? 'Three hours of hardcore studying. You highlight everything. Every word is yellow. You have learned that highlighting is not learning.'
+        : pick(['You read about the history of spoons. It\'s riveting. It\'s not.', 'You read a book on quantum physics. You understand one word: "the".', 'You read the entire "Garfield" collection. Educational? Debatable.', 'You read a romance novel called "Lust in the Rendering Plant". You learn several new words for "throbbing".']);
+      return `${txt}<br><br>+${Math.round(gain * 100) / 100} INT${res ? `<br><span class="sys-hint">Gains ×${gm.toFixed(2)} (${res.skipped ? 'autopilot' : 'grade ' + res.grade})</span>` : ''}`;
+    };
+    if (!game.minigames?.has('speedread')) return say(g, 'Reading', apply(null));
+    return game.minigames.run('speedread', {
+      title: hard ? 'Study Session' : 'Reading Hour',
+      intro: hard ? 'You pile up nine books and a dictionary. Mrs. Shush gives you a look that could curdle milk. Time to speed-read like your GPA depends on it (you don\'t have a GPA).' : 'You grab a random book off the shelf. Your brain immediately wanders to snacks. Stay on topic.',
+      stakes: `${S.min / 60}h · -${S.energy} energy · base +${S.int} INT${sh('int')}`,
+      variant: hard ? 'hard' : 'easy', diff: Math.min(1, (st.p.int || 0) / 150),
+      skipLabel: 'Skip (auto, 80% gains)', skipLine: 'You "read" by looking at the pictures. There are no pictures. You read the pictures anyway.',
+      context: { place: 'library', hard },
+      apply,
+    });
+  }
+
   game.locations.register('library', (g, loc) => placeMenu(g, loc, {
     hours: [8, 21],
     speaker: 'Mrs. Shush',
@@ -111,18 +154,8 @@ export function installTraining(game) {
       const p = st.p;
       const t = today(g);
       return [
-        { label: 'Read for an hour', hint: `1h · -5 energy · +INT${sh('int')}`, run: async () => {
-          if (!activity(g, { minutes: 60, energy: 5 })) return;
-          const gain = train(g, 'int', 0.8, 'library', 40);
-          st.addXP(4);
-          return say(g, 'Reading', `${pick(['You read about the history of spoons. It\'s riveting. It\'s not.', 'You read a book on quantum physics. You understand one word: "the".', 'You read the entire "Garfield" collection. Educational? Debatable.', 'You read a romance novel called "Lust in the Rendering Plant". You learn several new words for "throbbing".'])}<br><br>+${Math.round(gain * 100) / 100} INT`);
-        } },
-        { label: 'Hit the books hard', hint: `3h · -18 energy · ++INT${sh('int')}`, run: async () => {
-          if (!activity(g, { minutes: 180, energy: 18 })) return;
-          const gain = train(g, 'int', 2.8, 'library', 40);
-          st.addXP(14);
-          return say(g, 'Study Session', `Three hours of hardcore studying. You highlight everything. Every word is yellow. You have learned that highlighting is not learning. +${Math.round(gain * 100) / 100} INT`);
-        } },
+        { label: 'Read for an hour', hint: `1h · -5 energy · +INT · speed-reading${sh('int')}`, run: () => study(g, false) },
+        { label: 'Hit the books hard', hint: `3h · -18 energy · ++INT · speed-reading${sh('int')}`, run: () => study(g, true) },
         { label: 'Used book sale', run: () => shopPanel(g, { title: 'Friends of the Library Book Sale', speaker: 'Mrs. Shush', intro: '"All proceeds go to fixing the book drop. You know why."', sections: [{ products: ['book_dummies', 'book_cheese', 'book_barfight', 'book_anatomy', 'book_seduction', 'newspaper'].map((id) => {
           const d = game.items.def(id);
           const price = Math.max(1, Math.round(d.price * 0.85));
@@ -213,16 +246,36 @@ export function installTraining(game) {
     }
     const energy = 9 * c.len;
     if (p.energy < energy) return say(game, c.short, `You need ${energy} energy to stay awake through ${c.len} hours of ${c.prof}. You have ${Math.floor(p.energy)}. You fall asleep in the hallway instead.`);
-    st.addStat('energy', -energy);
+    const gainTxt = Object.entries(c.gain).map(([k, v]) => `+${v} ${k.toUpperCase()}`).join(' ');
+    if (!game.minigames?.has('quiz')) return say(game, `${c.short}`, classApply(id, null), c.prof);
+    return game.minigames.run('quiz', {
+      title: `${c.short} — session ${(e.sessions || 0) + 1}/${c.sessions}`,
+      intro: `${c.prof} lectures for ${c.len} hours. Then, with a smile that says "I hate you all", announces a <b>pop quiz</b>.`,
+      stakes: `${c.len}h · -${energy} energy · base ${gainTxt} · the session counts toward your degree either way.`,
+      variant: id, diff: clamp((c.fee || 0) / 8000, 0, 1),
+      playLabel: 'Take the quiz', skipLabel: 'Skip quiz (auto, 80% gains)',
+      skipLine: 'You copy off the guy next to you. He was copying off the guy next to HIM. It\'s copies all the way down.',
+      context: { courseId: id },
+      apply: (res) => classApply(id, res),
+    });
+  }
+
+  function classApply(id, res) {
+    const c = COURSES[id];
+    const p = st.p;
+    const e = p.education[id];
+    st.addStat('energy', -9 * c.len);
     game.time.advance(c.len * 60);
+    const gm = res ? gainMult(res) : 1;
     let txt = '';
     for (const [k, v] of Object.entries(c.gain)) {
-      const g2 = train(game, k, v, 'course:' + id, 60);
+      const g2 = train(game, k, v * gm, 'course:' + id, 60);
       txt += ` +${Math.round(g2 * 100) / 100} ${k.toUpperCase()}`;
     }
+    if (res) txt += `<br><span class="sys-hint">Gains ×${gm.toFixed(2)} (${res.skipped ? 'copied answers' : 'quiz grade ' + res.grade})</span>`;
     e.sessions = (e.sessions || 0) + 1;
     e.lastDay = game.time.day;
-    st.addXP(10 * c.len);
+    st.addXP(10 * c.len + (res && !res.skipped ? Math.round(res.score * 8) : 0));
     st.changed('education');
     const lectures = {
       remedial_math: ['Mr. Pindle teaches long division using pizza slices. You eat the slices. You fail the quiz.', 'Today: fractions. A guy in the back asks if 1/3 is bigger than 1/4 "because 4 is bigger". Pindle weeps.'],
@@ -247,7 +300,7 @@ export function installTraining(game) {
       setTimeout(() => game.ui.bigText('GRADUATED!', c.name, 3200), 50);
       done = `<br><br><b class="ui-good">GRADUATED!</b> You throw your cap in the air. It lands in a fountain. You don't care. ${c.perkText}`;
     }
-    return say(game, `${c.short} — session ${e.sessions}/${c.sessions}`, `${pick(lectures)}<br><br>${txt}${done}`, c.prof);
+    return `${pick(lectures)}<br><br>${txt}${done}`;
   }
 
   game.locations.register('university', (g, loc) => placeMenu(g, loc, {
