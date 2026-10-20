@@ -153,6 +153,10 @@ export class CameraRig {
       this.invertY = localStorage.getItem('doxsrpg_invy') === '1';
     } catch { /* ignore */ }
     this._fly = 0;
+    // Story-moment framing (src/present): { pos:{x,y,z}, look:{x,y,z}, w:0..1 }. w blends the
+    // follow camera toward the framed shot; the present module eases w in and out.
+    this.cine = null;
+    this._cv = new THREE.Vector3();
   }
 
   setSensitivity(v) {
@@ -241,10 +245,17 @@ export class CameraRig {
       cam.position.x += (Math.random() - 0.5) * a;
       cam.position.y += (Math.random() - 0.5) * a;
     }
+    const cine = this.cine;
+    const cw = cine && cine.w > 0.0005 ? Math.min(1, cine.w) : 0;
+    if (cw) {
+      cam.position.lerp(this._cv.set(cine.pos.x, cine.pos.y, cine.pos.z), cw);
+      look.lerp(this._cv.set(cine.look.x, cine.look.y, cine.look.z), cw);
+    }
     cam.lookAt(look);
     // a camera squeezed right up against the player fades them out instead of
     // filling the screen with the back of their head
-    if (!inCar) {
+    if (cw > 0.05 && !inCar) { try { g.player?.model?.setOpacity?.(1); } catch { /* ignore */ } }
+    else if (!inCar) {
       const near = cam.position.distanceTo(look);
       try { g.player?.model?.setOpacity?.(clamp((near - 0.55) / 0.9, 0.12, 1)); } catch { /* ignore */ }
     }

@@ -15,6 +15,10 @@ export class UI {
     this.sheetSections = []; // [(game) => html] — extra character-sheet sections
     this.escHandlers = [];   // [() => bool] — consulted on Esc before the pause menu (return true = handled)
     this.helpKeys = [];      // [[keyHtml, description]] — extra rows for the F1 help panel
+    // Presentation hooks (src/present): dialogDecorators get ({ wrap, textEl, args, entry, ui }) right after a
+    // dialog opens (portraits, typewriter); promptDecorate(html) -> html dresses the "Press E" prompt.
+    this.dialogDecorators = [];
+    this.promptDecorate = null;
     this.bubbles = new Map();
     this.hudEl = document.getElementById('hud');
     this.layer = document.getElementById('dialog-layer');
@@ -167,19 +171,49 @@ export class UI {
   }
 
   setPrompt(html) {
-    if (!html) { this.promptEl.classList.add('hidden'); return; }
-    this.promptEl.innerHTML = html;
+    if (!html) { this.promptEl.classList.add('hidden'); this._promptSrc = null; return; }
+    if (html !== this._promptSrc) {
+      this._promptSrc = html;
+      let out = html;
+      if (this.promptDecorate) { try { out = this.promptDecorate(html) ?? html; } catch { out = html; } }
+      this.promptEl.innerHTML = out;
+    }
     this.promptEl.classList.remove('hidden');
   }
 
   // ---------------- Toasts / big text ----------------
+  // A repeat of a toast that's still on screen bumps a ×N counter instead of stacking a copy.
+  // Old toasts collapse out of the stack (no jumping) when more than 4 are queued.
   toast(msg, kind = 'info', ms = 3200) {
+    const live = [...this.toastsEl.children].filter((t) => !t.classList.contains('out'));
+    const dup = live.find((t) => t._msg === msg && t._kind === kind);
+    if (dup) {
+      dup._n = (dup._n || 1) + 1;
+      let c = dup.querySelector(':scope > .toast-n');
+      if (!c) { c = document.createElement('span'); c.className = 'toast-n'; dup.appendChild(c); }
+      c.textContent = '×' + dup._n;
+      dup.classList.remove('bump'); void dup.offsetWidth; dup.classList.add('bump');
+      clearTimeout(dup._t);
+      dup._t = setTimeout(() => this._toastOut(dup), ms);
+      return;
+    }
     const el = document.createElement('div');
     el.className = `toast ${kind}`;
     el.innerHTML = msg;
+    el._msg = msg; el._kind = kind;
     this.toastsEl.appendChild(el);
-    while (this.toastsEl.children.length > 4) this.toastsEl.firstChild.remove();
-    setTimeout(() => { el.classList.add('out'); setTimeout(() => el.remove(), 400); }, ms);
+    for (let i = 0; i < live.length + 1 - 4; i++) this._toastOut(live[i], true);
+    el._t = setTimeout(() => this._toastOut(el), ms);
+  }
+
+  _toastOut(el, fast = false) {
+    if (!el || el.classList.contains('out')) return;
+    clearTimeout(el._t);
+    el.style.maxHeight = el.offsetHeight + 'px';
+    void el.offsetWidth;
+    el.classList.add('out');
+    if (fast) el.classList.add('fast');
+    setTimeout(() => el.remove(), fast ? 240 : 420);
   }
 
   bigText(title, sub = '', ms = 2600, kind = null) {
@@ -215,7 +249,11 @@ export class UI {
       close: () => {
         if (entry.closed) return;
         entry.closed = true;
-        el.remove();
+        entry.onClosed?.();
+        // Fade out; anything that opens right after (dialog chains) removes it at once instead.
+        el.classList.add('ui-closing');
+        el._rm = setTimeout(() => el.remove(), 150);
+        this._lastClose = performance.now();
         const i = this.stack.indexOf(entry);
         if (i >= 0) this.stack.splice(i, 1);
         if (!this.stack.length) this.game.bus.emit('ui:close');
@@ -224,6 +262,12 @@ export class UI {
       },
     };
     el.querySelector('.ui-x')?.addEventListener('click', () => entry.close());
+    // Transitions: a fresh panel fades/rises in; a panel replacing one that just closed (the next page
+    // of a conversation, a sub-menu) only cross-fades, so chains don't flicker the backdrop.
+    let chained = false;
+    for (const old of this.layer.querySelectorAll(':scope > .ui-closing')) { clearTimeout(old._rm); old.remove(); chained = true; }
+    if (performance.now() - (this._lastClose ?? -1e9) < 120 || this.stack.length) chained = true;
+    el.classList.add(chained ? 'ui-chain' : 'ui-enter');
     this.layer.appendChild(el);
     this.stack.push(entry);
     this.game.input?.releasePointer();
@@ -233,12 +277,17 @@ export class UI {
 
   closeAll() { while (this.stack.length) this.stack[this.stack.length - 1].close(); }
 
-  dialog({ title = '', speaker = '', text = '', html = null, options = null, closable = true, width = 560 } = {}) {
+  // Extra (optional) args read by src/present: mood ('neutral'|'angry'|'smug'|'worried') for the portrait,
+  // portrait (false = none, or a look { color, hat, hatColor, skin, build }), typewriter (false = show at once).
+  dialog(args = {}) {
+    const { title = '', speaker = '', text = '', html = null, options = null, closable = true, width = 560 } = args || {};
     return new Promise((resolve) => {
       const opts = options && options.length ? options : [{ label: 'Leave' }];
       const wrap = document.createElement('div');
-      wrap.innerHTML = `${speaker ? `<div class="ui-speaker">${speaker}</div>` : ''}<div class="ui-text"></div><div class="ui-opts"></div>`;
-      wrap.querySelector('.ui-text').innerHTML = html ?? esc(text).replace(/\n/g, '<br>');
+      wrap.className = 'ui-dlg';
+      wrap.innerHTML = `<div class="ui-dlg-head"><div class="ui-dlg-main">${speaker ? `<div class="ui-speaker">${speaker}</div>` : ''}<div class="ui-text"></div></div></div><div class="ui-opts"></div>`;
+      const textEl = wrap.querySelector('.ui-text');
+      textEl.innerHTML = html ?? esc(text).replace(/\n/g, '<br>');
       const optsEl = wrap.querySelector('.ui-opts');
       let entry = null;
       let done = false;
@@ -258,6 +307,9 @@ export class UI {
       entry = this.openPanel({ title, body: wrap, closable, width, onClose: () => { done = true; resolve(null); } });
       entry.isDialog = true;
       entry.choose = choose;
+      for (const d of this.dialogDecorators) {
+        try { d({ wrap, textEl, args: args || {}, entry, ui: this }); } catch (e) { console.error('[ui] dialog decorator failed', e); }
+      }
     });
   }
 
@@ -310,6 +362,10 @@ export class UI {
       for (const h of this.escHandlers) { try { if (h()) return; } catch (err) { console.error(err); } }
       this.openPauseMenu();
       return;
+    }
+    // Text still typing out: Space / Enter / 1-9 finish it first (the next press picks).
+    if (top?.isDialog && top.typing && (e.code === 'Space' || e.code === 'Enter' || e.code === 'NumpadEnter' || /^(Digit|Numpad)[1-9]$/.test(e.code))) {
+      e.preventDefault(); top.finishTyping?.(); return;
     }
     if (top?.isDialog && /^Digit[1-9]$/.test(e.code)) { top.choose(Number(e.code.slice(5)) - 1); return; }
     if (e.code === 'Tab') {

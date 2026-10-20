@@ -648,3 +648,111 @@ body.touch-ui .ui-title { padding-right: 46px; }
 /* gamepad focus ring (menus / dialogs) */
 .pad-focus { outline: 3px solid var(--toxic) !important; outline-offset: 2px; box-shadow: 0 0 0 6px rgba(165,194,52,0.25) !important; }
 .ui-opt.pad-focus, .ui-btn.pad-focus { background: #2a231b; border-color: var(--rust); }
+
+/* ======================= Presentation (src/present): portraits, typewriter, moments, cards ======================= */
+/* Panel transitions: fresh panels fade/rise in, chained pages cross-fade, closing panels fade out. */
+.ui-modal.ui-enter { animation: prBackIn 0.16s ease-out; }
+.ui-modal.ui-enter > .ui-panel { animation: prPanelIn 0.2s cubic-bezier(.2,.9,.3,1); }
+.ui-modal.ui-chain > .ui-panel { animation: prPanelChain 0.12s ease-out; }
+.ui-modal.ui-closing { pointer-events: none !important; opacity: 0; transition: opacity 0.14s ease-in; }
+.ui-modal.ui-closing * { pointer-events: none !important; }
+@keyframes prBackIn { from { background-color: rgba(0,0,0,0); } }
+@keyframes prPanelIn { from { opacity: 0; transform: translateY(8px) scale(0.985); } to { opacity: 1; transform: none; } }
+@keyframes prPanelChain { from { opacity: 0.55; } to { opacity: 1; } }
+
+/* Dialog layout: portrait to the left of speaker + text, options full width below */
+.ui-dlg-head { display: flex; gap: 14px; align-items: flex-start; }
+.ui-dlg-main { flex: 1; min-width: 0; }
+.ui-dlg.has-portrait .ui-dlg-main { min-height: 100px; }
+.pr-portrait {
+  position: relative; flex: 0 0 84px; width: 84px; height: 100px; overflow: hidden;
+  background: #0b0a09; border: 1px solid var(--panel-edge);
+  box-shadow: 0 4px 14px rgba(0,0,0,0.55), inset 0 0 0 1px rgba(0,0,0,0.6);
+  animation: prPortraitIn 0.25s ease-out;
+}
+.pr-portrait::after {
+  content: ''; position: absolute; inset: 0; pointer-events: none;
+  box-shadow: inset 0 -18px 18px -14px rgba(0,0,0,0.7);
+  border-bottom: 2px solid rgba(179,38,30,0.55);
+}
+.pr-portrait canvas { display: block; width: 100%; height: 100%; }
+@keyframes prPortraitIn { from { opacity: 0; transform: translateX(-4px); } to { opacity: 1; transform: none; } }
+.ui-dlg .ui-speaker { line-height: 1.15; }
+
+/* Typewriter: the untyped remainder keeps its space so nothing reflows */
+.tw-rest { color: transparent !important; text-shadow: none !important; }
+.ui-dlg .ui-opts { transition: opacity 0.2s ease-out; }
+.ui-dlg.tw-on .ui-opts { opacity: 0.55; }
+.ui-dlg.tw-on .ui-dlg-head { cursor: pointer; }
+
+/* Interaction prompt: [E] + type icon + verb + name */
+#prompt { display: flex; align-items: center; justify-content: center; gap: 0; }
+#prompt.hidden { display: none !important; }
+#prompt kbd { flex: 0 0 auto; }
+.pr-pi { display: inline-flex; color: var(--rust); margin: 0 6px 0 2px; }
+.pr-pv { color: var(--bone-dim); white-space: pre; }
+.pr-pn { color: var(--bone); }
+.pr-ico { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
+.pr-pi .pr-ico { width: 18px; height: 18px; }
+
+/* Notification stack: repeats count up, leavers collapse instead of jumping */
+#toasts .toast { overflow: hidden; }
+#toasts .toast.out { opacity: 0; max-height: 0 !important; padding-top: 0; padding-bottom: 0; margin-top: -5px;
+  transition: opacity 0.25s ease-in, max-height 0.3s ease-in 0.1s, padding 0.3s ease-in 0.1s, margin 0.3s ease-in 0.1s; }
+#toasts .toast.out.fast { transition: opacity 0.15s, max-height 0.2s, padding 0.2s, margin 0.2s; }
+.toast .toast-n { display: inline-block; margin-left: 8px; padding: 0 5px; font-size: 13px; font-weight: 800; color: var(--ink); background: var(--bone-dim); border-radius: 2px; vertical-align: 1px; }
+#toasts .toast.bump { animation: prBump 0.25s ease-out; }
+@keyframes prBump { 0% { transform: scale(1.04); } 100% { transform: none; } }
+
+/* Story moments: letterbox + caption; the HUD steps aside */
+#pr-cine { position: absolute; inset: 0; pointer-events: none; }
+#pr-cine .pr-bar { position: absolute; left: 0; right: 0; height: 11vh; background: #000; transition: transform 0.6s cubic-bezier(.2,.8,.2,1); }
+#pr-cine .pr-bar.top { top: 0; transform: translateY(-101%); }
+#pr-cine .pr-bar.bot { bottom: 0; transform: translateY(101%); display: flex; align-items: center; justify-content: center; }
+#pr-cine.on .pr-bar { transform: none; }
+.pr-cap { text-align: center; max-width: min(760px, 86vw); opacity: 0; transition: opacity 0.5s 0.35s; }
+#pr-cine.on.has-cap .pr-cap { opacity: 1; }
+#pr-cine:not(.on) .pr-cap { transition-delay: 0s; transition-duration: 0.2s; }
+.pr-cap-who { font-size: 13px; letter-spacing: 4px; text-transform: uppercase; color: var(--toxic); }
+.pr-cap-who:empty { display: none; }
+.pr-cap-line { font-family: var(--font-title); font-size: 21px; color: var(--bone); margin-top: 2px; }
+.pr-skip { position: absolute; right: 18px; bottom: 12px; font-size: 13px; color: #6d675c; opacity: 0; transition: opacity 0.4s 1s; }
+.pr-skip kbd { font-size: 11px; min-width: 0; padding: 0 4px; margin-right: 5px; background: #3a352d; color: #b9b2a2; }
+#pr-cine.on .pr-skip { opacity: 1; }
+body.touch-ui .pr-skip { display: none; }
+#hud, #prompt { transition: opacity 0.35s; }
+body.pr-cine-on #hud, body.pr-cine-on #prompt { opacity: 0; }
+
+/* Chapter title card */
+#pr-card {
+  position: absolute; left: 50%; top: 34%; transform: translate(-50%, -50%); width: min(720px, 92vw);
+  text-align: center; pointer-events: none; padding: 26px 20px 22px;
+  background: radial-gradient(ellipse 60% 55% at 50% 50%, rgba(5,4,3,0.62), rgba(5,4,3,0) 100%);
+}
+#pr-card .pr-card-k { font-size: 15px; letter-spacing: 7px; text-transform: uppercase; color: var(--bone-dim); text-shadow: 0 2px 6px #000; }
+#pr-card .pr-card-t { font-family: var(--font-title); font-size: clamp(38px, 6.4vw, 66px); line-height: 1.05; color: var(--bone); margin-top: 6px;
+  letter-spacing: 2px; text-shadow: 3px 3px 0 #000, 0 0 28px rgba(0,0,0,0.8); }
+#pr-card .pr-card-u { display: block; width: min(440px, 80%); height: 18px; margin: 4px auto 8px; color: var(--blood); overflow: visible; }
+#pr-card .pr-card-u path { stroke-dasharray: 420; stroke-dashoffset: 420; }
+#pr-card .pr-card-s { font-size: 19px; color: #cfc6b2; text-shadow: 0 2px 6px #000, 1px 1px 0 #000; max-width: 560px; margin: 0 auto; }
+#pr-card.in .pr-card-k { animation: prFade 0.7s ease-out both; }
+#pr-card.in .pr-card-t { animation: prTitle 0.9s cubic-bezier(.2,.8,.2,1) 0.1s both; }
+#pr-card.in .pr-card-u path { animation: prStroke 0.7s ease-out 0.55s forwards; }
+#pr-card.in .pr-card-s { animation: prFade 0.8s ease-out 0.75s both; }
+#pr-card.out { opacity: 0; transition: opacity 0.6s ease-in; }
+@keyframes prFade { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+@keyframes prTitle { from { opacity: 0; letter-spacing: 12px; filter: blur(3px); } to { opacity: 1; letter-spacing: 2px; filter: none; } }
+@keyframes prStroke { to { stroke-dashoffset: 0; } }
+
+@media (max-width: 600px) {
+  .pr-portrait { flex-basis: 60px; width: 60px; height: 72px; }
+  .ui-dlg.has-portrait .ui-dlg-main { min-height: 72px; }
+  .ui-dlg-head { gap: 10px; }
+  .pr-cap-line { font-size: 17px; }
+  #pr-cine .pr-bar { height: 8vh; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ui-modal.ui-enter, .ui-modal.ui-enter > .ui-panel, .ui-modal.ui-chain > .ui-panel, .pr-portrait { animation: none; }
+}
+.npc-bubble { transition: opacity 0.3s; }
+body.pr-card-on .npc-bubble { opacity: 0 !important; }

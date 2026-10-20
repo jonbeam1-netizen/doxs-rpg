@@ -62,7 +62,7 @@ async function boot() {
   game.player.spawn(sp.x, sp.z, sp.facing ?? 0);
   game.cameraRig.follow(game.player.group);
 
-  const installs = [installNPCs, installVehicles, installSystems, installQuests, installIsland, installHeists, installSkate, installProgress, installPhone, installInteract, installLife, installNet];
+  const installs = [installNPCs, installVehicles, installSystems, installQuests, installIsland, installHeists, installSkate, installProgress, installPhone, installInteract, installLife, async function installPresent(g) { return (await import('./present/index.js')).installPresent(g); }, installNet];
   for (let i = 0; i < installs.length; i++) {
     const install = installs[i];
     loadProgress(0.8 + (i / installs.length) * 0.16, INSTALL_LABELS[install.name] ?? 'bolting on ' + install.name.replace(/^install/, '').toLowerCase());
