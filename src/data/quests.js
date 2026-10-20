@@ -721,7 +721,7 @@ export const QUESTS = {
         marker: { loc: 'golden_tooth', label: 'Golden Tooth Casino' },
       },
       {
-        text: 'Torch the Rats\' stash: crash the Gutter Rats clubhouse in Gutterside.',
+        text: 'Torch the Rats\' stash: crash the Gutter Rats clubhouse in Gutterside. (Four armed Rats, one with a pistol: bring a real weapon from Bang Bang Bros and some bandages, or lift at the Iron Lung first.)',
         obj: { type: 'brawl', loc: 'rats_clubhouse', count: 4, kind: 'gang', tier: 2, label: 'Gutter Rats' },
         win: ['> You kick over the stash: three crates of bootleg cough syrup, a bucket of mysterious mayonnaise, and Big Sal\'s diary. First entry: "Dear Diary, today I bit a man." You leave it. Some things are sacred.'],
       },

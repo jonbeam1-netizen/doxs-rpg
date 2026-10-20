@@ -100,7 +100,7 @@ export function installMilestones(game) {
     const at = hits[hits.length - 1].at;
     const lines = hits.map((m) => m.text);
     const shown = lines.slice(0, 3).map(esc).join('<br>· ');
-    game.ui.toast(`<b>NEW AT ${at} ${LABEL[key]}:</b><br>· ${shown}${lines.length > 3 ? `<br><span class="ui-muted">+${lines.length - 3} more in the Goals tab (J)</span>` : ''}`, 'good', 6500);
+    game.ui.toast(`<b>NEW AT ${LABEL[key]} ${at}:</b><br>· ${shown}${lines.length > 3 ? `<br><span class="ui-muted">+${lines.length - 3} more in the Goals tab (J)</span>` : ''}`, 'good', 6500);
   }
 
   // stat thresholds (permanent gains only: temp buffs don't fire stat:gain)

@@ -191,8 +191,8 @@ export function installDating(game) {
     if (t['date_' + id]) return say(game, d.name, '"One date a day, tiger. I have a life. Sort of."', d.name);
     if (!ready(r)) return say(game, d.name, `"A date? I barely know you."<br><br>${warmLine(id)}`, d.name);
     const pickD = await choose(game, {
-      title: `Take ${d.name.split(' ')[0]} out`, html: `Where to? Dates take 3 hours and 15 energy.`,
-      choices: DATES.map((x) => ({ label: x.label, hint: `${fmtMoney(x.cost)}${x.minCha ? ` · CHA ${x.minCha}` : ''}`, disabled: p.money < x.cost || p.cha < x.minCha || p.energy < 15, value: x.id })),
+      title: `Take ${d.name.split(' ')[0]} out`, html: `Where to? Dates take 3 hours and 15 energy.${p.energy < 15 ? ` <b class="ui-bad">You only have ${Math.floor(p.energy)} energy: eat or sleep first.</b>` : ''}`,
+      choices: DATES.map((x) => ({ label: x.label, hint: `${fmtMoney(x.cost)}${x.minCha ? ` · CHA ${x.minCha}` : ''}${p.money < x.cost ? ' · not enough cash' : p.cha < x.minCha ? ' · need more CHA' : p.energy < 15 ? ' · too tired' : ''}`, disabled: p.money < x.cost || p.cha < x.minCha || p.energy < 15, value: x.id })),
     });
     if (!pickD) return;
     const D = DATES.find((x) => x.id === pickD);
@@ -251,7 +251,7 @@ export function installDating(game) {
       const relTxt = r.partner ? '<b style="color:#d84a8a">❤ Your partner</b>' : r.rel >= 80 ? 'Totally into you' : r.rel >= 50 ? 'Crushing on you' : r.rel >= 25 ? 'Interested' : r.rel > 0 ? 'Barely knows you' : 'Stranger';
       const opts = [
         { label: flirtsToday(r) ? 'Keep flirting' : 'Flirt', hint: flirtsToday(r) >= FLIRTS_PER_DAY ? 'done today, come back tomorrow' : `${Math.round(chanceFor(id) * 100)}% chance · ${FLIRTS_PER_DAY - flirtsToday(r)} left today`, disabled: flirtsToday(r) >= FLIRTS_PER_DAY, run: () => flirt(id) },
-        { label: 'Give a gift', hint: r.lastGift === game.time.day ? 'done today' : 'something they like counts double', run: () => gift(id) },
+        { label: 'Give a gift', hint: r.lastGift === game.time.day ? 'done today' : 'something they like counts double', disabled: r.lastGift === game.time.day, run: () => gift(id) },
         { label: 'Ask on a date', hint: ready(r) ? '3h' : `warming up ${r.warm}/${WARM_NEED}`, disabled: !ready(r), run: () => date(id) },
       ];
       if (!r.partner) opts.push({ label: 'Ask them to go steady', hint: r.rel >= 90 && r.dates >= 3 ? '❤' : 'needs 90 rel & 3 great dates', disabled: !(r.rel >= 90 && r.dates >= 3), run: () => official(id) });

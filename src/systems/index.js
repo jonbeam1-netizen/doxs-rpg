@@ -95,12 +95,18 @@ export async function installSystems(game) {
   });
 
   game.bus.on('state:reset', () => ensureState(game.state.p));
-  game.bus.on('game:start', () => {
+  game.bus.on('game:start', ({ isNew, dev } = {}) => {
     const p = game.state.p;
     ensureState(p);
     try { game.market?.state?.(); } catch (e) { console.error(e); }
     if (!p.sys.news || p.sys.news.day !== game.time.day) { try { parts.news?.daily(); } catch (e) { console.error(e); } }
-    setTimeout(() => parts.news?.announce?.(true), 2500);
+    if (!isNew || dev) { setTimeout(() => parts.news?.announce?.(true), 2500); return; }
+    // Brand-new game: the intro, chapter card and first objective come first. The paper waits until the
+    // player has found Reg (first objective done) or ~75 s, whichever comes first.
+    let fired = false;
+    const fire = () => { if (fired) return; fired = true; off(); setTimeout(() => { try { parts.news?.announce?.(true); } catch (e) { console.error(e); } }, 4000); };
+    const off = game.bus.on('quest:step', ({ id, step } = {}) => { if (id === 'main_prologue' && step >= 1) fire(); });
+    setTimeout(fire, 75000);
   });
 
   game.ui.menuButtons.push({ label: "Read today's Rotwell Rag", onClick: () => game.sysNews?.open() });

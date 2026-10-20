@@ -36,8 +36,10 @@ export function installPlaces(game, q) {
             ])}`] }]);
             return 'advance';
           }
-          await q.say([{ who: 'nar', t: [`> ${pick(['The owner\'s nephew steps out from the back with a baseball bat and a bad attitude.', 'Turns out the owner hired his OWN protection. Two guys named Moose. Both of them.'])}`] }]);
-          return (await q.brawl({ count: randInt(1, 2), kind: 'thug', tier: Math.max(1, data.tier - 1), label: 'Uncooperative Locals' })) ? 'advance' : 'stay';
+          // The flavor line has to match who actually shows up (one nephew, or two Mooses).
+          const two = chance(0.5);
+          await q.say([{ who: 'nar', t: [`> ${two ? 'Turns out the owner hired his OWN protection. Two guys named Moose. Both of them.' : 'The owner\'s nephew steps out from the back with a baseball bat and a bad attitude.'}`] }]);
+          return (await q.brawl({ count: two ? 2 : 1, kind: 'thug', tier: Math.max(1, data.tier - 1), label: two ? 'The Mooses' : 'The Owner\'s Nephew', names: two ? ['Moose', 'Other Moose'] : ['The Nephew'] })) ? 'advance' : 'stay';
         },
       }];
       case 'deliver': return [{
@@ -159,7 +161,7 @@ export function installPlaces(game, q) {
       return;
     }
     const lines = [pick(F.greet)];
-    if (mine) lines.push(`> You're a ${q.rankName(f)} here. Rep: ${q.rep(f)}.`);
+    if (mine) lines.push(`> You're ${/^[AEIOU]/i.test(q.rankName(f)) ? 'an' : 'a'} ${q.rankName(f)} here. Rep: ${q.rep(f)}.`);
     else lines.push(`> Nobody's sure who let you in. Several people are sure they'd like you to leave.`);
     const opts = [];
     if (!mine && !q.faction()) {

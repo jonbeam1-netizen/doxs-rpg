@@ -88,7 +88,7 @@ export class QuestEngine {
     this.g.state.setFlag('faction', f);
     if (this.rep(f) < 5) this.g.state.setFlag('rep_' + f, 5);
     this.g.state.setFlag('rep_' + F.enemy, Math.min(this.rep(F.enemy), -30));
-    this.g.ui.bigText(F.name.toUpperCase(), `You're a ${F.ranks[0][1]} now. The ${FACTIONS[F.enemy].name} hate your guts.`, 3200);
+    this.g.ui.bigText(F.name.toUpperCase(), `You're ${/^[AEIOU]/i.test(F.ranks[0][1]) ? 'an' : 'a'} ${F.ranks[0][1]} now. The ${FACTIONS[F.enemy].name} hate your guts.`, 3200);
     this.g.bus.emit('faction:joined', { faction: f });
     this.changed();
   }

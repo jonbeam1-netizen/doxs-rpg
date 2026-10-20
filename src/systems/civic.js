@@ -294,7 +294,7 @@ export function installCivic(game) {
       } });
       out.push({ label: 'Report a crime (anonymous tip line)', hint: t.snitch ? 'once a day' : '+karma, small reward', disabled: !!t.snitch, run: () => snitch() });
       if (p.job?.id === 'cop' && p.job.rank >= 1) out.push({ label: 'Visit the evidence locker', hint: '"inventory audit"', run: () => evidence() });
-      out.push(...g.jobs.options('cop'));
+      if (p.job?.id === 'cop') { out.unshift(...g.jobs.lead('cop')); out.push(...g.jobs.trail('cop')); } else out.push(...g.jobs.options('cop'));
       return out;
     },
   }));

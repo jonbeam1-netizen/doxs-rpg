@@ -684,7 +684,10 @@ export class HeistManager {
       const p = g.state.p;
       const legal = Math.min(Math.round((p.money || 0) * FAIL_LEGAL), 2000 * def.tier);
       if (legal > 0) g.state.addMoney(-legal, 'legal fees');
-      try { g.state.addHeat(1); } catch { /* ignore */ }
+      // No heat bump if you were just booked: the arrest already settled your heat, and re-adding a star
+      // with the arresting cop still standing next to you got you cuffed (and fined) a second time.
+      const justBooked = g.time.total - (this.arrestedAt ?? -1e9) < 60;
+      if (!justBooked) { try { g.state.addHeat(1); } catch { /* ignore */ } }
       setTimeout(() => this.toast(`⚖️ Lawyer's retainer for the mess: <b>${fmtMoney(legal)}</b>. Terry keeps his fee. The ${esc(def.name)} is crawling with cops for a while.`, 'bad', 6000), 1500);
     }
     g.ui.bigText('HEIST FAILED', esc(reason || 'It all went sideways.'), 3500);

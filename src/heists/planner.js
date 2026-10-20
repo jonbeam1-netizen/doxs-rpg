@@ -77,7 +77,7 @@ export class Planner {
       const needIntel = st.locked && INTEL[id] && !h.intel[id] && /inside line|way in/.test(st.why || '');
       return `<div class="hb-card ${st.ok ? '' : 'locked'}">
         <h4><span>${esc(d.name)}</span><span class="pay">~${fmtMoney(avg)}</span></h4>
-        <div class="d" style="font-size:13px">You keep ~<b>${fmtMoney(Math.max(0, est.net))}</b> (fence ${Math.round(est.fence * 100)}%${est.fee ? ` Â· Terry's fee ${fmtMoney(est.fee)}` : ''}${est.press ? ` Â· <span class="ui-bad">they're still jumpy: loot -${Math.round((1 - est.pressMult) * 100)}%</span>` : ''})</div>
+        <div class="d" style="font-size:13px">You keep ~<b>${fmtMoney(Math.max(0, est.net))}</b> (fence ${Math.round(est.fence * 100)}%${est.fee ? ` · Terry's fee ${fmtMoney(est.fee)}` : ''}${est.press ? ` · <span class="ui-bad">they're still jumpy: loot -${Math.round((1 - est.pressMult) * 100)}%</span>` : ''})</div>
         <div class="d">${esc(d.blurb)}</div>
         <div class="r ${st.ok ? 'ok' : 'no'}">${st.ok ? `✔ Ready · ${Math.floor(d.time / 60)} min clock · ${d.bags.count} bags` : esc(st.why || d.reqText)}</div>
         <div class="d" style="font-size:13px">Needs: ${esc(d.reqText)}${h.done[id] ? ` · pulled ${h.done[id]}× · best ${fmtMoney(h.best[id] || 0)}` : ''}</div>

@@ -289,7 +289,7 @@ export function installNightlife(game) {
         ];
         if (loc.id === 'rusty_nail') {
           out.push({ label: 'Karaoke', hint: '+CHA or eternal shame', disabled: !g.time.isBetween(19, 4), run: karaoke });
-          out.push(...g.jobs.options('bartender'));
+          if (p.job?.id === 'bartender') { out.unshift(...g.jobs.lead('bartender')); out.push(...g.jobs.trail('bartender')); } else out.push(...g.jobs.options('bartender'));
           const gus = g.sysDating?.option?.('gus', loc);
           if (gus) out.push(gus);
         } else {

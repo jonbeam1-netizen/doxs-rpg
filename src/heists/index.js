@@ -70,7 +70,7 @@ export async function installHeists(game) {
     if (mgr.masked) mgr.toggleMask();
   };
   game.bus.on('player:died', () => down('died'));
-  game.bus.on('player:arrested', () => down('arrested'));
+  game.bus.on('player:arrested', () => { mgr.arrestedAt = game.time.total; down('arrested'); });
 
   // ---- co-op
   // Network data is untrusted: only accept plain strings (String(obj) can throw on odd payloads).

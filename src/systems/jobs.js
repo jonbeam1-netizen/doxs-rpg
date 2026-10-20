@@ -165,7 +165,12 @@ export function installJobs(game) {
       if (ev.cha) st.addStat('cha', ev.cha);
       if (ev.item) { st.addItem(ev.item, 1); extra += ` <span class="ui-good">(+${game.items?.name(ev.item)})</span>`; }
     }
+    // The perk wrapper on addMoney applies jobPay (Brown-Noser, backgrounds): report what actually landed.
+    const m0 = p.money;
     st.addMoney(pay, 'job');
+    const got = Math.round(p.money - m0);
+    let perkNote = '';
+    if (got > pay) { perkNote = ` <span class="sys-hint">(incl. +${fmtMoney(got - pay)} from perks)</span>`; pay = got; }
     const gm = res ? gainMult(res) : 1;
     for (const [k, v] of Object.entries(d.gain || {})) train(game, k, v * hours * gm, 'job:' + id);
     if (id === 'cop') st.addStat('karma', 1);
@@ -180,7 +185,7 @@ export function installJobs(game) {
     st.changed('job');
     game.bus.emit('job:worked', { jobId: id, rank: p.job.rank, pay, hours });
     const promo = checkPromotion(id);
-    return `${pick(d.lines)}${extra}<br><br>You worked <b>${hours} hours</b> as ${r.title} and earned <b class="ui-good">${fmtMoney(pay)}</b>.${perfLine ? `<br><span class="sys-hint">${perfLine}${bonusXp ? ` · +${bonusXp} bonus XP` : ''}</span>` : ''}${promo ? `<br><br>${promo}` : ''}`;
+    return `${pick(d.lines)}${extra}<br><br>You worked <b>${hours} hours</b> as ${r.title} and earned <b class="ui-good">${fmtMoney(pay)}</b>${perkNote}.${perfLine ? `<br><span class="sys-hint">${perfLine}${bonusXp ? ` · +${bonusXp} bonus XP` : ''}</span>` : ''}${promo ? `<br><br>${promo}` : ''}`;
   }
 
   function checkPromotion(id) {
@@ -285,14 +290,18 @@ export function installJobs(game) {
       out.push({
         label: 'Ask about a promotion',
         hint: next ? `${Math.max(0, cr.shifts - p.job.shifts)} shifts to go` : 'top of the ladder',
-        run: () => say(game, d.name, next
+        // Put in the shifts and meet the bar? Asking gets you the promotion now (no extra shift needed).
+        run: () => (next && p.job.shifts >= cr.shifts && reqCheck(game, next.req).ok ? say(game, d.name, checkPromotion(id), d.boss) : say(game, d.name, next
           ? `${d.boss}: "Next rung is <b>${next.title}</b> at ${fmtMoney(next.pay)}${d.kind === 'delivery' ? '/drop' : '/hr'}. Put in ${Math.max(0, cr.shifts - p.job.shifts)} more shifts and have: ${reqHtml(game, next.req) || 'a pulse'}."`
-          : `${d.boss}: "You're ${cr.title}. There's nowhere left to climb, unless you want MY job." He grips his stapler protectively.`, d.boss),
+          : `${d.boss}: "You're ${cr.title}. There's nowhere left to climb, unless you want MY job." He grips his stapler protectively.`, d.boss)),
       });
       out.push({ label: 'Quit', hint: 'storm out dramatically', run: async () => { if (await game.ui.confirm(`Quit ${d.name}?`)) jobs.quit(); } });
     }
     return out;
   };
+  // Menus put the main job action (Apply / Work a shift) near the top and promotion/quit at the bottom.
+  jobs.lead = (id) => jobs.options(id).slice(0, 1);
+  jobs.trail = (id) => jobs.options(id).slice(1);
 
   function hireLine(id) {
     return {

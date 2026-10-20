@@ -431,7 +431,13 @@ export async function installPhone(game) {
   game.bus.on('game:start', ({ isNew } = {}) => {
     P();
     setTimeout(refreshBubble, 600);
-    if (isNew) setTimeout(() => text('Unknown', 'welcome to rotwell lol. press O to look at ur phone like a normal person'), 8000);
+    if (isNew) {
+      // Don't pile onto the intro: the welcome text arrives once the first objective is done (or ~60 s in).
+      let sent = false;
+      const send = () => { if (sent) return; sent = true; off(); setTimeout(() => text('Unknown', 'welcome to rotwell lol. press O to look at ur phone like a normal person'), 9000); };
+      const off = game.bus.on('quest:step', ({ id, step } = {}) => { if (id === 'main_prologue' && step >= 1) send(); });
+      setTimeout(send, 60000);
+    }
   });
   game.bus.on('state:reset', () => { P(); refreshBubble(); });
   game.ui.menuButtons.push({ label: 'Phone', hint: 'O', onClick: () => setTimeout(() => open('home'), 0) });

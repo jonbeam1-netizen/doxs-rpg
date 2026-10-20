@@ -301,9 +301,13 @@ export class QuestPanels {
   async playIntro() {
     const g = this.g, q = this.q;
     await q.say(INTRO, { title: 'Roach Motel, Room 6', char: 'nar' });
-    q.giveItem('q_note');
-    q.start('main_prologue');
+    // The player just read the note and the chapter card says what this is: only toast the first
+    // objective, so a new player isn't buried under five toasts at once.
+    q.giveItem('q_note', 1, true);
+    q.start('main_prologue', {}, { silent: true });
     g.state.setFlag('intro_done', true);
+    g.bus.emit('intro:done');
+    setTimeout(() => { try { if (q.isActive('main_prologue')) g.ui.toast(`<span class="q-toast-k">Objective</span> ${q.objectiveText('main_prologue')}`, 'info', 6000); } catch { /* ignore */ } }, 600);
     TUTORIAL.forEach((t, i) => setTimeout(() => g.ui.toast(t, 'info', 5200), 1500 + i * 5000));
   }
 }

@@ -173,6 +173,7 @@ export function installPlaces(game) {
       night: 'Late-night diner vibes: drunks soaking up booze with hash browns, a hooker reading Dostoevsky, Marge chain-smoking over the fryer.',
     }),
     options: () => [
+      ...g.jobs.lead('diner'),
       { label: 'Coffee', hint: '$2 · +12 energy', run: () => eat('Coffee', 2, 12, 0, pick(['It\'s so strong it walks to the table by itself.', 'Marge refills it without asking. And again. And again. You can hear your heartbeat in your teeth.'])) },
       { label: 'Mystery Meat Platter', hint: '$9 · +34 energy', run: () => eat('Mystery Meat Platter', 9, 34, 10, pick(['It tastes like chicken. And pork. And something that was never on a farm.', 'Marge: "It\'s beef." It isn\'t. "It\'s beef." Okay.'])) },
       { label: 'Heart Attack Breakfast', hint: '$13 · +55 energy · -HP', run: () => eat('Heart Attack Breakfast', 13, 55, -5, 'Six eggs, a pound of bacon, pancakes fried in bacon, and gravy on all of it. Your arteries file a restraining order. Delicious.') },
@@ -184,7 +185,7 @@ export function installPlaces(game) {
         return say(g, 'Big Marge', `${pick(['"You didn\'t hear it from me, sugar, but..."', '"My cousin\'s husband\'s parole officer says..."', '"The truckers been talkin\'..."'])} ${r ? `"${r}"` : '"Nothin\'. Quiet week. Too quiet."'}`, 'Big Marge');
       } },
       ...(g.lifestyle?.placeOptions?.('greasy_spoon') || []),
-      ...g.jobs.options('diner'),
+      ...g.jobs.trail('diner'),
     ],
   }));
 
