@@ -2,13 +2,17 @@ import * as THREE from 'three';
 import { createStickman, lookToStickman } from '../entities/stickman.js';
 import { angleLerp, clamp, lerp } from '../core/util.js';
 
+// Warm edge light that makes the local player pop out of a crowd of identical
+// stick figures (strength is retuned every frame for day / night).
+const PLAYER_RIM = { color: 0xffdcae, strength: 0.4 };
+
 // Local player: on-foot movement, jumping, collisions, animation.
 // While `vehicle` is set, the vehicle module drives and the stickman is hidden.
 export class Player {
   constructor(game) {
     this.game = game;
     this.name = 'player';
-    this.model = createStickman({ color: 0x101010 });
+    this.model = createStickman({ color: 0x101010, rim: PLAYER_RIM });
     this.group = this.model.group;
     game.scene.add(this.group);
     this.radius = 0.45;
@@ -42,7 +46,7 @@ export class Player {
 
   applyLook(look = {}) {
     const old = this.model;
-    const model = createStickman(lookToStickman({ color: 0x101010, ...(look || {}) }));
+    const model = createStickman({ ...lookToStickman({ color: 0x101010, ...(look || {}) }), rim: PLAYER_RIM });
     model.group.position.copy(old.group.position);
     model.group.rotation.y = this.facing;
     model.group.visible = old.group.visible;
@@ -68,7 +72,9 @@ export class Player {
     const g = this.game;
     const gp = this.vehicle ? this.vehicle.group.position : this.group.position;
     this.glow.position.set(gp.x, gp.y + 2.6, gp.z + 0.3);
-    this.glow.intensity = this.vehicle ? 0 : 3 + 6 * (1 - g.time.daylight);
+    const dark = 1 - g.time.daylight;
+    this.glow.intensity = this.vehicle ? 0 : 3 + 6 * dark;
+    this.model.setRim?.(0.26 + 0.42 * dark);
     if (this.vehicle) { this.group.visible = false; return; }
     this.group.visible = true;
 
@@ -198,20 +204,37 @@ export class CameraRig {
     }
     const t = this.target;
     if (!t) return;
-    const look = this._look.set(t.position.x, t.position.y + this.height, t.position.z);
+    const tp = t.position;
+    // Teleports / target swaps snap; otherwise the look point eases vertically so
+    // jumps, curbs and car suspension don't jitter the whole view.
+    const jumped = this._lt !== t || !this._lp || Math.hypot(tp.x - this._lp.x, tp.z - this._lp.z) > 12;
+    if (jumped) { this._lt = t; this._lp = { x: tp.x, z: tp.z }; this._ly = tp.y; this.lift = 0; this.curDist = this.distOverride ?? this.dist; }
+    this._lp.x = tp.x; this._lp.z = tp.z;
+    const inCar = t !== g.player?.group;
+    this._ly += (tp.y - this._ly) * (1 - Math.exp(-(inCar ? 9 : 22) * dt));
+    const look = this._look.set(tp.x, this._ly + this.height, tp.z);
     const want = this.distOverride ?? this.dist;
-    const dx = Math.sin(this.yaw) * Math.cos(this.pitch);
-    const dy = Math.sin(this.pitch);
-    const dz = Math.cos(this.yaw) * Math.cos(this.pitch);
 
-    // Pull the camera in when a building is between it and the target.
-    let d = want;
-    const frac = g.physics.raycast(look.x, look.z, look.x + dx * want, look.z + dz * want, 0.4, look.y + dy * want);
-    if (frac < 1) d = Math.max(1.5, want * frac - 0.4);
-    this.curDist = d < this.curDist ? d : lerp(this.curDist, d, 1 - Math.exp(-4 * dt));
+    // When the camera is squeezed (back to a wall, tight alley) it rises over the
+    // player's shoulder instead of burying itself in the wall behind them.
+    const lift = this.lift ?? 0;
+    const pitch = this.pitch + lift * Math.max(0, 1.25 - this.pitch);
+    const cp = Math.cos(pitch);
+    const dx = Math.sin(this.yaw) * cp, dy = Math.sin(pitch), dz = Math.cos(this.yaw) * cp;
+    const d = this._probe(look, dx, dy, dz, want);
+    let dBase = d;
+    if (lift > 0.01) { const cb = Math.cos(this.pitch); dBase = this._probe(look, Math.sin(this.yaw) * cb, Math.sin(this.pitch), Math.cos(this.yaw) * cb, want); }
+    const liftWant = want > 2.4 ? clamp((2.4 - dBase) / 1.4, 0, 1) : 0;
+    this.lift = lift + (liftWant - lift) * (1 - Math.exp(-(liftWant > lift ? 6 : 2.5) * dt));
+    // pull in instantly (never show the inside of a wall), ease back out
+    this.curDist = d < this.curDist ? d : lerp(this.curDist, d, 1 - Math.exp(-3.2 * dt));
 
     const cam = g.camera;
-    cam.position.set(look.x + dx * this.curDist, Math.max(0.4, look.y + dy * this.curDist), look.z + dz * this.curDist);
+    const P = this._pp || (this._pp = [0, 0, 0]);
+    P[0] = look.x + dx * this.curDist; P[1] = Math.max(0.35, look.y + dy * this.curDist); P[2] = look.z + dz * this.curDist;
+    // slide around poles, posts and braces instead of sitting inside them
+    try { g.world?.camPushOut?.(P[0], P[1], P[2], 0.24, P); } catch { /* ignore */ }
+    cam.position.set(P[0], P[1], P[2]);
     if (this.shakeT > 0) {
       this.shakeT -= dt;
       const a = this.shakeAmp * Math.max(0, this.shakeT) * 4;
@@ -219,5 +242,31 @@ export class CameraRig {
       cam.position.y += (Math.random() - 0.5) * a;
     }
     cam.lookAt(look);
+    // a camera squeezed right up against the player fades them out instead of
+    // filling the screen with the back of their head
+    if (!inCar) {
+      const near = cam.position.distanceTo(look);
+      try { g.player?.model?.setOpacity?.(clamp((near - 0.55) / 0.9, 0.12, 1)); } catch { /* ignore */ }
+    }
+  }
+
+  // Free distance (m) along a direction from the look point: visible geometry
+  // (world camera colliders) plus physics boxes tall enough at that height.
+  _probe(look, dx, dy, dz, want) {
+    const g = this.game, ph = g.physics;
+    let f = 1;
+    try { if (g.world?.camCast) f = g.world.camCast(look.x, look.y, look.z, look.x + dx * want, look.y + dy * want, look.z + dz * want, 0.28); } catch { /* ignore */ }
+    const n = Math.max(1, Math.ceil(want * f / 0.3));
+    for (let i = 1; i <= n; i++) {
+      const s = (i / n) * want * f;
+      const x = look.x + dx * s, y = look.y + dy * s, z = look.z + dz * s;
+      // look a little beyond the sample so the near plane stays clear of the wall
+      const b = ph.pointBlocked(x + dx * 0.25, z + dz * 0.25, Math.max(0, y - 0.3));
+      if (!b || b.tag === 'water') continue;
+      if (b.maxX - b.minX < 0.8 && b.maxZ - b.minZ < 0.8) continue; // poles: handled by camPushOut
+      f = Math.min(f, ((i - 1) / n) * f);
+      break;
+    }
+    return Math.max(0.3, want * f - 0.12);
   }
 }

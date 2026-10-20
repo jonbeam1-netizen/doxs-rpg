@@ -17,6 +17,7 @@ import { buildIsland, buildIslandLot, coastPolygon } from './island.js';
 import { ISLE_MAX_X, MAP_EXT, SPOTS as ISLE_SPOTS, TOLL_X, LAND_X, BRIDGE, ISLE, isLand } from './island-layout.js';
 import { buildSignals, createSignals } from './signals.js';
 import { runAudit } from './audit.js';
+import { CamColliders } from './camcollide.js';
 
 // The city of Rotwell. See DESIGN.md "World" for the public API (game.world).
 
@@ -38,7 +39,7 @@ export async function installWorld(game) {
   const mats = createMaterials();
   const geo = new WorldGeo({ chunkSize: 140, min: -HALF, max: MAP_EXT.maxX });
   const phys = game.physics;
-  game.renderer.toneMappingExposure = 1.5; // grimy but readable under ACES
+  game.renderer.toneMappingExposure = 1.7; // grimy but readable under ACES
   phys.setBounds(-BOUND, -BOUND, ISLE_MAX_X, BOUND);
 
   const lights = [], emitters = [];
@@ -138,6 +139,9 @@ export async function installWorld(game) {
   buildEdges(C, game.scene);
 
   const { chunks, verts } = geo.finalize(mats.M);
+  let camCol = null;
+  try { camCol = new CamColliders(geo.cam); } catch (e) { console.error('[world] camera colliders failed', e); }
+  geo.cam = null;
   const root = new THREE.Group(); root.name = 'city';
   for (const c of chunks) root.add(c);
   root.matrixAutoUpdate = false;
@@ -286,6 +290,10 @@ export async function installWorld(game) {
     setWaypoint(x, z, label = 'Waypoint') { markers.set('waypoint', { x, z, color: '#ffd040', label, icon: '✚' }); },
     clearWaypoint() { markers.delete('waypoint'); },
     openMap() { map.openFull(); },
+    // Third-person camera vs. visible geometry (see camcollide.js). camCast -> hit fraction 0..1.
+    camCast(ax, ay, az, bx, by, bz, r = 0.25) { return camCol ? camCol.cast(ax, ay, az, bx, by, bz, r) : 1; },
+    camPushOut(x, y, z, r, out) { return camCol ? camCol.pushOut(x, y, z, r, out) : false; },
+    camInside(x, y, z, r = 0) { return camCol ? camCol.inside(x, y, z, r) : 0; },
     gfx: 'high',
     setGraphics: null,
     stats: null,
@@ -298,6 +306,16 @@ export async function installWorld(game) {
   try {
     if (/[?&]dev\b/.test(location.search)) {
       window.__worldAudit = (opts) => { const res = runAudit(auditRecs, layout, opts); console.table(res.counts); return res; };
+      // Visual-check helpers (dev only): step frames while the tab is hidden, frame a shot.
+      window.__step = async (n = 10) => { for (let i = 0; i < n; i++) { await new Promise((r) => setTimeout(r, 16)); game._frame(); } };
+      window.__shot = async (x, z, yaw, o = {}) => {
+        game.ui.closeAll();
+        if (o.h != null) { const d = Math.floor(game.time.total / 1440); game.time.total = d * 1440 + Math.round(o.h * 60); game.bus.emit('time:change', { skipped: 0 }); }
+        game.player.spawn(x, z, o.facing ?? yaw + Math.PI);
+        const r = game.cameraRig; r.yaw = yaw; r.pitch = o.pitch ?? 0.32; r.dist = o.dist ?? 7.5;
+        await window.__step(o.n ?? 12);
+        return { calls: world.stats.calls, tris: world.stats.tris, d: districtAt(x, z), cur: +r.curDist.toFixed(2), lift: +(r.lift || 0).toFixed(2), cam: game.camera.position.toArray().map((v) => +v.toFixed(1)) };
+      };
     }
   } catch { /* no window/location */ }
 
@@ -370,7 +388,7 @@ export async function installWorld(game) {
   const tmpBox = new THREE.Vector3();
   const isleFog = new THREE.Color();
   let fpsAcc = 0, fpsN = 0;
-  world.stats = { fps: 0, calls: 0, tris: 0, verts, chunks: chunks.length, buildMs: 0 };
+  world.stats = { fps: 0, calls: 0, tris: 0, verts, chunks: chunks.length, buildMs: 0, camBoxes: camCol?.n ?? 0 };
   function visuals(dt) {
     const cam = game.camera.position;
     const focus = map.focus() ?? cam;
@@ -397,6 +415,8 @@ export async function installWorld(game) {
       c.visible = d < far;
       const det = d < dd;
       for (const m of c.userData.detail) m.visible = det;
+      const dr = d < (gfx === 'high' ? 240 : 150);
+      for (const m of c.userData.dress) m.visible = dr;
     }
     if (post) post.update(env);
     for (const o of isle.live) {

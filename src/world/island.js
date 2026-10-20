@@ -687,7 +687,18 @@ function lighthouse(C, live) {
   g.identity(); g.plane('glow', doorX - 3, doorZ - 3, doorX + 3, doorZ + 3, 0.09, { color: '#ffd090' });
   P.fireBarrel(C, cx + 7, cz + 4);
   // rotating beam (live)
-  const beamMat = new THREE.MeshBasicMaterial({ color: 0xfff0b0, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, fog: false });
+  // Soft volumetric-looking sweep: brightest at the lamp, fading along its length,
+  // toward its silhouette edges and right in front of the camera (never a flat blob).
+  const beamMat = new THREE.ShaderMaterial({
+    uniforms: { uOpacity: { value: 0 }, uCol: { value: new THREE.Color(0xfff0b0) } },
+    vertexShader: `varying float vV, vF, vD;
+      void main(){ vV = uv.y; vec4 mv = modelViewMatrix * vec4(position, 1.0); vec3 n = normalize(normalMatrix * normal);
+        vF = abs(dot(n, normalize(-mv.xyz))); vD = -mv.z; gl_Position = projectionMatrix * mv; }`,
+    fragmentShader: `uniform float uOpacity; uniform vec3 uCol; varying float vV, vF, vD;
+      void main(){ float a = uOpacity * pow(clamp(vV, 0.0, 1.0), 1.4) * (0.25 + 0.75 * vF * vF) * smoothstep(4.0, 30.0, vD);
+        gl_FragColor = vec4(uCol * a, 1.0); }`,
+    transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide,
+  });
   const cone = new THREE.ConeGeometry(9, 150, 16, 1, true);
   cone.translate(0, -75, 0);
   cone.rotateZ(PI / 2);
@@ -700,8 +711,9 @@ function lighthouse(C, live) {
     update(dt, env) {
       beam.rotation.y += dt * 0.9;
       beam.rotation.z = -0.06;
-      const want = Math.min(0.5, 0.015 + env.night * 0.28 + (env.fog ?? 0) * 0.2);
-      beamMat.opacity += (want - beamMat.opacity) * Math.min(1, dt * 2);
+      const want = Math.min(0.45, 0.01 + env.night * 0.26 + (env.fog ?? 0) * 0.2);
+      const u = beamMat.uniforms.uOpacity;
+      u.value += (want - u.value) * Math.min(1, dt * 2);
     },
   });
   return { x: cx, z: cz, doorX, doorZ, facing: FACE.s, tower: { x: L.x, z: L.z, y: top + 2 } };

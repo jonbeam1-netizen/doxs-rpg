@@ -427,3 +427,118 @@ body.photo-mode #q-tracker, body.photo-mode #sys-hud { display: none !important;
   .ach-toast { min-width: 0; width: 92vw; }
   .ui-panel { padding: 14px 12px; }
 }
+
+/* ======================= Round 4: HUD layout & polish ======================= */
+/* Columns stack without overlaps: ui.js (_layoutHud) measures the real, scaled
+   panel heights and publishes them as --hud-* variables. The ids below are owned
+   by other modules; we only position them. */
+#hud .hud-bubbles { top: var(--hud-l2, 204px); }
+#ui-root #heist-hud { top: var(--hud-l1, 176px); left: 12px; }
+#hud #q-tracker { top: var(--hud-r1, 300px); bottom: auto; right: 12px; width: min(260px, 42vw); }
+#hud #q-tracker .qt-obj { font-size: 16px; line-height: 1.2; }
+#ui-root #net-chat { bottom: var(--hud-b0, 44px); }
+#hud #sys-hud { bottom: var(--hud-b1, 54px); }
+
+/* Toasts live in the right column under the quest tracker: never over the player. */
+#ui-root #toasts {
+  top: var(--hud-r2, 400px); left: auto; right: 12px; transform: none;
+  width: min(340px, 42vw); align-items: flex-end; gap: 5px;
+}
+#toasts .toast {
+  font-size: 17px; line-height: 1.25; padding: 6px 12px; max-width: 100%; text-align: right;
+  border-left: none; border-right: 4px solid var(--bone-dim);
+  background: linear-gradient(270deg, rgba(14,12,10,0.94), rgba(14,12,10,0.82));
+  box-shadow: 0 3px 12px rgba(0,0,0,0.45); animation: toastSlide 0.22s ease-out;
+}
+#toasts .toast.good, #toasts .toast.money { border-right-color: var(--cash); }
+#toasts .toast.bad { border-right-color: var(--blood-bright); }
+#toasts .toast.stat { border-right-color: var(--xp); }
+@keyframes toastSlide { from { transform: translateX(14px); opacity: 0; } to { transform: none; opacity: 1; } }
+
+/* HUD type rhythm */
+.hud-tl { padding: 10px 12px 9px; }
+.hud-money { margin-top: 6px; line-height: 1.05; }
+.hud-stats { margin-top: 4px; }
+#hud-clock { line-height: 1.2; }
+#hud-district { line-height: 1.2; }
+#hud-heat:empty { display: none; }
+.hud-br { line-height: 1.1; }
+
+/* Prompt: compact, readable, never wider than the screen */
+#prompt { max-width: min(640px, 92vw); text-align: center; box-shadow: 0 4px 16px rgba(0,0,0,0.5); border-radius: 2px; }
+
+/* Panels never exceed the viewport */
+.ui-modal { padding: 16px; }
+.ui-panel { max-width: calc(100vw - 32px); max-height: calc(100vh - 32px); overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: #4a4034 transparent; }
+.ui-panel::-webkit-scrollbar { width: 8px; }
+.ui-panel::-webkit-scrollbar-thumb { background: #4a4034; border-radius: 4px; }
+.ui-opt { min-height: 40px; }
+.ui-opt .k { flex: 0 0 auto; }
+
+@media (max-width: 700px) {
+  #ui-root #toasts { top: var(--hud-r2, 260px); right: auto; left: 50%; transform: translateX(-50%); width: 92vw; align-items: center; }
+  #toasts .toast { font-size: 15px; padding: 4px 10px; }
+  #hud .hud-bubbles { transform: scale(var(--hud-auto-scale)); transform-origin: top left; max-width: 46vw; }
+  #hud #q-tracker { width: 44vw; }
+  #hud #q-tracker .qt-title { font-size: 14px; }
+  #hud #q-tracker .qt-obj { font-size: 13px; }
+  #district-card { top: auto !important; bottom: 27%; max-width: 90vw !important; }
+  #toasts .toast { text-align: center; border-right: none; border-left: 4px solid var(--bone-dim); }
+  #toasts .toast.good, #toasts .toast.money { border-left-color: var(--cash); }
+  #toasts .toast.bad { border-left-color: var(--blood-bright); }
+  .ui-title { font-size: 22px; }
+  .ui-text { font-size: 17px; }
+  .ui-opt { font-size: 16px; padding: 7px 8px; }
+  #prompt { font-size: 17px; bottom: 18%; }
+}
+@media (max-height: 560px) {
+  .ui-modal { padding: 8px; }
+  .ui-panel { max-height: calc(100vh - 16px); padding: 12px 14px; }
+  .ui-title { font-size: 22px; margin-bottom: 6px; }
+}
+
+/* Title screen polish: a dark, legible centre column over the moving city */
+.title-screen {
+  background:
+    radial-gradient(ellipse 46% 62% at 50% 50%, rgba(6,5,4,0.62) 0%, rgba(6,5,4,0.35) 55%, rgba(0,0,0,0) 100%),
+    radial-gradient(ellipse at center, rgba(20,10,8,0.1) 0%, rgba(10,6,4,0.4) 60%, rgba(0,0,0,0.85) 100%),
+    linear-gradient(180deg, rgba(0,0,0,0.55), rgba(0,0,0,0) 28%, rgba(0,0,0,0) 72%, rgba(0,0,0,0.65));
+  padding: 24px 16px 56px;
+}
+.title-head { display: flex; flex-direction: column; align-items: center; }
+.title-logo { font-size: clamp(56px, 9vw, 104px); }
+.title-tag { margin: 14px 0 26px; font-size: 21px; color: #cfc6b2; text-align: center; text-shadow: 0 2px 8px #000, 1px 1px 0 #000; }
+.title-box {
+  width: min(340px, 92vw); padding: 16px 16px 14px; gap: 8px;
+  background: rgba(12,10,9,0.84); border: 1px solid #3b342b; border-top: 2px solid var(--blood);
+  box-shadow: 0 14px 40px rgba(0,0,0,0.6); backdrop-filter: blur(3px);
+}
+.title-label { font-family: var(--font-title); font-size: 15px; color: var(--rust); margin-bottom: -2px; }
+.title-buttons { display: flex; flex-direction: column; gap: 8px; margin-top: 4px; }
+.title-buttons .ui-btn { font-size: 19px; padding: 10px 12px; letter-spacing: 0.3px; }
+.title-foot {
+  display: flex; flex-wrap: wrap; justify-content: center; gap: 4px 14px; max-width: 92vw;
+  padding: 6px 14px; background: rgba(10,9,8,0.55); border: 1px solid rgba(59,52,43,0.6); border-radius: 3px; font-size: 14px;
+}
+.title-foot kbd { font-size: 12px; min-width: 18px; margin-right: 4px; padding: 0 4px; }
+
+/* Character creator polish */
+.creator { gap: 12px; }
+.creator-head { display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap; border-bottom: 1px solid var(--panel-edge); padding-bottom: 8px; }
+.creator-preview canvas { box-shadow: 0 10px 30px rgba(0,0,0,0.55); border-radius: 2px; }
+.creator-form { background: rgba(10,9,8,0.5); border: 1px solid rgba(59,52,43,0.6); padding: 10px 14px 14px; }
+.creator-form label:first-child { margin-top: 0; }
+.chip.sel, .sw.sel { position: relative; }
+.bg-card { transition: border-color 0.12s, background 0.12s; }
+@media (min-height: 900px) { .creator-preview canvas { width: 340px; height: 430px; } .creator-preview { flex-basis: 340px; } }
+
+/* Large screens: scale the HUD up a touch so it doesn't shrink to postage stamps */
+@media (min-width: 1800px) and (min-height: 1000px) {
+  :root { --hud-auto-scale: 1.15; }
+  #hud #q-tracker { width: 300px; }
+  #hud #q-tracker .qt-title { font-size: 19px; }
+  #hud #q-tracker .qt-obj { font-size: 18px; }
+  #ui-root #toasts { width: 380px; }
+  #toasts .toast { font-size: 19px; }
+  #prompt { font-size: 22px; }
+}

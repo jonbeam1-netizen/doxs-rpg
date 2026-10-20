@@ -214,24 +214,25 @@ export function graffitiAt(C, size = 3, y = 0.4, z = 0.05) {
 }
 
 // ---------------------------------------------------------------- vehicles (static wrecks)
-export function wreck(C, x, z, rot, { burnt = false, blocks = false, color = null } = {}) {
+export function wreck(C, x, z, rot, { burnt = false, blocks = false, color = null, tidy = false, detail = false } = {}) {
+  const mM = detail ? 'metal_dc' : 'metal', mP = detail ? 'props_dc' : 'props', mG = detail ? 'glass_dc' : 'glassdark';
   const g = C.geo; g.frame(x, z, rot);
   const col = burnt ? '#1a1612' : (color ?? CAR_COLORS[(C.rng() * CAR_COLORS.length) | 0]);
   const lift = blocks ? 0.35 : 0;
-  const tilt = (C.rng() - 0.5) * 0.06;
+  const tilt = tidy ? 0 : (C.rng() - 0.5) * 0.06;
   g.push(); g.translate(0, lift, 0); g.rotZ(tilt);
-  g.box('metal', 0, 0.62, 0, 1.85, 0.62, 4.3, { color: col, uvScale: 1.5 });
-  g.box('metal', 0, 0.75, 1.75, 1.8, 0.35, 0.7, { color: mulCol(col, 0.9) });
-  g.box('metal', 0, 1.22, -0.25, 1.65, 0.58, 2.2, { color: col });
-  g.box('glassdark', 0, 1.22, 0.86, 1.5, 0.48, 0.05, { color: burnt ? '#050505' : '#55606a' });
-  g.box('glassdark', 0, 1.22, -1.36, 1.5, 0.44, 0.05, { color: '#3a444a' });
-  for (const s of [-1, 1]) g.box('glassdark', s * 0.83, 1.22, -0.25, 0.04, 0.42, 1.9, { color: '#3a444a' });
+  g.box(mM, 0, 0.62, 0, 1.85, 0.62, 4.3, { color: col, uvScale: 1.5 });
+  g.box(mM, 0, 0.75, 1.75, 1.8, 0.35, 0.7, { color: mulCol(col, 0.9) });
+  g.box(mM, 0, 1.22, -0.25, 1.65, 0.58, 2.2, { color: col });
+  g.box(mG, 0, 1.22, 0.86, 1.5, 0.48, 0.05, { color: burnt ? '#050505' : '#55606a' });
+  g.box(mG, 0, 1.22, -1.36, 1.5, 0.44, 0.05, { color: '#3a444a' });
+  for (const s of [-1, 1]) g.box(mG, s * 0.83, 1.22, -0.25, 0.04, 0.42, 1.9, { color: '#3a444a' });
   g.box('lamp', 0.6, 0.72, 2.16, 0.35, 0.14, 0.02, { color: burnt ? '#000' : '#30302a', faces: 'f' });
   g.box('lamp', -0.6, 0.72, 2.16, 0.35, 0.14, 0.02, { color: burnt ? '#000' : '#30302a', faces: 'f' });
   g.pop();
   for (const s of [-1, 1]) for (const t of [-1.35, 1.35]) {
-    if (blocks) { g.box('props', s * 0.75, 0.2, t, 0.4, 0.4, 0.5, { color: '#6a665e' }); continue; }
-    g.push(); g.translate(s * 0.86, 0.36, t); g.rotZ(PI / 2); g.cyl('props', 0, 0, 0, 0.36, 0.36, 0.26, 8, { color: '#121212', capBottom: true }); g.pop();
+    if (blocks) { g.box(mP, s * 0.75, 0.2, t, 0.4, 0.4, 0.5, { color: '#6a665e' }); continue; }
+    g.push(); g.translate(s * 0.86, 0.36, t); g.rotZ(PI / 2); g.cyl(mP, 0, 0, 0, 0.36, 0.36, 0.26, detail ? 6 : 8, { color: '#121212', capBottom: true }); g.pop();
   }
   C.obb(x, z, rot, 1.95, 4.4, 1.6);
 }
@@ -494,6 +495,27 @@ export function shopSign(C, x, y, z, w = 3.6, idx = null) {
   const h = Math.min(0.85, w / 4);
   g.box('metal', x, y, z + 0.09, w + 0.16, h + 0.16, 0.14, { color: '#1a1814', faces: 'fblrtu' });
   g.wall('signs', x - w / 2, y - h / 2, x + w / 2, y + h / 2, z + 0.175, { uvRect: signUV(i) });
+}
+
+// Street tree in a square curb planter: a slim, tired city tree (sparse dark canopy).
+export function streetTree(C, x, z, { s = 1, planter = true } = {}) {
+  const g = C.geo; g.frame(x, z, C.rng() * 6);
+  if (planter) {
+    const pw = 1.3, ph = 0.32;
+    for (const [bx, bz, bw, bd] of [[0, pw / 2 - 0.07, pw, 0.14], [0, -pw / 2 + 0.07, pw, 0.14], [pw / 2 - 0.07, 0, 0.14, pw - 0.28], [-pw / 2 + 0.07, 0, 0.14, pw - 0.28]]) g.box('props_dc', bx, ph / 2, bz, bw, ph, bd, { color: '#7a766c' });
+    g.box('props_dc', 0, ph - 0.06, 0, pw - 0.28, 0.02, pw - 0.28, { color: '#2a2218', faces: 't' });
+  }
+  const h = (4.2 + C.rng() * 1.4) * s;
+  const trunk = '#3a3026';
+  g.cyl('props_dc', 0, h * 0.42, 0, 0.09 * s, 0.14 * s, h * 0.84, 5, { color: trunk, capTop: false });
+  // two angled limbs, then a few overlapping low-poly leaf clumps
+  for (const [ry, rz] of [[0.6, 0.45], [3.4, 0.5]]) { g.push(); g.translate(0, h * 0.55, 0); g.rotY(ry); g.rotZ(rz); g.cyl('props_dc', 0, 0.6 * s, 0, 0.04 * s, 0.07 * s, 1.2 * s, 4, { color: trunk, capTop: false }); g.pop(); }
+  const leaf = ['#3c4428', '#434a2c', '#353e26'][(C.rng() * 3) | 0];
+  const clumps = [[0, h * 0.86, 0, 1.25], [0.75, h * 0.74, 0.3, 0.95], [-0.65, h * 0.76, -0.35, 0.9], [0.1, h * 0.98, -0.5, 0.8]];
+  g.camOff++; // the camera may brush through foliage (backfaces are culled, so it just sees through)
+  for (const [cx, cy, cz, r] of clumps) g.sphere('props_dc', cx * s, cy, cz * s, r * s, 6, 4, { color: mulCol(leaf, 0.85 + C.rng() * 0.3), sy: 0.8 });
+  g.camOff--;
+  C.solid(x - 0.65, z - 0.65, x + 0.65, z + 0.65, planter ? 0.6 : h);
 }
 
 export function trashCan(C, x, z) {

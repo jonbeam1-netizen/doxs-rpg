@@ -11,7 +11,10 @@ export const FACADES = ['brick_red', 'brick_dirty', 'tenement', 'concrete', 'bro
 export function createMaterials() {
   const M = {};
   const A = { night: [], neon: [], flick: [], wet: [], env: [], signs: [] };
-  const reg = (key, mat, flags = {}) => { M[key] = { mat, cast: flags.cast ?? false, recv: flags.recv ?? true, detail: !!flags.detail, order: flags.order }; return mat; };
+  // detail: cosmetic clutter hidden beyond the detail distance (and entirely on Low);
+  // dress: solid street dressing (parked cars, planters) — has colliders, so it is
+  // only distance-culled, never hidden on Low.
+  const reg = (key, mat, flags = {}) => { M[key] = { mat, cast: flags.cast ?? false, recv: flags.recv ?? true, detail: !!flags.detail, dress: !!flags.dress, order: flags.order }; return mat; };
   const alias = (key, src, flags = {}) => { M[key] = { ...M[src], ...flags }; };
 
   const rep = (t, r = 1) => { t.wrapS = t.wrapT = THREE.RepeatWrapping; if (r !== 1) t.repeat.set(r, r); return t; };
@@ -54,7 +57,7 @@ export function createMaterials() {
   {
     const t = T.storefrontAtlas();
     const m = new THREE.MeshStandardMaterial({ map: t.map, emissiveMap: t.emissiveMap, emissive: 0xffffff, emissiveIntensity: 0, vertexColors: true, roughness: 0.75, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -2 });
-    m.userData.nightGain = 1.5; m.userData.dayMin = 0.18;
+    m.userData.nightGain = 0.9; m.userData.dayMin = 0.14;
     A.night.push(m);
     reg('shop', m, { cast: true });
   }
@@ -71,8 +74,13 @@ export function createMaterials() {
   alias('props_d', 'props', { detail: true, cast: false });
   reg('metal', new THREE.MeshStandardMaterial({ map: pg, vertexColors: true, roughness: 0.5, metalness: 0.6 }), { cast: true });
   alias('metal_d', 'metal', { detail: true, cast: false });
+  // street dressing (parked cars, street trees): shadowed, but dropped with the far detail
+  alias('props_dc', 'props', { dress: true });
+  alias('metal_dc', 'metal', { dress: true });
   const glassDark = reg('glassdark', new THREE.MeshStandardMaterial({ color: 0x14181b, roughness: 0.15, metalness: 0.6, vertexColors: true }));
   A.env.push(glassDark);
+  glassDark.envMapIntensity = 0.6;
+  alias('glass_dc', 'glassdark', { dress: true });
   const gold = reg('gold', new THREE.MeshStandardMaterial({ map: grimeTexture('#d8b040', { grime: 0.35, size: 256 }), color: 0xffd060, roughness: 0.28, metalness: 0.95, vertexColors: true }), { cast: true });
   A.env.push(gold);
   reg('chain', new THREE.MeshStandardMaterial({ map: T.toTex(T.chainLinkCanvas()), alphaTest: 0.45, side: THREE.DoubleSide, roughness: 0.5, metalness: 0.6, vertexColors: true }));
@@ -81,10 +89,10 @@ export function createMaterials() {
   // ---- atlases
   const doors = T.doorAtlas();
   const dm = reg('doors', new THREE.MeshStandardMaterial({ map: doors.map, emissiveMap: doors.emissiveMap, emissive: 0xffffff, emissiveIntensity: 0, roughness: 0.7, vertexColors: true, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -4 }));
-  dm.userData.nightGain = 1.8; dm.userData.dayMin = 0.25; A.night.push(dm);
+  dm.userData.nightGain = 1.3; dm.userData.dayMin = 0.2; A.night.push(dm);
   const signs = T.signAtlas();
   const sm = reg('signs', new THREE.MeshStandardMaterial({ map: signs.map, emissiveMap: signs.emissiveMap, emissive: 0xffffff, emissiveIntensity: 0, roughness: 0.7, vertexColors: true }), { cast: true });
-  sm.userData.nightGain = 2.2; sm.userData.dayMin = 0.25; A.night.push(sm);
+  sm.userData.nightGain = 1.7; sm.userData.dayMin = 0.25; A.night.push(sm);
   const ads = T.adAtlas();
   const am = reg('ads', new THREE.MeshStandardMaterial({ map: ads.map, emissiveMap: ads.map, emissive: 0xffffff, emissiveIntensity: 0, roughness: 0.8, vertexColors: true }), { cast: true });
   am.userData.nightGain = 0.55; A.night.push(am);
@@ -107,6 +115,14 @@ export function createMaterials() {
   const glowTex = T.toTex(T.glowCanvas(128), { repeat: false });
   const glow = reg('glow', new THREE.MeshBasicMaterial({ map: glowTex, color: 0xffa860, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false, fog: false, vertexColors: true, polygonOffset: true, polygonOffsetFactor: -5, polygonOffsetUnits: -10 }), { recv: false, order: 2 });
   const beam = reg('beam', new THREE.MeshBasicMaterial({ map: T.toTex(T.beamCanvas(), { repeat: false }), color: 0xffb070, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, fog: false, vertexColors: true }), { recv: false, order: 3, detail: true });
+  // Light cones fade out close to the camera so a lamp right next to you never
+  // paints a big flat wedge across the screen.
+  beam.onBeforeCompile = (sh) => {
+    sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying float vCamD;')
+      .replace('#include <project_vertex>', '#include <project_vertex>\nvCamD = -mvPosition.z;');
+    sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying float vCamD;')
+      .replace('#include <opaque_fragment>', '#include <opaque_fragment>\ngl_FragColor.rgb *= smoothstep(5.0, 16.0, vCamD) * (1.0 - smoothstep(70.0, 150.0, vCamD));');
+  };
   const bulbTex = T.toTex(T.bulbCanvas());
   const chase = reg('chase', new THREE.MeshBasicMaterial({ map: bulbTex, vertexColors: true }));
   chase.userData.lo = 0.7; chase.userData.hi = 1.5; A.neon.push(chase);
@@ -200,7 +216,7 @@ export function createMaterials() {
     const am2 = (Math.floor(t * 1.4) % 2) ? 3 : 0.15;
     amber.color.setRGB(am2, am2 * 0.55, 0.02);
     glow.opacity = night * 0.42;
-    beam.opacity = night * 0.055;
+    beam.opacity = night * 0.045;
     chase.map.offset.x = Math.floor(t * 6) / 8;
     flame.uniforms.uTime.value = t;
     wn.offset.set(t * 0.004, t * 0.0025);

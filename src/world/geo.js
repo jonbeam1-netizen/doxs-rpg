@@ -31,6 +31,11 @@ class LineBucket {
 
 const _m = new THREE.Matrix4();
 
+// Materials that never block the third-person camera (light fx, decals, see-through
+// fences, tiny detail meshes, far terrain).
+const NO_CAM = new Set(['glow', 'beam', 'lamp', 'lamp_flk', 'neon', 'neon_flk', 'marking', 'decal_dark', 'puddle', 'graffiti',
+  'flame', 'water', 'terrain', 'chain', 'chain_d', 'props_d', 'metal_d', 'ground', 'asphalt', 'sidewalk', 'chase', 'pol_r', 'pol_b', 'beacon', 'amber']);
+
 export class WorldGeo {
   constructor({ chunkSize = 140, min = -700, max = 700 } = {}) {
     this.cs = chunkSize; this.min = min;
@@ -42,6 +47,26 @@ export class WorldGeo {
     this.stack = [];
     this.chunkAt = null; // forced chunk index for the current object
     this.minY = Infinity; // lowest vertex emitted since the last reset (world audit)
+    // Camera occluders: one oriented box per solid-looking primitive (see camcollide.js).
+    // 15 floats each: center xyz, then 3 x (unit axis xyz, half extent).
+    this.cam = [];
+    this.camOff = 0; // > 0 while emitting geometry that must not block the camera
+  }
+
+  // Record an oriented box (local center/size, current matrix) as a camera occluder.
+  _camBox(mat, x, y, z, w, h, d) {
+    if (this.camOff > 0 || NO_CAM.has(mat)) return;
+    const e = this.e;
+    const cx = e[0] * x + e[4] * y + e[8] * z + e[12], cy = e[1] * x + e[5] * y + e[9] * z + e[13], cz = e[2] * x + e[6] * y + e[10] * z + e[14];
+    // world half-axis vectors (columns of the matrix scaled by half sizes)
+    const ax = [e[0] * w / 2, e[1] * w / 2, e[2] * w / 2], ay = [e[4] * h / 2, e[5] * h / 2, e[6] * h / 2], az = [e[8] * d / 2, e[9] * d / 2, e[10] * d / 2];
+    const la = Math.hypot(...ax), lb = Math.hypot(...ay), lc = Math.hypot(...az);
+    if (Math.max(la, lb, lc) < 0.3) return;               // bolts, knobs, trim
+    const top = cy + Math.abs(ax[1]) + Math.abs(ay[1]) + Math.abs(az[1]);
+    if (top < 0.6) return;                                  // curbs, kerb stones, floor junk
+    const o = this.cam;
+    o.push(cx, cy, cz);
+    for (const [v, l] of [[ax, la], [ay, lb], [az, lc]]) { const k = l > 1e-6 ? 1 / l : 0; o.push(v[0] * k, v[1] * k, v[2] * k, l); }
   }
 
   chunkOf(x, z) {
@@ -125,6 +150,7 @@ export class WorldGeo {
     const faces = o.faces ?? 'nobottom';
     const F = faces === 'all' ? 'fbrltu' : faces === 'nobottom' ? 'fbrlt' : faces === 'sides' ? 'fbrl' : faces === 'top' ? 't' : faces;
     const has = (k) => F.includes(k);
+    if (F.length >= 4 || has('t')) this._camBox(mat, x, y, z, w, h, d);
     const color = o.color ?? WHITE;
     const sc = o.uvScale ?? 1;
     const su = Array.isArray(sc) ? sc[0] : sc, sv = Array.isArray(sc) ? sc[1] : sc;
@@ -177,6 +203,7 @@ export class WorldGeo {
   cyl(mat, x, y, z, rTop, rBot, h, seg = 8, o = {}) {
     const color = o.color ?? WHITE;
     const y0 = y - h / 2, y1 = y + h / 2;
+    if (!o.arc) { const r = Math.max(rTop, rBot); this._camBox(mat, x, y, z, r * 2, h, r * 2); }
     const su = o.uvScale ?? 1;
     const circ = 2 * Math.PI * Math.max(rTop, rBot);
     const a0 = o.arc0 ?? 0, arc = o.arc ?? Math.PI * 2;
@@ -209,6 +236,7 @@ export class WorldGeo {
     const color = o.color ?? WHITE;
     const th = o.half ? Math.PI / 2 : Math.PI;
     const sy = o.sy ?? 1;
+    if (r >= 0.45) { if (o.half) this._camBox(mat, x, y + r * sy / 2, z, r * 2, r * sy, r * 2); else this._camBox(mat, x, y, z, r * 2, r * 2 * sy, r * 2); }
     for (let j = 0; j < hseg; j++) {
       const p0 = (j / hseg) * th, p1 = ((j + 1) / hseg) * th;
       for (let i = 0; i < wseg; i++) {
@@ -223,6 +251,7 @@ export class WorldGeo {
   gable(mat, x, y, z, w, h, d, o = {}) {
     const color = o.color ?? WHITE;
     const x0 = x - w / 2, x1 = x + w / 2, z0 = z - d / 2, z1 = z + d / 2, yr = y + h;
+    this._camBox(mat, x, y + h / 2, z, w, h, d);
     const su = o.uvScale ?? 3;
     const sl = Math.hypot(h, d / 2);
     this.quad(mat, [x0, y, z1], [x1, y, z1], [x1, yr, z], [x0, yr, z], [0, 0, w / su, 0, w / su, sl / su, 0, sl / su], color);
@@ -237,6 +266,8 @@ export class WorldGeo {
     const pos = g.attributes.position, nor = g.attributes.normal, uv = g.attributes.uv;
     const e = this.e;
     const color = lin(o.color ?? WHITE);
+    if (!g.boundingBox) g.computeBoundingBox();
+    { const bb = g.boundingBox; this._camBox(mat, (bb.min.x + bb.max.x) / 2, (bb.min.y + bb.max.y) / 2, (bb.min.z + bb.max.z) / 2, bb.max.x - bb.min.x, bb.max.y - bb.min.y, bb.max.z - bb.min.z); }
     const cx = e[12], cz = e[14];
     const bk = this._bucket(mat, cx, cz);
     const base = bk.vc;
@@ -277,13 +308,13 @@ export class WorldGeo {
       const g = new THREE.Group();
       g.name = 'chunk' + i;
       const cx = i % n, cz = Math.floor(i / n);
-      g.userData = { cx: this.min + (cx + 0.5) * this.cs, cz: this.min + (cz + 0.5) * this.cs, detail: [] };
+      g.userData = { cx: this.min + (cx + 0.5) * this.cs, cz: this.min + (cz + 0.5) * this.cs, detail: [], dress: [] };
       chunks.push(g);
     }
     let verts = 0;
     for (const b of this.buckets.values()) {
       const def = mats[b.mat];
-      if (!def) { console.warn('[world] missing material', b.mat); continue; }
+      if (!def?.mat) { console.warn('[world] missing material', b.mat); continue; }
       const g = new THREE.BufferGeometry();
       g.setAttribute('position', new THREE.Float32BufferAttribute(b.p, 3));
       g.setAttribute('normal', new THREE.Float32BufferAttribute(b.n, 3));
@@ -300,6 +331,7 @@ export class WorldGeo {
       mesh.userData.matKey = b.mat;
       chunks[b.chunk].add(mesh);
       if (def.detail) chunks[b.chunk].userData.detail.push(mesh);
+      else if (def.dress) chunks[b.chunk].userData.dress.push(mesh);
       verts += b.vc;
     }
     for (const b of this.lineBuckets.values()) {

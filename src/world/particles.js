@@ -5,7 +5,7 @@ import { puffCanvas, toTex } from './textures.js';
 // plumes). One Points draw call; only emitters near the camera are live.
 
 const TYPES = {
-  steam: { rate: 6, life: 3.2, rise: 1.3, size: [1.2, 4.2], col: [0.7, 0.7, 0.68], alpha: 0.4, range: 110, spread: 0.4 },
+  steam: { rate: 6, life: 3.0, rise: 1.4, size: [0.7, 3.4], col: [0.55, 0.55, 0.53], alpha: 0.2, range: 110, spread: 0.5 },
   smoke: { rate: 3, life: 4, rise: 1.6, size: [0.8, 3.6], col: [0.12, 0.11, 0.1], alpha: 0.55, range: 120, spread: 0.2 },
   stack: { rate: 2.6, life: 12, rise: 3.2, size: [5, 20], col: [0.1, 0.09, 0.075], alpha: 0.85, range: 520, spread: 1.2 },
 };
@@ -28,10 +28,10 @@ export class Particles {
     this.mat = new THREE.ShaderMaterial({
       uniforms: { uMap: { value: toTex(puffCanvas(), { repeat: false }) }, uScale: { value: 500 }, uFogCol: { value: new THREE.Color() }, uFogNear: { value: 50 }, uFogFar: { value: 500 }, uLight: { value: 1 } },
       vertexShader: `attribute float aSize, aAlpha; attribute vec3 aCol; uniform float uScale; varying float vA, vD; varying vec3 vC;
-        void main(){ vec4 mv = modelViewMatrix * vec4(position, 1.0); gl_Position = projectionMatrix * mv; gl_PointSize = aSize * uScale / -mv.z; vA = aAlpha; vC = aCol; vD = -mv.z; }`,
+        void main(){ vec4 mv = modelViewMatrix * vec4(position, 1.0); gl_Position = projectionMatrix * mv; gl_PointSize = min(aSize * uScale / -mv.z, uScale * 0.45); vA = aAlpha * smoothstep(1.2, 5.0, -mv.z); vC = aCol; vD = -mv.z; }`,
       fragmentShader: `uniform sampler2D uMap; uniform vec3 uFogCol; uniform float uFogNear, uFogFar, uLight; varying float vA, vD; varying vec3 vC;
         void main(){ vec4 t = texture2D(uMap, gl_PointCoord); float a = t.a * vA; if (a < 0.01) discard;
-          vec3 c = vC * uLight; float f = smoothstep(uFogNear, uFogFar, vD); c = mix(c, uFogCol, f);
+          vec3 c = mix(vC * uLight, uFogCol, 0.3); float f = smoothstep(uFogNear, uFogFar, vD); c = mix(c, uFogCol, f);
           gl_FragColor = vec4(c, a * (1.0 - f * 0.6)); }`,
       transparent: true, depthWrite: false,
     });

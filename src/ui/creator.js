@@ -125,9 +125,9 @@ export function openCreator(game, layer, { name = 'Dox', look: initLook = null }
       renderer.outputColorSpace = THREE.SRGBColorSpace;
       renderer.toneMapping = THREE.ACESFilmicToneMapping;
       scene = new THREE.Scene();
-      cam = new THREE.PerspectiveCamera(32, 300 / 380, 0.1, 50);
-      cam.position.set(0, 1.35, 5.2);
-      cam.lookAt(0, 1.05, 0);
+      cam = new THREE.PerspectiveCamera(30, 300 / 380, 0.1, 50);
+      cam.position.set(0, 1.45, 5.4);
+      cam.lookAt(0, 1.08, 0);
       scene.add(new THREE.HemisphereLight(0xd8cbb0, 0x1a1612, 1.4));
       const key = new THREE.DirectionalLight(0xffe2b0, 2.2); key.position.set(2, 4, 3); scene.add(key);
       const rim = new THREE.DirectionalLight(0xb3261e, 1.6); rim.position.set(-3, 2, -3); scene.add(rim);
@@ -139,7 +139,7 @@ export function openCreator(game, layer, { name = 'Dox', look: initLook = null }
     function rebuild() {
       if (!renderer) return;
       if (model) model.dispose();
-      model = createStickman(lookToStickman(look));
+      model = createStickman({ ...lookToStickman(look), rim: { color: 0xffdcae, strength: 0.32 } }); // same edge light as in-game
       model.group.rotation.y = angle;
       scene.add(model.group);
       draw(0);

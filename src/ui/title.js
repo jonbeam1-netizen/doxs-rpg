@@ -48,13 +48,16 @@ export function showTitle(game) {
     const hasSave = game.state.hasSave();
     layer.innerHTML = `
       <div class="title-screen">
-        <div class="title-logo">DOX'S RPG</div>
-        <div class="title-tag">${joinId ? 'Your buddy is waiting in the gutter. Go say hi.' : pick(TAGLINES)}</div>
-        <div class="title-box">
-          <input class="ui-input" id="title-name" maxlength="16" placeholder="Your name" value="${esc(lastName)}">
-          <div id="title-buttons" style="display:flex;flex-direction:column;gap:8px"></div>
+        <div class="title-head">
+          <div class="title-logo">DOX'S RPG</div>
+          <div class="title-tag">${joinId ? 'Your buddy is waiting in the gutter. Go say hi.' : pick(TAGLINES)}</div>
         </div>
-        <div class="title-foot">WASD move · Mouse look · E use · F drive · O phone · P perks · F1 help · Esc menu</div>
+        <div class="title-box">
+          <label class="title-label" for="title-name">Name</label>
+          <input class="ui-input" id="title-name" maxlength="16" placeholder="Your name" value="${esc(lastName)}">
+          <div id="title-buttons" class="title-buttons"></div>
+        </div>
+        <div class="title-foot">${[['WASD', 'move'], ['Mouse', 'look'], ['E', 'use'], ['F', 'drive'], ['O', 'phone'], ['P', 'perks'], ['F1', 'help'], ['Esc', 'menu']].map(([k, d]) => `<span><kbd>${k}</kbd>${d}</span>`).join('')}</div>
       </div>`;
     const nameEl = layer.querySelector('#title-name');
     const btns = layer.querySelector('#title-buttons');

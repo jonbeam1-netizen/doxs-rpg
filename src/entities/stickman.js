@@ -53,10 +53,14 @@ export function lookToStickman(look = {}) {
   };
 }
 
-export function createStickman({ color = 0x141414, scale = 1, hat = null, hatColor = 0x3a2a1a, eyes = true, skin = null, build = null } = {}) {
+// rim: optional { color, strength } fresnel edge light (used for the local player so
+// they read at a glance against a crowd of identical black stick figures).
+export function createStickman({ color = 0x141414, scale = 1, hat = null, hatColor = 0x3a2a1a, eyes = true, skin = null, build = null, rim = null } = {}) {
   const g = geos();
   const mat = new THREE.MeshStandardMaterial({ color, roughness: 0.75, metalness: 0.08 });
   const headMat = skin != null ? new THREE.MeshStandardMaterial({ color: skin, roughness: 0.7, metalness: 0.02 }) : mat;
+  const rimU = rim ? { uRimCol: { value: new THREE.Color(rim.color ?? 0xffe2b8) }, uRim: { value: rim.strength ?? 0.5 } } : null;
+  if (rimU) for (const m of new Set([mat, headMat])) addRim(m, rimU);
   const B = BUILDS[build] || BUILDS.average;
   const root = new THREE.Group();
   const body = new THREE.Group();
@@ -104,7 +108,16 @@ export function createStickman({ color = 0x141414, scale = 1, hat = null, hatCol
   const legL = limb(hips, 0.09 + sw0 * 0.6, 0);
   const legR = limb(hips, -0.09 - sw0 * 0.6, 0);
 
-  if (hat) addHat(head, hat, hatColor);
+  let hatG = null;
+  if (hat) { hatG = addHat(head, hat, hatColor); if (rimU) hatG.traverse((o) => { if (o.isMesh) addRim(o.material, rimU); }); }
+  // how far a hat sticks out above the skull (the roll lifts the body by this when upside down)
+  const hatExtra = hat ? ({ tophat: 0.37, fedora: 0.19, cop: 0.17, hardhat: 0.15, cap: 0.13, beanie: 0.15, crown: 0.12 }[hat] ?? 0.14) : 0;
+  // knocked flat: the hat tips forward over the face instead of its brim cutting into the floor
+  const tipHat = (on) => {
+    if (!hatG) return;
+    const a = on ? 1.1 : 0;
+    hatG.rotation.x = a; hatG.position.set(0, 0.14 * Math.cos(a), 0.14 * Math.sin(a));
+  };
 
   root.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = false; } });
 
@@ -119,6 +132,7 @@ export function createStickman({ color = 0x141414, scale = 1, hat = null, hatCol
     style: null, wind: 0, windDur: 0, windStyle: null, block: false, blockK: 0,
     roll: 0, rollDur: 0.4, hit: 0, hitSide: 0, tele: 0, teleCol: new THREE.Color(1, 0.45, 0),
     fall: null, // { k, dir:+1 down / -1 up, dur }
+    opacity: 1,
   };
   const baseEmissive = new THREE.Color(0x000000);
   const _c = new THREE.Color();
@@ -144,7 +158,7 @@ export function createStickman({ color = 0x141414, scale = 1, hat = null, hatCol
       const e = f.dir > 0 ? f.k * f.k : 1 - (1 - f.k) * (1 - f.k);
       const amt = f.dir > 0 ? e : 1 - e;
       body.rotation.x = -Math.PI / 2 * amt;
-      body.position.y = 0.12 * amt;
+      body.position.y = deadY * amt;
       if (f.k >= 1) st.fall = null;
     }
     if (st.dead) return;
@@ -289,6 +303,10 @@ export function createStickman({ color = 0x141414, scale = 1, hat = null, hatCol
       if (st.hit <= 0) { torso.rotation.z = 0; neck.rotation.x = 0; }
     }
 
+    // keep both feet on or above the floor: if a pose lowers the hips more than the
+    // legs can reach, bend the knees (crouch) instead of sinking the feet into the ground
+    if (!opts.airborne && st.roll <= 0 && !st.fall) { footClear(legL); footClear(legR); }
+
     // dodge roll: tuck, shrink a touch and tumble forward around the hips (never through the floor)
     if (st.roll > 0) {
       st.roll -= dt;
@@ -304,11 +322,20 @@ export function createStickman({ color = 0x141414, scale = 1, hat = null, hatCol
       neck.rotation.x = 0.9 * Math.sin(k * Math.PI);
       hips.position.y = 0.95;
       body.rotation.x = th;
-      body.position.set(0, 0.95 * S * (1 - Math.cos(th)) + 0.04, -0.95 * S * Math.sin(th));
+      body.position.set(0, 0.95 * S * (1 - Math.cos(th)) + 0.055 + hatExtra * S * Math.max(0, -Math.cos(th)), -0.95 * S * Math.sin(th));
       if (st.roll <= 0) {
         body.scale.setScalar(baseScale); body.rotation.x = 0; body.position.set(0, 0, 0); neck.rotation.x = 0;
       }
     }
+  }
+
+  // Vertical reach of a leg below the hips (body-local units), from its two joint angles.
+  function legDrop(leg) {
+    const a = leg.upper.rotation.x, b = a + leg.lower.rotation.x;
+    return 0.45 * Math.cos(a) + 0.485 * Math.cos(b);
+  }
+  function footClear(leg) {
+    for (let i = 0; i < 8 && legDrop(leg) > hips.position.y - 0.012; i++) { leg.upper.rotation.x -= 0.07; leg.lower.rotation.x += 0.14; }
   }
 
   // style: optional swing style ('jab','cross','hook','uppercut','slash','overhead','kick','heavy','slam');
@@ -327,6 +354,9 @@ export function createStickman({ color = 0x141414, scale = 1, hat = null, hatCol
   function roll(duration = 0.4) { st.roll = duration; st.rollDur = duration; }
   function hitReact(side = 0) { st.hit = 0.24; st.hitSide = side; }
   // opts.fall: animate the flop / getting back up instead of snapping.
+  // Lying on the back: the hips sit just high enough for the torso, the chin is
+  // tucked so the round head rests on (not in) the floor, limbs splay flat.
+  const deadY = 0.08 * B.t * 0.9 * body.scale.x + 0.03;
   function setDead(on, opts = null) {
     st.dead = on;
     if (st.roll > 0) { st.roll = 0; body.scale.setScalar(baseScale); }
@@ -336,15 +366,19 @@ export function createStickman({ color = 0x141414, scale = 1, hat = null, hatCol
     } else {
       st.fall = null;
       body.rotation.x = on ? -Math.PI / 2 : 0;
-      body.position.y = on ? 0.12 : 0;
+      body.position.y = on ? deadY : 0;
     }
     if (on) {
-      armL.upper.rotation.set(-0.3, 0, 1.2); armR.upper.rotation.set(0.2, 0, -1.3);
-      armL.lower.rotation.x = -0.2; armR.lower.rotation.x = -0.2;
-      legL.upper.rotation.set(0.1, 0, 0.25); legR.upper.rotation.set(-0.1, 0, -0.2);
-      legL.lower.rotation.x = 0.1; legR.lower.rotation.x = 0.15;
-      torso.rotation.set(0, 0, 0); neck.rotation.x = 0;
-    }
+      armL.upper.rotation.set(-0.42, 0, 1.2); armR.upper.rotation.set(-0.4, 0, -1.3);
+      armL.lower.rotation.x = -0.15; armR.lower.rotation.x = -0.15;
+      legL.upper.rotation.set(-0.14, 0, 0.25); legR.upper.rotation.set(-0.1, 0, -0.2);
+      legL.lower.rotation.x = 0.12; legR.lower.rotation.x = 0.1;
+      torso.rotation.set(0, 0, 0);
+      // head radius ~0.21: tuck the chin so the skull rests on the floor
+      const lift = Math.max(0, 0.215 * body.scale.x - deadY);
+      neck.rotation.x = Math.min(0.9, Math.asin(Math.min(1, lift / (0.27 * body.scale.x))));
+      tipHat(true);
+    } else { neck.rotation.x = 0; tipHat(false); }
   }
   function setColor(c) { mat.color.set(c); }
   function dispose() {
@@ -359,10 +393,44 @@ export function createStickman({ color = 0x141414, scale = 1, hat = null, hatCol
     parts: { hips, torso, neck, head, armL, armR, legL, legR },
     rightHand: armR.end, leftHand: armL.end,
     animate, punch, flash, setDead, setColor, dispose,
+    setRim(k) { st.rim = k; if (rimU) rimU.uRim.value = k * st.opacity * st.opacity; },
+    // 0..1 see-through (camera pressed against the player). Eyes hide when faded.
+    setOpacity(a) {
+      a = Math.max(0, Math.min(1, a));
+      if (Math.abs(a - st.opacity) < 0.01) return;
+      const was = st.opacity < 0.999;
+      st.opacity = a;
+      if (rimU) rimU.uRim.value = (st.rim ?? rimU.uRim.value) * a * a;
+      const fade = a < 0.999;
+      root.traverse((o) => {
+        if (!o.isMesh) return;
+        if (o.material === eyeMat) { o.visible = a > 0.6; return; }
+        const m = o.material;
+        if (m !== mat && m !== headMat && !m.userData?.stickOwned) return; // weapons etc. may share materials
+        if (fade !== was) { m.transparent = fade; m.depthWrite = !fade; m.needsUpdate = true; }
+        m.opacity = a;
+      });
+    },
     windup, extendWindup, cancelWindup, setBlock, roll, hitReact,
     get dead() { return st.dead; },
     get rolling() { return st.roll > 0; },
   };
+}
+
+// Fresnel rim light injected into a standard material (shared uniforms).
+function addRim(m, U) {
+  if (m.userData.rim) return;
+  m.userData.rim = true;
+  const prev = m.onBeforeCompile;
+  m.onBeforeCompile = (sh, r) => {
+    prev?.(sh, r);
+    Object.assign(sh.uniforms, U);
+    sh.fragmentShader = sh.fragmentShader
+      .replace('#include <common>', '#include <common>\nuniform vec3 uRimCol; uniform float uRim;')
+      .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\n{ float rf = 1.0 - clamp(dot(normal, normalize(vViewPosition)), 0.0, 1.0); totalEmissiveRadiance += uRimCol * (pow(rf, 3.0) * uRim); }');
+  };
+  m.customProgramCacheKey = () => 'stickrim';
+  m.needsUpdate = true;
 }
 
 export const HAT_TYPES = ['fedora', 'cap', 'beanie', 'tophat', 'hardhat', 'cop', 'crown'];

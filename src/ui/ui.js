@@ -23,6 +23,10 @@ export class UI {
     this.bigEl = document.getElementById('bigtext');
     this._buildHud();
     const refresh = () => this._queueHud();
+    // HUD stacking: other modules add panels (heist objectives, quest tracker...) at
+    // fixed spots; measure the real (scaled) column heights and publish them as CSS
+    // variables so styles.css can stack everything without overlaps.
+    this._layoutT = setInterval(() => { try { this._layoutHud(); } catch { /* ignore */ } }, 200);
     game.bus.on('state:change', refresh);
     game.bus.on('state:reset', refresh);
     game.bus.on('time:change', refresh);
@@ -61,6 +65,40 @@ export class UI {
   }
 
   showHud(on = true) { this.hudEl.classList.toggle('hidden', !on); }
+
+  _layoutHud() {
+    const root = document.getElementById('ui-root');
+    if (!root || this.hudEl.classList.contains('hidden')) return;
+    const vis = (el) => el && el.offsetParent !== null && el.getBoundingClientRect().height > 0;
+    const set = (k, v) => { v = Math.round(v) + 'px'; if (this._lay?.[k] !== v) { (this._lay ??= {})[k] = v; root.style.setProperty(k, v); } };
+    // left column: stat panel -> heist objectives -> notification bubbles
+    const tl = this.hudEl.querySelector('.hud-tl');
+    let y = (vis(tl) ? tl.getBoundingClientRect().bottom : 12) + 10;
+    set('--hud-l1', y);
+    const heist = document.getElementById('heist-hud');
+    if (vis(heist)) y = heist.getBoundingClientRect().bottom + 8;
+    set('--hud-l2', y);
+    // right column: clock/minimap -> quest tracker -> toasts
+    const tr = this.hudEl.querySelector('.hud-tr');
+    let r = (vis(tr) ? tr.getBoundingClientRect().bottom : 12) + 12;
+    set('--hud-r1', r);
+    const qt = document.getElementById('q-tracker');
+    if (vis(qt) && qt.textContent.trim()) r = qt.getBoundingClientRect().bottom + 12;
+    set('--hud-r2', r);
+    // top centre: radio / boss bar; things announced at the top go below them
+    let c = 12;
+    for (const id of ['hud-radio', 'npc-boss']) { const el = document.getElementById(id); if (vis(el)) c = Math.max(c, el.getBoundingClientRect().bottom + 8); }
+    set('--hud-c1', c);
+    // bottom-left: extra slot (co-op status, race) -> chat -> active effects
+    const bl = this.hudEl.querySelector('.hud-bl');
+    let b = 44;
+    if (vis(bl) && bl.textContent.trim()) b = Math.max(b, innerHeight - bl.getBoundingClientRect().top + 8);
+    set('--hud-b0', b);
+    const chat = document.getElementById('net-chat');
+    if (vis(chat) && chat.getBoundingClientRect().height > 12) b = innerHeight - chat.getBoundingClientRect().top + 6;
+    else b += 10;
+    set('--hud-b1', b);
+  }
 
   // "!" notification bubbles on the HUD (left side). setBubble(id, null) removes one.
   //   setBubble('phone', { icon: '✆', text: '2 new texts', key: 'O', onClick: () => ... , pulse: true })
@@ -140,7 +178,7 @@ export class UI {
     el.className = `toast ${kind}`;
     el.innerHTML = msg;
     this.toastsEl.appendChild(el);
-    while (this.toastsEl.children.length > 5) this.toastsEl.firstChild.remove();
+    while (this.toastsEl.children.length > 4) this.toastsEl.firstChild.remove();
     setTimeout(() => { el.classList.add('out'); setTimeout(() => el.remove(), 400); }, ms);
   }
 

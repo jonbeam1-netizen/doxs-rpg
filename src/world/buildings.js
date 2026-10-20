@@ -160,6 +160,12 @@ function storefront(C, { x, z, W, D, nb, bayW, store, wallTint, doorBay }) {
     const cx = x0 + (Math.min(...span) + Math.max(...span) + 1) / 2 * bayW;
     const sw = Math.min(span.length * bayW - 0.5, 3.6);
     P.shopSign(C, cx, STORE - 0.52, fz, sw);
+    // lit shop windows spill a soft pool of light onto the sidewalk at night
+    if (!s.closed && disp.length) {
+      const cool = cells[disp[0]] === SHOP_CELL.cool;
+      const hw = (span.length * bayW) / 2 + 0.6;
+      g.plane('glow', cx - hw, fz - 1.4, cx + hw, fz + 2.6, 0.092, { color: cool ? mulCol('#b8ccff', 0.55) : mulCol('#ffc890', 0.6) });
+    }
     if (!s.closed && disp.length && r() < 0.4) {
       const aw = disp.length * bayW - 0.3;
       g.push(); g.translate(cx, 3.38, fz); g.rotX(0.32);

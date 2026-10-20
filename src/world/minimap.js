@@ -118,7 +118,8 @@ export class MapSystem {
 
   _makeCard() {
     const el = document.createElement('div');
-    el.style.cssText = 'position:absolute;left:50%;top:13%;transform:translateX(-50%);text-align:center;pointer-events:none;opacity:0;transition:opacity .8s;z-index:5;text-shadow:3px 3px 0 #000,0 0 18px rgba(0,0,0,.8)';
+    el.id = 'district-card';
+    el.style.cssText = 'position:absolute;left:50%;top:max(13%, var(--hud-c1, 0px));transform:translateX(-50%);width:max-content;max-width:min(620px, 60vw);text-align:center;pointer-events:none;opacity:0;transition:opacity .8s;z-index:5;text-shadow:3px 3px 0 #000,0 0 18px rgba(0,0,0,.8)';
     document.getElementById('ui-root')?.appendChild(el);
     return el;
   }
@@ -126,8 +127,8 @@ export class MapSystem {
   showCard(d) {
     const D = DISTRICTS[d];
     if (!D || !this._card) return;
-    this._card.innerHTML = `<div style="font-family:'Special Elite',monospace;font-size:44px;color:#e8dcc0;letter-spacing:2px">${esc(D.name)}</div>
-      <div style="font-family:'Barlow Condensed',sans-serif;font-size:18px;color:${D.palette.accent};max-width:560px;margin:4px auto 0;text-transform:uppercase;letter-spacing:1px">${'☠'.repeat(D.danger)} danger · ${esc(D.vibe.split('.')[0])}</div>`;
+    this._card.innerHTML = `<div style="font-family:'Special Elite',monospace;font-size:clamp(24px, 4.2vw, 46px);line-height:1.05;color:#e8dcc0;letter-spacing:2px">${esc(D.name)}</div>
+      <div style="font-family:'Barlow Condensed',sans-serif;font-size:clamp(13px, 1.5vw, 18px);color:${D.palette.accent};max-width:560px;margin:4px auto 0;text-transform:uppercase;letter-spacing:1px">${'☠'.repeat(D.danger)} danger · ${esc(D.vibe.split('.')[0])}</div>`;
     this._card.style.opacity = '1';
     clearTimeout(this._cardT);
     this._cardT = setTimeout(() => { this._card.style.opacity = '0'; }, 3200);

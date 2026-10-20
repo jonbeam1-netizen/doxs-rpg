@@ -324,18 +324,50 @@ function edgeProps(C, e, nodes, ei) {
     const [x, z] = at(s, backOff * side);
     if (ok(side, s, 0.8) && !nearLoc(x, z, 2)) { P.fireBarrel(C, x, z); take(side, s, 0.8); }
   }
-  // --- parked cars in the parking lane (kept clear of bus stops and corners)
-  if (e.park) {
-    const p = slum ? 0.45 : dist === 'downtown' ? 0.35 : 0.3;
+  // stretches along this edge (per side) that must stay clear of parked cars / trees:
+  // location entrances, and the street fronts of parking lots, plazas and parks (driveways, open fronts)
+  const keepClear = { 1: [], '-1': [] };
+  for (const f of locFronts) keepClear[f.side]?.push([f.s - 6, f.s + 6]);
+  for (const l of L.lots) {
+    if (l.edge !== e || !['parking', 'plaza', 'park'].includes(l.type)) continue;
+    const sc = (l.cx - A.x) * dx + (l.cz - A.z) * dz, sd = Math.sign((l.cx - A.x) * px + (l.cz - A.z) * pz);
+    keepClear[sd]?.push([sc - l.w / 2 - 1.5, sc + l.w / 2 + 1.5]);
+  }
+  const clearAt = (side, s, r) => !keepClear[side].some(([a, b]) => s + r > a && s - r < b);
+
+  // --- street trees in curb planters (downtown avenues, hilltop): a measured row, not a forest
+  if ((dist === 'downtown' && (e.kind === 'main' || e.kind === 'street')) || (dist === 'hilltop' && e.kind === 'hill')) {
+    const off = e.hw + 0.3 + 0.75;
+    const sp = dist === 'hilltop' ? 15 : 17;
     for (const side of [1, -1]) {
-      for (let s = c0 + 4; s < c1 - 4; s += 9) {
-        if (rng() > p * 0.35) continue;
-        if (used[side].some(([a, b]) => Math.abs(a - s) < b + 3.5)) continue;
-        const [x, z] = at(s, e.park * side);
+      for (let s = c0 + 5 + (side > 0 ? 0 : sp / 2); s < c1 - 4; s += sp) {
+        if (rng() < 0.3) continue;
+        if (!ok(side, s, 1.6) || !clearAt(side, s, 2)) continue;
+        const [x, z] = at(s, off * side);
+        if (nearLoc(x, z, 1.5) || !C.free(x, z, 1.1)) continue;
+        P.streetTree(C, x, z, { s: dist === 'hilltop' ? 1.1 : 1 });
+        take(side, s, 1.6);
+      }
+    }
+  }
+
+  // --- parked cars along the curb (in the parking lane, nose to tail, kept clear of
+  //     corners, bus stops, hydrants, entrances and driveways)
+  if (e.park) {
+    const p = slum ? 0.3 : dist === 'downtown' ? 0.42 : dist === 'hilltop' ? 0.3 : 0.2;
+    const curbOffC = e.hw - 1.25; // ~30 cm between the tyres and the curb
+    for (const side of [1, -1]) {
+      for (let s = c0 + 5; s < c1 - 5; s += 6.2) {
+        if (rng() > p) continue;
+        if (used[side].some(([a, b]) => Math.abs(a - s) < b + 3.2)) continue;
+        if (!clearAt(side, s, 2.6)) continue;
+        const [x, z] = at(s, curbOffC * side);
+        if (!C.free(x, z, 1.0)) continue;
         C.ctx = 'parked';
-        P.wreck(C, x, z, Math.atan2(dx * side, dz * side), { burnt: slum && rng() < 0.2, blocks: slum && rng() < 0.15 });
+        const junk = slum && rng() < 0.25;
+        P.wreck(C, x, z, Math.atan2(dx * side, dz * side), { burnt: junk && rng() < 0.5, blocks: junk && rng() < 0.4, tidy: !junk, detail: true });
         C.ctx = 'street';
-        s += 6;
+        s += 0.6 + rng() * 1.2;
       }
     }
   }

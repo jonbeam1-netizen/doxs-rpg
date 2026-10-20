@@ -9,10 +9,13 @@ const smooth = (a, b, x) => { const t = Math.max(0, Math.min(1, (x - a) / (b - a
 const C3 = (h) => new THREE.Color(h);
 
 const PAL = {
-  night: { top: C3('#03050a'), hor: C3('#10141c'), fog: C3('#0c0f15'), sun: C3('#6a7cb0'), sunI: 0.6, sky: C3('#3a4866'), gnd: C3('#121216'), hemiI: 1.05, cloud: C3('#0c0e14') },
-  dusk: { top: C3('#2a2834'), hor: C3('#b4643a'), fog: C3('#6e4c38'), sun: C3('#ff8a40'), sunI: 1.8, sky: C3('#9a7a64'), gnd: C3('#3a2c20'), hemiI: 1.0, cloud: C3('#5a3a30') },
-  day: { top: C3('#6a6e70'), hor: C3('#b2a586'), fog: C3('#958b74'), sun: C3('#ffe0b0'), sunI: 3.2, sky: C3('#c4bca4'), gnd: C3('#5a4e3e'), hemiI: 2.0, cloud: C3('#8a8474') },
+  night: { top: C3('#05070d'), hor: C3('#1c2432'), fog: C3('#161c26'), sun: C3('#7a8cc0'), sunI: 1.7, sky: C3('#4a5c80'), gnd: C3('#1a1a1e'), hemiI: 2.05, cloud: C3('#10131b') },
+  dusk: { top: C3('#2e2c3c'), hor: C3('#c4703e'), fog: C3('#7a5440'), sun: C3('#ff9448'), sunI: 2.6, sky: C3('#a88a70'), gnd: C3('#44342a'), hemiI: 1.0, cloud: C3('#6a4434') },
+  day: { top: C3('#6e7274'), hor: C3('#b8ab8c'), fog: C3('#9a907a'), sun: C3('#ffe4b8'), sunI: 4.2, sky: C3('#c8c0a8'), gnd: C3('#6c5e4a'), hemiI: 2.15, cloud: C3('#8e8878') },
 };
+// Sun path: up at 5:30, down at 19:30 (street lamps fade in 19:00-20:00, matching
+// GameTime.isNight), peaking ~58deg so walls keep a lit side and a shadow side.
+const SUNRISE = 5.5, SUNSET = 19.5;
 const WEATHER = {
   clear: { cloud: 0.25, sunK: 1.0, fogNear: 70, fogFar: 640, tint: null, rain: 0, haze: 0.5 },
   overcast: { cloud: 0.8, sunK: 0.6, fogNear: 50, fogFar: 520, tint: C3('#8a8a86'), tintK: 0.35, rain: 0, haze: 0.6 },
@@ -230,9 +233,15 @@ export class Atmosphere {
   update(dt, focus) {
     const g = this.game, t = g.time;
     const el = g.elapsed;
-    const hour = t.minuteOfDay / 60;
+    const hour = t.minuteOfDay / 60 + (t.total % 1) / 60;
     this.daylight = t.daylight;
-    { const e0 = Math.sin(((hour - 6) / 12) * Math.PI); this.night = smooth(0.14, -0.1, e0); }
+    // e: sun elevation proxy (-1..1), continuous over midnight
+    const dayLen = SUNSET - SUNRISE;
+    const isDay = hour >= SUNRISE && hour <= SUNSET;
+    const a = isDay ? ((hour - SUNRISE) / dayLen) * Math.PI : 0;
+    const nightPh = (((hour - SUNSET) % 24) + 24) % 24 / (24 - dayLen); // 0 at sunset .. 1 at sunrise
+    const e = isDay ? Math.sin(a) : -Math.sin(nightPh * Math.PI);
+    this.night = smooth(0.14, -0.1, e);
 
     // weather smoothing
     const kind = this._target(t);
@@ -246,11 +255,10 @@ export class Atmosphere {
     c.tintK += ((W.tintK ?? 0) - c.tintK) * k; if (W.tint) c.tint.lerp(W.tint, k);
 
     // sun / moon
-    const a = ((hour - 6) / 12) * Math.PI;
-    const e = Math.sin(a);
-    const sunDir = this._v.set(Math.cos(a), Math.max(-0.4, e), 0.4).normalize();
-    const moonA = a + Math.PI;
-    const moonDir = new THREE.Vector3(Math.cos(moonA) * 0.8, Math.max(0.25, Math.sin(moonA)), 0.45).normalize();
+    const az = isDay ? a : (hour < SUNRISE ? 0 : Math.PI);
+    const sunDir = this._v.set(Math.cos(az) + 0.22, Math.max(-0.4, e) * 0.9, 0.55).normalize();
+    const moonA = nightPh * Math.PI;
+    const moonDir = (this._moon ??= new THREE.Vector3()).set(Math.cos(moonA) * 0.8 - 0.2, Math.max(0.3, Math.sin(moonA) * 0.85), -0.5).normalize();
     const dayK = smooth(-0.2, 0.35, e), nightK = smooth(-0.06, -0.32, e);
     const duskK = Math.exp(-(e * e) / 0.03) * (1 - nightK * 0.6);
 
@@ -293,7 +301,7 @@ export class Atmosphere {
     // directional light: sun by day, moon by night
     const useMoon = e < -0.02;
     const dir = useMoon ? moonDir : sunDir;
-    const sunI = useMoon ? PAL.night.sunI * (1 - c.cloud * 0.6) : (PAL.night.sunI + (PAL.day.sunI - PAL.night.sunI) * dayK + PAL.dusk.sunI * duskK * 0.3) * c.sunK * smooth(-0.02, 0.12, e);
+    const sunI = useMoon ? PAL.night.sunI * (1 - c.cloud * 0.5) * smooth(-0.02, -0.18, e) : (PAL.night.sunI + (PAL.day.sunI - PAL.night.sunI) * dayK + PAL.dusk.sunI * duskK * 0.3) * c.sunK * smooth(-0.03, 0.07, e);
     this.sun.intensity = sunI + flash * 2;
     this.sun.color.copy(useMoon ? PAL.night.sun : lightCol);
     // follow focus, snapped to shadow texels
@@ -312,7 +320,7 @@ export class Atmosphere {
     this.hemi.color.copy(PAL.night.sky).lerp(PAL.day.sky, dayK).lerp(PAL.dusk.sky, duskK * 0.6);
     this.hemi.groundColor.copy(PAL.night.gnd).lerp(PAL.day.gnd, dayK);
     if (c.tintK > 0.01) this.hemi.color.lerp(c.tint, c.tintK * 0.4);
-    this.hemi.intensity = (PAL.night.hemiI + (PAL.day.hemiI - PAL.night.hemiI) * dayK) * (1 - Math.min(1, c.rain) * 0.25) + flash * 3;
+    this.hemi.intensity = (PAL.night.hemiI + (PAL.day.hemiI - PAL.night.hemiI) * dayK + duskK * 0.8) * (1 - Math.min(1, c.rain) * 0.25) + flash * 3;
 
     // fog distance
     const nf = 1 - nightK * 0.25;
@@ -389,7 +397,7 @@ export class Atmosphere {
           case 'flicker': target = night * 16 * ((Math.sin(t * 9 + s.seed) * Math.sin(t * 23 + s.seed) > 0.25 || Math.sin(t * 0.4 + s.seed) > 0.85) ? 0.05 : 1); L.distance = 24; break;
           case 'door': target = night * 10; L.distance = 12; break;
           case 'police': { const p = Math.floor(t * 4) % 2; L.color.set(p ? 0xff2020 : 0x2040ff); target = 4 + night * 14; L.distance = 18; break; }
-          default: target = night * 16; L.distance = 24;
+          default: target = night * 13; L.distance = 24;
         }
       }
       L.userData.cur += (target - L.userData.cur) * Math.min(1, dt * (s?.kind === 'flicker' || s?.kind === 'fire' || s?.kind === 'police' ? 30 : 4));
