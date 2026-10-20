@@ -30,6 +30,9 @@ export class Player {
     this.aiming = false;      // combat sets when holding a gun
     this.combatMove = 1;      // combat slows you while blocking / charging
     this.dash = null;         // combat dodge roll: { x, z, speed, t } overrides steering while t > 0
+    this.softFace = null;     // combat: a yaw to drift toward while standing still (nearest enemy in front)
+    this.combatStance = 0;    // combat: 0..1 loose fight stance for the stick figure
+    this.moveDir = { x: 0, z: 0, len: 0 }; // this frame's world-space steering input (unit, len 0 = none)
 
     // Soft light that follows the player so a black stick figure stays readable
     // against dark grimy walls and at night.
@@ -93,6 +96,7 @@ export class Player {
     let mx = fwdX * fz + rX * fx, mz = fwdZ * fz + rZ * fx;
     const len = Math.hypot(mx, mz);
     if (len > 0) { mx /= len; mz /= len; }
+    this.moveDir.x = mx; this.moveDir.z = mz; this.moveDir.len = len > 0 ? 1 : 0;
 
     const running = inp.isDown('ShiftLeft') || inp.isDown('ShiftRight');
     const perkMult = g.perks ? g.perks.mult(running ? 'runSpeed' : 'walkSpeed') : 1;
@@ -119,11 +123,14 @@ export class Player {
     p.y += this.vy * dt;
     if (p.y < 0) { p.y = 0; this.vy = 0; }
 
-    if (this.faceOverride != null) this.facing = angleLerp(this.facing, this.faceOverride, 1 - Math.exp(-20 * dt));
-    else if (len > 0) this.facing = angleLerp(this.facing, Math.atan2(mx, mz), 1 - Math.exp(-12 * dt));
+    // turning: snap-ish toward an attack direction, eased toward the steering direction, and a
+    // lazy drift toward the nearest enemy in front while standing your ground
+    if (this.faceOverride != null) this.facing = angleLerp(this.facing, this.faceOverride, 1 - Math.exp(-(this.aiming ? 20 : 16) * dt));
+    else if (len > 0) this.facing = angleLerp(this.facing, Math.atan2(mx, mz), 1 - Math.exp(-(this.speed > 6 ? 9 : 12) * dt));
+    else if (this.softFace != null) this.facing = angleLerp(this.facing, this.softFace, 1 - Math.exp(-5 * dt));
     this.group.rotation.y = this.facing;
 
-    this.model.animate(dt, this.speed, { airborne: p.y > 0.05, aim: this.aiming, swingStyle: this.swingStyle });
+    this.model.animate(dt, this.speed, { airborne: p.y > 0.05, aim: this.aiming, swingStyle: this.swingStyle, stance: this.combatStance });
   }
 }
 

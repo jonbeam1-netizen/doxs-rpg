@@ -69,7 +69,7 @@ export class Combat {
     this.kickCd = 0;
     this.blocking = false; this.blockAt = -9; this.blockUpAt = -9; this.parryOk = true;
     this.rollCharges = ROLL_MAX; this.rollRegen = 0; this.rollGap = 0; this.iframes = 0;
-    this.kdT = 0; this.tasedT = 0;
+    this.kdT = 0; this.tasedT = 0; this.tasedRecT = 0; this.atkT = 0; this._flickT = 0; this._flickK = 1;
     this.healCd = 0;
     this.lastHurtT = -99; this.lastCombatT = -99;
     this.lock = null;
@@ -87,6 +87,13 @@ export class Combat {
     this.cross.innerHTML = '<i class="h l"></i><i class="h r"></i><i class="v t"></i><i class="v b"></i><i class="d"></i>'
       + '<i class="x x1"></i><i class="x x2"></i><i class="x x3"></i><i class="x x4"></i>';
     root.appendChild(this.cross);
+    // taser screen flicker (cold blue strobe + scanline wobble)
+    this.zapEl = document.createElement('div');
+    this.zapEl.id = 'npc-zap';
+    this.zapEl.style.cssText = 'position:fixed;inset:0;pointer-events:none;z-index:5;opacity:0;display:none;mix-blend-mode:screen;'
+      + 'background:radial-gradient(ellipse at center, rgba(120,200,255,0.05) 30%, rgba(60,150,255,0.55) 100%),'
+      + 'repeating-linear-gradient(0deg, rgba(170,225,255,0.10) 0 2px, transparent 2px 5px)';
+    root.appendChild(this.zapEl);
 
     game.bus.on('player:model-rebuilt', () => { this._wModel = null; });
     game.bus.on('player:died', (d) => this.onPlayerDied(d));
@@ -184,7 +191,8 @@ export class Combat {
     const g = this.game, pl = g.player;
     if (!pl) return;
     this._syncWeaponMesh();
-    this.cd -= dt; this.kickCd -= dt; this.healCd -= dt; this.iframes -= dt; this.rollGap -= dt;
+    this.cd -= dt; this.kickCd -= dt; this.healCd -= dt; this.iframes -= dt; this.rollGap -= dt; this.atkT -= dt; this.tasedRecT -= dt;
+    this._updateFlicker(dt);
     this.bloom = Math.max(0, this.bloom - dt * 0.22);
     if (this.rollCharges < ROLL_MAX) {
       this.rollRegen += dt;
@@ -226,6 +234,7 @@ export class Combat {
 
     if (canFight) this._input(dt, def, id, gun);
     else { this._endBlock(); this._cancelCharge(); this.holdStart = null; pl.combatMove = 1; }
+    this._updateStance(canFight, gun);
 
     this._updateLock(dt);
     this._updateRegen(dt);
@@ -255,7 +264,8 @@ export class Combat {
     const wantBlock = inp.isDown('KeyC') && !pl.model.rolling && !(pl.dash?.t > 0);
     if (wantBlock && !this.blocking) this._startBlock();
     else if (!wantBlock && this.blocking) this._endBlock();
-    pl.combatMove = this.blocking ? 0.45 : this.charge ? 0.55 : 1;
+    // swings keep you mobile but weighty (steer between combo hits); shaking off a taser slows you a beat
+    pl.combatMove = (this.blocking ? 0.45 : this.charge ? 0.55 : this.atkT > 0 ? 0.6 : 1) * (this.tasedRecT > 0 ? 0.5 : 1);
     if (this.blocking) {
       const t = this._faceThreat();
       if (t) { pl.faceOverride = Math.atan2(t.pos.x - pl.pos.x, t.pos.z - pl.pos.z); }
@@ -354,11 +364,41 @@ export class Combat {
     return best;
   }
 
+  // Feel: a loose fight stance while a fight is on, and a lazy turn toward the nearest enemy in
+  // front while you stand your ground (attacks / blocks / guns still face hard via faceOverride).
+  _updateStance(canFight, gun) {
+    const pl = this.game.player;
+    const fighting = canFight && !gun && (this._threat || this.game.elapsed - this.lastCombatT < 2.5);
+    pl.combatStance = fighting ? 1 : 0;
+    let soft = null;
+    if (fighting && !this._ownsFace && pl.speed < 1.5) {
+      const t = this._faceThreat();
+      if (t) {
+        const yaw = Math.atan2(t.pos.x - pl.pos.x, t.pos.z - pl.pos.z);
+        const diff = Math.abs(Math.atan2(Math.sin(yaw - pl.facing), Math.cos(yaw - pl.facing)));
+        if (diff < 1.6) soft = yaw; // only enemies roughly in front; never spin you around
+      }
+    }
+    pl.softFace = soft;
+  }
+
+  _updateFlicker(dt) {
+    const el = this.zapEl;
+    if (!el) return;
+    if (this._flickT > 0) {
+      this._flickT -= dt;
+      if (el.style.display !== 'block') el.style.display = 'block';
+      const on = Math.random() < 0.6;
+      el.style.opacity = String((on ? 0.35 + Math.random() * 0.5 : 0.05) * this._flickK * Math.min(1, this._flickT * 6 + 0.2));
+      el.style.transform = `translateX(${((Math.random() - 0.5) * 6 * this._flickK).toFixed(1)}px)`;
+    } else if (el.style.display !== 'none') { el.style.display = 'none'; el.style.opacity = '0'; }
+  }
+
   _resetMoves() {
     const pl = this.game.player;
-    this.swing = null; this.charge = null; this.blocking = false; this.kdT = 0; this.tasedT = 0; this.iframes = 0;
+    this.swing = null; this.charge = null; this.blocking = false; this.kdT = 0; this.tasedT = 0; this.tasedRecT = 0; this.atkT = 0; this.iframes = 0; this._flickT = 0;
     this.rollCharges = ROLL_MAX; this.lock = null; this.holdStart = null; this.buffer = 0;
-    if (pl) { pl.combatMove = 1; pl.dash = null; try { pl.model.setBlock?.(false); } catch { /* ignore */ } }
+    if (pl) { pl.combatMove = 1; pl.dash = null; pl.softFace = null; pl.combatStance = 0; try { pl.model.setBlock?.(false); } catch { /* ignore */ } }
     this.ctx.fx.setCharge(false);
   }
 
@@ -605,8 +645,11 @@ export class Combat {
     const pl = this.game.player;
     const { ang } = this._aimBase();
     let dx = Math.sin(ang), dz = Math.cos(ang);
-    // move direction wins if the player is running somewhere
-    if (pl.speed > 2.5 && !pl.aiming) { dx = Math.sin(pl.facing); dz = Math.cos(pl.facing); }
+    // steering wins: the stick / WASD direction you're holding aims the swing (so you can turn
+    // between combo hits); otherwise the way you're running, otherwise the camera
+    const md = pl.moveDir;
+    if (md?.len > 0 && !pl.aiming) { dx = md.x; dz = md.z; }
+    else if (pl.speed > 2.5 && !pl.aiming) { dx = Math.sin(pl.facing); dz = Math.cos(pl.facing); }
     const best = this._pickTarget(range, dx, dz);
     if (best) {
       const rx = best.pos.x - pl.pos.x, rz = best.pos.z - pl.pos.z, d = Math.hypot(rx, rz) || 1;
@@ -632,7 +675,10 @@ export class Combat {
     g.bus.emit('player:attack', { duration: dur, weapon: id, swingStyle: style, combo: step });
     this.swing = { t: dur * 0.42, dx, dz, def, id, kind: fin ? 'finisher' : 'light', mult: COMBO_DMG[step], kbMult: COMBO_KB[step], step };
     this.combo = { step: (step + 1) % 3, until: now + dur + 0.6 };
-    if (fin) { pl.vel.x += dx * 3; pl.vel.y += dz * 3; }
+    this.atkT = dur * 0.8;
+    // momentum: every swing steps into it a little (more on the finisher) unless already in their face
+    const close = target && Math.hypot(target.pos.x - pl.pos.x, target.pos.z - pl.pos.z) - (target.radius || 0.4) < def.range * 0.55;
+    if (!pl.dash) { const push = fin ? 3 : close ? 0.6 : 1.8; pl.vel.x += dx * push; pl.vel.y += dz * push; }
     this.ctx.npcs.onPlayerAttack?.(pl.pos.x, pl.pos.z, dx, dz, fin ? 'finisher' : 'light');
     this.ctx.fx.sfx.play('whoosh', { vol: 0.45 + def.damage / 60 + (fin ? 0.2 : 0) });
     this.lastCombatT = now;
@@ -670,6 +716,7 @@ export class Combat {
     g.bus.emit('player:attack', { duration: dur, weapon: id, swingStyle: c.style, heavy: true });
     this.swing = { t: 0.11, dx, dz, def, id, kind: 'heavy', mult: 1.5 + 1.4 * power, kbMult: 2 + 2.6 * power, power, reach: def.range + 0.4, guardBreak: true };
     this.cd = 0.4 + def.rate * 0.45;
+    this.atkT = dur;
     this.combo = { step: 0, until: 0 };
     pl.dash = { x: dx, z: dz, speed: 5 + 6 * power, t: 0.12 };
     this.ctx.npcs.onPlayerAttack?.(pl.pos.x, pl.pos.z, dx, dz, 'heavy');
@@ -686,6 +733,7 @@ export class Combat {
     this.faceT = 0.45;
     this.kickCd = KICK.rate;
     this.cd = Math.max(this.cd, 0.4);
+    this.atkT = 0.36;
     pl.swingStyle = 'kick';
     pl.model.punch(0.42, 'kick');
     g.bus.emit('player:attack', { duration: 0.42, weapon: 'kick', swingStyle: 'kick' });
@@ -739,6 +787,11 @@ export class Combat {
       }
       const res = this.hitNpc(n, dmg, { dir: { x: dx, z: dz }, kb, heavy: heavy || crit || def.damage >= 20 || s.kind === 'finisher', melee: true,
         knockdown: kd, guardBreak: !!s.guardBreak, power: s.power || 0, crit, blocked });
+      // stagger scaled by how hard it landed (the manager's flinch is a generic one)
+      if (!blocked && !kd && !n.dead && !(n.knockdown > 0) && !res?.killed) {
+        const pw = heavy ? 0.55 + 0.45 * (s.power || 0) : s.kind === 'kick' ? 0.8 : s.kind === 'finisher' ? 0.7 : crit ? 0.6 : 0.3;
+        try { n.model?.hitReact?.(Math.sign(dx * Math.cos(n.facing) - dz * Math.sin(n.facing)) || 0, pw); } catch { /* cosmetic */ }
+      }
       if (crit && !blocked) fx.number(n.pos.x, 2.6 * n.scale, n.pos.z, riposte ? 'RIPOSTE!' : pick(CRITS), 'crit');
       if (riposte) n.riposteUntil = 0;
       hitAny = true;
@@ -775,7 +828,10 @@ export class Combat {
     const g = this.game;
     // a fight breaks out: loungers & bystanders nearby get up and scram
     if (!opts?.gun && (this._fightAlarm || 0) < g.elapsed) { this._fightAlarm = g.elapsed + 1; this.ctx.ambient?.panic(n.pos.x, n.pos.z, 12); }
-    const wasAggro = !!n.aggressor || n.hostile && n.target?.type === 'player';
+    // self-defense: hitting someone who came at you first is no crime... unless they're already
+    // running away (chasing down a fleeing mugger to keep beating them is assault)
+    const fleeing = n.state === 'flee' && n.aggressor && !n.brawlId;
+    const wasAggro = (!!n.aggressor || n.hostile && n.target?.type === 'player') && !fleeing;
     const res = this.ctx.npcs.damage(n.id, dmg, 'local', opts);
     if ((n.kind === 'cop' || !wasAggro) && !n.brawlId && !n.assaulted && n.kind !== 'static') {
       n.assaulted = true;
@@ -807,7 +863,7 @@ export class Combat {
     this.rollRegen = 0;
     this.rollGap = 0.42;
     this._endBlock(); this._cancelCharge();
-    this.swing = null; this.holdStart = null; this.buffer = 0;
+    this.swing = null; this.holdStart = null; this.buffer = 0; this.atkT = 0;
     pl.dash = { x, z, speed: 11, t: 0.34 };
     pl.model.roll(0.4);
     this.iframes = 0.32;
@@ -824,7 +880,7 @@ export class Combat {
     this.parryOk = g.elapsed - this.blockUpAt > 0.35; // no parry-mashing
     this.blockAt = g.elapsed;
     this._cancelCharge();
-    this.swing = null;
+    this.swing = null; this.atkT = 0;
     g.player.model.setBlock?.(true);
   }
 
@@ -846,8 +902,13 @@ export class Combat {
     }
     if (this.tasedT > 0) {
       this.tasedT -= dt;
-      if (Math.random() < 0.3) pl.model.flash?.();
-      if (this.tasedT <= 0) this._unlockMove();
+      if (!pl.model.shocked && this.tasedT > 0.05) pl.model.shock?.(this.tasedT); // model rebuilt mid-shock
+      if (this.tasedT <= 0) {
+        // shake it off: a wobbly recovery beat (slowed, stagger pose) instead of snapping back
+        this.tasedRecT = 0.45;
+        if (!pl.dead && !this.isDown) pl.model.hitReact?.(0, 0.65);
+        this._unlockMove();
+      }
     }
   }
 
@@ -867,14 +928,29 @@ export class Combat {
     g.cameraRig?.shake?.(0.4, 0.3);
   }
 
-  _tase() {
+  // Tased: locked up and twitching for a short beat (blue arcs over the body, screen flicker),
+  // then a slowed recovery. Same lock-up length as before (balance); the telegraph is in police.js.
+  _tase(dur = 0.9) {
     const g = this.game, pl = g.player;
-    this.tasedT = 1.0;
+    this.tasedT = dur;
     pl.moveLocked = true;
-    this._endBlock(); this._cancelCharge(); this.swing = null;
-    this.ctx.fx.alert(pl.group, 'stun', 1.0, 2.5);
+    this._endBlock(); this._cancelCharge(); this.swing = null; this.atkT = 0;
+    pl.model.shock?.(dur);
+    try { this.ctx.police?.taser?.shockFx(pl.group, dur, 1); } catch { /* cosmetic */ }
+    this._flickT = dur; this._flickK = 1;
+    this.ctx.fx.alert(pl.group, 'stun', dur, 2.5);
     this.ctx.fx.number(pl.pos.x, 2.5, pl.pos.z, 'TASED!', 'parry');
-    g.cameraRig?.shake?.(0.25, 0.8);
+    g.cameraRig?.shake?.(0.22, dur);
+  }
+
+  // Blocked a taser: the prongs bite the forearms. A jolt, a stagger, no lock-up.
+  _jolt() {
+    const g = this.game, pl = g.player;
+    pl.model.shock?.(0.22);
+    try { this.ctx.police?.taser?.shockFx(pl.group, 0.3, 0.5); } catch { /* cosmetic */ }
+    this._flickT = 0.25; this._flickK = 0.45;
+    this.tasedRecT = 0.4;
+    g.cameraRig?.shake?.(0.12, 0.25);
   }
 
   _parry(npc) {
@@ -991,7 +1067,12 @@ export class Combat {
           m: !!opts.melee, hv: !!opts.heavyHit, ub: !!opts.unblockable, kd: !!opts.knockdown, tz: !!opts.taser });
       } catch { /* ignore */ }
     } else if (target.type === 'npc') {
-      this.ctx.npcs.damage(target.id, dmg, npc.id, { dir: opts.dir, kb: 3 });
+      // cops vs street crooks (police.js street justice): the law wins these, and a taser drops them
+      const victim = this.ctx.npcs.get(target.id);
+      let kd = false;
+      if (npc.kind === 'cop' && npc.data?.collar?.id === target.id) { dmg *= 2.2; kd = !!opts.taser || chance(0.25); }
+      else if (victim?.kind === 'cop' && victim.data?.collar?.id === npc.id) dmg *= 0.5;
+      this.ctx.npcs.damage(target.id, Math.max(1, Math.round(dmg)), npc.id, { dir: opts.dir, kb: 3, knockdown: kd || undefined });
     }
   }
 
@@ -1005,9 +1086,17 @@ export class Combat {
     // dodge roll i-frames beat everything
     if (this.iframes > 0 && !pl.vehicle) { fx.number(pl.pos.x, 2.3, pl.pos.z, 'DODGE', 'small'); return; }
     let blocked = false;
-    if (this.blocking && !pl.vehicle && !opts.unblockable && !opts.taser) {
+    if (this.blocking && !pl.vehicle && !opts.unblockable) {
       const fwx = Math.sin(pl.facing), fwz = Math.cos(pl.facing);
       const front = !opts.dir || (-opts.dir.x * fwx - opts.dir.z * fwz) > 0.1;
+      if (front && opts.taser) {
+        // guard up: the darts snag your forearms. A jolt instead of a full lock-up.
+        fx.sfx.play('block');
+        fx.number(pl.pos.x, 2.3, pl.pos.z, 'BLOCKED', 'block');
+        this._jolt();
+        g.state.damage(1, opts.source || 'taser');
+        return;
+      }
       if (front && opts.melee) {
         const bossy = opts.npc && (opts.npc.boss || opts.npc.bossName);
         if (this.parryOk && g.elapsed - this.blockAt < PARRY_WINDOW && !(bossy && opts.npc.parryImmuneUntil > g.elapsed)) { this._parry(opts.npc); return; }
@@ -1029,7 +1118,8 @@ export class Combat {
 
     if (!blocked) {
       pl.model.flash();
-      if (opts.dir) pl.model.hitReact?.(Math.sign(opts.dir.x * Math.cos(pl.facing) - opts.dir.z * Math.sin(pl.facing)) || 0);
+      // flinch -> stagger with a knockback lean, scaled by the hit (the taser has its own shock pose)
+      if (opts.dir && !opts.taser) pl.model.hitReact?.(Math.sign(opts.dir.x * Math.cos(pl.facing) - opts.dir.z * Math.sin(pl.facing)) || 0, clamp(dmg / 28 + (opts.heavyHit ? 0.3 : 0), 0.15, 1));
       fx.hurtFlash(clamp(dmg / 30, 0.25, 1));
       fx.sfx.play('hurt');
       fx.blood(pl.pos.x, pl.pos.z, clamp(dmg / 20, 0.4, 1.5), opts.dir || null, 1.2);
