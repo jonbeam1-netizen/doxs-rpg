@@ -1156,8 +1156,19 @@ export class HeistManager {
     if (s.alarm && !v.lastAlarm) {
       v.lastAlarm = true;
       this.toast(pick(RADIO.alarm), 'bad', 5000);
-      if (Math.hypot(pp.x - s.target.x, pp.z - s.target.z) < 220 || s.truck) g.state.addHeat((HEISTS[s.id]?.tier || 2) <= 1 ? 1 : 2);
+      // Police response time: the cops don't teleport in. Small jobs give you
+      // time to grab the bags and run; big ones less so.
+      const tier = HEISTS[s.id]?.tier || 2;
+      const delay = tier <= 1 ? 45 : tier === 2 ? 30 : 20;
+      v.copsAt = this.t + delay;
+      v.copsTier = tier;
+      setTimeout(() => this.toast(`🚓 Police response in ~${delay}s. Grab what you can and GO.`, 'bad', 4000), 1200);
       try { g.combat?.sfx?.('siren'); } catch { /* ignore */ }
+    }
+    if (s.alarm && v.copsAt != null && this.t >= v.copsAt) {
+      const tier = v.copsTier;
+      v.copsAt = null;
+      if (Math.hypot(pp.x - s.target.x, pp.z - s.target.z) < 220 || s.truck) g.state.addHeat(tier <= 1 ? 1 : 2);
     }
     if (s.alarm && active) {
       v.heatT += dt;
