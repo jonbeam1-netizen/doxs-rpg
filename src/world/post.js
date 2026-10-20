@@ -80,6 +80,15 @@ export class Post {
     this.grade.uniforms.uRes.value.set(s.x, s.y);
   }
 
+  // MSAA samples of the scene render target (4 on High, fewer on Medium).
+  setSamples(n) {
+    const c = this.composer;
+    for (const rt of [c.renderTarget1, c.renderTarget2]) {
+      if (!rt || rt.samples === n) continue;
+      rt.samples = n; rt.dispose();
+    }
+  }
+
   update(env) {
     const u = this.grade.uniforms;
     u.uTime.value = this.game.elapsed;

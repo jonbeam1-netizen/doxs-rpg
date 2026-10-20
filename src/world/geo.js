@@ -30,6 +30,7 @@ class LineBucket {
 }
 
 const _m = new THREE.Matrix4();
+const _W = new Float64Array(12); // scratch for quad()
 
 // Materials that never block the third-person camera (light fx, decals, see-through
 // fences, tiny detail meshes, far terrain).
@@ -94,9 +95,13 @@ export class WorldGeo {
 
   _bucket(mat, wx, wz) {
     const ch = this.chunkAt ?? this.chunkOf(wx, wz);
+    // (consecutive primitives almost always hit the same bucket: skip the string key + map lookup)
+    const lb = this._lastB;
+    if (lb && lb.chunk === ch && lb.mat === mat) return lb;
     const key = ch + '|' + mat;
     let b = this.buckets.get(key);
     if (!b) { b = new Bucket(mat, ch); this.buckets.set(key, b); }
+    this._lastB = b;
     return b;
   }
 
@@ -105,10 +110,9 @@ export class WorldGeo {
   // uvs: [u0,v0,u1,v1,u2,v2,u3,v3] or 'world' (planar XZ world UV, needs o.uvScale)
   quad(mat, a, b, c, d, uvs, color = WHITE, o = null) {
     const e = this.e;
-    const P = [a, b, c, d];
-    const W = new Array(12);
+    const W = _W;
     for (let k = 0; k < 4; k++) {
-      const p = P[k];
+      const p = k === 0 ? a : k === 1 ? b : k === 2 ? c : d;
       W[k * 3] = e[0] * p[0] + e[4] * p[1] + e[8] * p[2] + e[12];
       W[k * 3 + 1] = e[1] * p[0] + e[5] * p[1] + e[9] * p[2] + e[13];
       W[k * 3 + 2] = e[2] * p[0] + e[6] * p[1] + e[10] * p[2] + e[14];
@@ -346,6 +350,7 @@ export class WorldGeo {
     }
     this.buckets.clear();
     this.lineBuckets.clear();
+    this._lastB = null;
     for (const c of chunks) {
       // bounding box of the whole chunk for distance culling
       const box = new THREE.Box3();

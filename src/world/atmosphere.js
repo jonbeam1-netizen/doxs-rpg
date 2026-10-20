@@ -145,7 +145,10 @@ export class Atmosphere {
     this.night = 0; this.daylight = 1;
     this._tmpA = new THREE.Color(); this._tmpB = new THREE.Color();
     this.quality = 'high';
+    this.viewK = 1;
+    this.poolN = this.pool.length;
     this._v = new THREE.Vector3();
+    this._right = new THREE.Vector3(); this._up = new THREE.Vector3(); this._p = new THREE.Vector3();
   }
 
   _makeRain(N) {
@@ -212,10 +215,29 @@ export class Atmosphere {
     return p;
   }
 
+  // q: a graphics preset from world/index.js (shadows, shadowMap, shadowSize, lights, rain, viewK).
   setQuality(q) {
-    this.quality = q;
-    this.sun.castShadow = q === 'high';
-    this.rain.geometry.setDrawRange(0, q === 'high' ? Infinity : 2 * 2500);
+    if (typeof q === 'string') q = { id: q, shadows: q !== 'low', lights: q === 'low' ? 2 : 8, rain: q === 'low' ? 0.35 : 1 };
+    this.quality = q.id;
+    this.viewK = q.viewK ?? 1;
+    const sun = this.sun;
+    sun.castShadow = !!q.shadows;
+    const size = q.shadowMap ?? 2048, S = q.shadowSize ?? 70;
+    if (sun.shadow.mapSize.x !== size) {
+      sun.shadow.mapSize.set(size, size);
+      if (sun.shadow.map) { sun.shadow.map.dispose(); sun.shadow.map = null; }
+    }
+    if (this.shadowSize !== S) {
+      Object.assign(sun.shadow.camera, { left: -S, right: S, top: S, bottom: -S });
+      sun.shadow.camera.updateProjectionMatrix();
+      this.shadowSize = S;
+    }
+    // Pooled lamp lights: unused ones leave the scene's light count entirely (cheaper shaders).
+    this.poolN = Math.max(0, Math.min(this.pool.length, q.lights ?? this.pool.length));
+    this.pool.forEach((L, i) => { L.visible = i < this.poolN; if (i >= this.poolN) { L.userData.src = null; L.intensity = 0; } });
+    this.assignT = 0;
+    this.rain.geometry.setDrawRange(0, (q.rain ?? 1) >= 1 ? Infinity : Math.round(2 * 7000 * (q.rain ?? 1)));
+    this.splash.geometry.setDrawRange(0, (q.rain ?? 1) >= 1 ? Infinity : Math.round(900 * (q.rain ?? 1)));
   }
 
   // Desired weather parameters for the current time.
@@ -306,12 +328,12 @@ export class Atmosphere {
     this.sun.color.copy(useMoon ? PAL.night.sun : lightCol);
     // follow focus, snapped to shadow texels
     const fx = focus?.x ?? 0, fz = focus?.z ?? 0;
-    const texel = (this.shadowSize * 2) / 2048;
-    const right = new THREE.Vector3(-dir.z, 0, dir.x).normalize();
-    const up = new THREE.Vector3().crossVectors(dir, right).normalize();
-    const p = new THREE.Vector3(fx, 0, fz);
+    const texel = (this.shadowSize * 2) / this.sun.shadow.mapSize.x;
+    const right = this._right.set(-dir.z, 0, dir.x).normalize();
+    const up = this._up.crossVectors(dir, right).normalize();
+    const p = this._p.set(fx, 0, fz);
     const pr = Math.round(p.dot(right) / texel) * texel, pu = Math.round(p.dot(up) / texel) * texel, pd = p.dot(dir);
-    const snapped = right.multiplyScalar(pr).add(up.multiplyScalar(pu)).add(dir.clone().multiplyScalar(pd));
+    const snapped = right.multiplyScalar(pr).add(up.multiplyScalar(pu)).addScaledVector(dir, pd);
     this.sun.target.position.copy(snapped);
     this.sun.position.copy(snapped).addScaledVector(dir, 200);
     this.sun.target.updateMatrixWorld();
@@ -323,7 +345,7 @@ export class Atmosphere {
     this.hemi.intensity = (PAL.night.hemiI + (PAL.day.hemiI - PAL.night.hemiI) * dayK + duskK * 0.8) * (1 - Math.min(1, c.rain) * 0.25) + flash * 3;
 
     // fog distance
-    const nf = 1 - nightK * 0.25;
+    const nf = (1 - nightK * 0.25) * this.viewK;
     this.scene.fog.near = c.fogNear * nf;
     this.scene.fog.far = c.fogFar * nf;
     this.fogFar = this.scene.fog.far;
@@ -380,15 +402,19 @@ export class Atmosphere {
         }
       }
       cand.sort((p, q) => p[0] - q[0]);
-      const want = new Set(cand.slice(0, this.pool.length).map((c) => c[1]));
+      const want = new Set(cand.slice(0, this.poolN).map((c) => c[1]));
       // keep lights that are still wanted, reassign the rest
       const free = [];
-      for (const L of this.pool) { if (L.userData.src && want.has(L.userData.src)) want.delete(L.userData.src); else free.push(L); }
+      for (let i = 0; i < this.poolN; i++) {
+        const L = this.pool[i];
+        if (L.userData.src && want.has(L.userData.src)) want.delete(L.userData.src); else free.push(L);
+      }
       for (const s of want) { const L = free.pop(); if (!L) break; L.userData.src = s; L.userData.cur = 0; L.position.set(s.x, s.y, s.z); L.color.copy(s.col); }
       for (const L of free) L.userData.src = null;
     }
     const t = this.game.elapsed;
-    for (const L of this.pool) {
+    for (let i = 0; i < this.poolN; i++) {
+      const L = this.pool[i];
       const s = L.userData.src;
       let target = 0;
       if (s) {

@@ -188,8 +188,11 @@ export function createMaterials() {
   let envMap = null;
   const state = { night: 0, wet: 0 };
   function setEnv(tex) {
+    // Only the first assignment changes the shader (envMap on/off); later refreshes are the same kind of
+    // PMREM texture, so swapping the uniform is enough (no program re-validation hitch every 6 s).
+    const first = !envMap || envMap.image?.height !== tex?.image?.height;
     envMap = tex;
-    for (const m of A.env) { m.envMap = tex; m.needsUpdate = true; }
+    for (const m of A.env) { m.envMap = tex; if (first) m.needsUpdate = true; }
   }
 
   function update(t, night, wet, daylight) {

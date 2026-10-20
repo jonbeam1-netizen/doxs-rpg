@@ -83,13 +83,17 @@ export function normalFromCanvas(c, strength = 2.5) {
   const lum = new Float32Array(w * h);
   for (let i = 0; i < w * h; i++) lum[i] = (src[i * 4] * 0.3 + src[i * 4 + 1] * 0.59 + src[i * 4 + 2] * 0.11) / 255;
   const out = cnv(w, h); const oc = g2(out); const img = oc.createImageData(w, h); const d = img.data;
-  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
-    const L = (xx, yy) => lum[((yy + h) % h) * w + ((xx + w) % w)];
-    const dx = (L(x + 1, y) - L(x - 1, y)) * strength;
-    const dy = (L(x, y + 1) - L(x, y - 1)) * strength;
-    let nx = -dx, ny = dy, nz = 1; const l = Math.hypot(nx, ny, nz); nx /= l; ny /= l; nz /= l;
-    const i = (y * w + x) * 4;
-    d[i] = (nx * 0.5 + 0.5) * 255; d[i + 1] = (ny * 0.5 + 0.5) * 255; d[i + 2] = (nz * 0.5 + 0.5) * 255; d[i + 3] = 255;
+  // (wrap-around central differences; flat loops instead of a per-pixel closure: ~4x faster at boot)
+  for (let y = 0; y < h; y++) {
+    const row = y * w, up = ((y + 1) % h) * w, dn = ((y - 1 + h) % h) * w;
+    for (let x = 0; x < w; x++) {
+      const xr = x + 1 === w ? 0 : x + 1, xl = x === 0 ? w - 1 : x - 1;
+      const dx = (lum[row + xr] - lum[row + xl]) * strength;
+      const dy = (lum[up + x] - lum[dn + x]) * strength;
+      const k = 1 / Math.sqrt(dx * dx + dy * dy + 1);
+      const i = (row + x) * 4;
+      d[i] = (-dx * k * 0.5 + 0.5) * 255; d[i + 1] = (dy * k * 0.5 + 0.5) * 255; d[i + 2] = (k * 0.5 + 0.5) * 255; d[i + 3] = 255;
+    }
   }
   oc.putImageData(img, 0, 0);
   return out;

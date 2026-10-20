@@ -23,6 +23,26 @@ import { CamColliders } from './camcollide.js';
 
 const GFX_KEY = 'doxsrpg_gfx';
 
+// Best-guess starting preset for this device (the player can always override it in the pause menu).
+export function detectPreset(renderer) {
+  let gpu = '';
+  try {
+    const gl = renderer.getContext();
+    const ext = gl.getExtension('WEBGL_debug_renderer_info');
+    gpu = String(ext ? gl.getParameter(ext.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER));
+  } catch { /* unknown GPU */ }
+  const ua = navigator.userAgent || '';
+  const mobile = /Android|iPhone|iPad|iPod|Mobile|Silk/i.test(ua) || (navigator.maxTouchPoints > 1 && /Macintosh/.test(ua)) || (matchMedia?.('(pointer: coarse)').matches && !matchMedia?.('(pointer: fine)').matches);
+  const cores = navigator.hardwareConcurrency || 4, mem = navigator.deviceMemory || 8;
+  if (mobile || /SwiftShader|llvmpipe|softpipe|Software|Microsoft Basic Render/i.test(gpu)) return 'low';
+  if (/Mali|Adreno|PowerVR|Intel.*(HD Graphics|GMA)|Intel.*UHD Graphics (6\d\d|7\d\d)/i.test(gpu) || cores <= 2 || mem <= 2) return 'low';
+  const discrete = /NVIDIA|GeForce|Quadro|RTX|GTX|Radeon (RX|Pro)|Radeon\(TM\) RX|Arc\(TM\) A|Intel.*Arc/i.test(gpu);
+  const apple = /Apple M\d|Apple GPU/i.test(gpu);
+  if (!discrete && !apple) return 'medium'; // integrated Intel Iris/UHD, Radeon Vega/680M, unknown
+  if (cores <= 4 || mem <= 4) return 'medium';
+  return 'high';
+}
+
 async function waitFonts() {
   try {
     await Promise.race([
@@ -32,11 +52,29 @@ async function waitFonts() {
   } catch { /* fallback fonts are fine */ }
 }
 
-export async function installWorld(game) {
+export async function installWorld(game, opts = {}) {
   const t0 = performance.now();
+  // Loading-screen hooks (src/main.js): progress(0..1, label) and a frame yield so the bar can paint
+  // and the page never freezes for the whole build.
+  const progress = opts.progress ?? (() => {});
+  const nextFrame = opts.nextFrame ?? (() => Promise.resolve());
+  const stageMs = {};
+  let stT = performance.now(), stName = 'fonts';
+  const stage = async (f, label, name) => {
+    const now = performance.now();
+    stageMs[stName] = Math.round(now - stT);
+    stName = name; stT = now;
+    try { progress(f, label); } catch { /* cosmetic */ }
+    await nextFrame();
+    stT = performance.now();
+  };
+  progress(0, 'waiting for the sign painter (fonts)');
   await waitFonts();
+  await stage(0.03, 'surveying the slums', 'layout');
   const layout = buildLayout();
+  await stage(0.06, 'mixing grime, rust and paint', 'materials');
   const mats = createMaterials();
+  await stage(0.2, 'pouring asphalt', 'roads');
   const geo = new WorldGeo({ chunkSize: 140, min: -HALF, max: MAP_EXT.maxX });
   const phys = game.physics;
   game.renderer.toneMappingExposure = 1.7; // grimy but readable under ACES
@@ -79,6 +117,7 @@ export async function installWorld(game) {
   C.ctx = 'signals';
   const signalData = buildSignals(C);
   C.ctx = 'street';
+  await stage(0.28, 'dumping trash cans and lamp posts', 'street');
   buildStreetProps(C);
 
   // locations
@@ -89,8 +128,10 @@ export async function installWorld(game) {
   C.ctx = 'drag';
   const dragDoor = buildDragStrip(C);
   // Blackwater Isle (own RNG; hand-placed island locations come back as doors)
+  await stage(0.34, 'dredging Blackwater Isle', 'island');
   C.ctx = 'isle';
   const isle = buildIsland(C);
+  await stage(0.42, 'building the landmarks', 'landmarks');
   for (const L of LOCATIONS) {
     let doorX, doorZ, x, z, facing = 0;
     const lot = layout.locSpots[L.id];
@@ -129,8 +170,16 @@ export async function installWorld(game) {
     if (L.id === 'roach_motel') spawn = { x: doorX, z: doorZ, facing };
   }
 
-  // generic lots
-  layout.lots.forEach((lot, i) => { C.ctx = 'lot' + i + ':' + lot.type; (lot.district === 'blackwater' ? buildIslandLot : buildLot)(C, lot); });
+  // generic lots (yield now and then so the loading bar keeps moving)
+  {
+    const lots = layout.lots, per = Math.max(1, Math.ceil(lots.length / 6));
+    for (let i = 0; i < lots.length; i++) {
+      if (i % per === 0) await stage(0.55 + (i / lots.length) * 0.2, 'raising tenements ' + Math.round((i / lots.length) * 100) + '%', 'lots' + (i / per | 0));
+      const lot = lots[i];
+      C.ctx = 'lot' + i + ':' + lot.type; (lot.district === 'blackwater' ? buildIslandLot : buildLot)(C, lot);
+    }
+  }
+  await stage(0.76, 'flooding the docks', 'docks');
   C.ctx = 'docks';
   buildDocks(C);
   C.ctx = 'scatter';
@@ -138,7 +187,9 @@ export async function installWorld(game) {
   C.ctx = 'edges';
   buildEdges(C, game.scene);
 
+  await stage(0.8, 'gluing it all together', 'finalize');
   const { chunks, verts } = geo.finalize(mats.M);
+  await stage(0.88, 'teaching the camera about walls', 'camera');
   let camCol = null;
   try { camCol = new CamColliders(geo.cam); } catch (e) { console.error('[world] camera colliders failed', e); }
   geo.cam = null;
@@ -151,6 +202,7 @@ export async function installWorld(game) {
   for (const o of isle.live) game.scene.add(o.object);
 
   // ---- atmosphere / fx
+  await stage(0.92, 'turning on the smog', 'atmosphere');
   const atmo = new Atmosphere(game, mats, lights);
   const particles = new Particles(game.scene, emitters);
   let post = null;
@@ -306,6 +358,16 @@ export async function installWorld(game) {
   try {
     if (/[?&]dev\b/.test(location.search)) {
       window.__worldAudit = (opts) => { const res = runAudit(auditRecs, layout, opts); console.table(res.counts); return res; };
+      // Which loaded modules are missing from index.html's <link rel=modulepreload> list (and which entries are stale)?
+      window.__preloadCheck = () => {
+        const pre = new Set([...document.querySelectorAll('link[rel=modulepreload]')].map((l) => l.href));
+        const loaded = new Set(performance.getEntriesByType('resource').filter((e) => /\.js$/.test(e.name) && e.initiatorType !== 'fetch' && !/peerjs/.test(e.name)).map((e) => e.name));
+        const base = new URL('.', location.href).href;
+        const rel = (u) => u.startsWith(base) ? u.slice(base.length) : u;
+        const missing = [...loaded].filter((u) => !pre.has(u)).map(rel), stale = [...pre].filter((u) => !loaded.has(u)).map(rel);
+        console.info('[preload] missing:\n' + missing.map((u) => `<link rel="modulepreload" href="${u}">`).join('\n') + '\n[preload] stale:\n' + stale.join('\n'));
+        return { missing, stale };
+      };
       // Visual-check helpers (dev only): step frames while the tab is hidden, frame a shot.
       window.__step = async (n = 10) => { for (let i = 0; i < n; i++) { await new Promise((r) => setTimeout(r, 16)); game._frame(); } };
       window.__shot = async (x, z, yaw, o = {}) => {
@@ -342,6 +404,7 @@ export async function installWorld(game) {
     }
   }
 
+  await stage(0.96, 'drawing the map', 'map');
   const map = new MapSystem(game, layout, { ext: MAP_EXT, coast: coastPolygon(), spots: ISLE_SPOTS });
 
   // dealer spots: a sidewalk point near the building line, deterministic per district
@@ -364,25 +427,92 @@ export async function installWorld(game) {
     }
   }
 
-  // ---- graphics settings
-  let gfx = 'high';
-  try { gfx = localStorage.getItem(GFX_KEY) === 'low' ? 'low' : 'high'; } catch { /* ignore */ }
-  const btn = { label: 'Graphics: High', hint: 'post-fx, shadows, detail', onClick: () => { setGraphics(gfx === 'high' ? 'low' : 'high'); game.ui.toast(`Graphics: ${gfx === 'high' ? 'High' : 'Low'}`, 'info', 1500); } };
+  // ---- graphics presets (pause menu -> Graphics). game.world.quality is the live preset; other modules can
+  // read its density hints: crowd / traffic (0..1 multipliers), npcDist / npcShadowDist (m), props (0..1).
+  // High is the reference look; Medium and Low trade detail for speed. 'auto' picks one from the device
+  // and steps down once if the game keeps running below ~30 fps.
+  const PRESETS = {
+    high: { id: 'high', label: 'High', pixelRatio: 1.75, shadows: true, shadowMap: 2048, shadowSize: 70, softShadows: true, shadowEvery: 1, post: true, msaa: 4, lights: 8, viewK: 1, detailDist: 230, dressDist: 240, props: 1, crowd: 1, traffic: 1, npcDist: 140, npcShadowDist: 35, rain: 1, miniHz: 30 },
+    medium: { id: 'medium', label: 'Medium', pixelRatio: 1.25, shadows: true, shadowMap: 1024, shadowSize: 55, softShadows: true, shadowEvery: 2, post: true, msaa: 2, lights: 4, viewK: 0.85, detailDist: 160, dressDist: 200, props: 0.7, crowd: 0.8, traffic: 0.8, npcDist: 115, npcShadowDist: 22, rain: 0.6, miniHz: 24 },
+    low: { id: 'low', label: 'Low', pixelRatio: 1, shadows: false, shadowMap: 1024, shadowSize: 55, softShadows: false, shadowEvery: 1, post: false, msaa: 0, lights: 2, viewK: 0.7, detailDist: 0, dressDist: 150, props: 0, crowd: 0.6, traffic: 0.6, npcDist: 95, npcShadowDist: 0, rain: 0.35, miniHz: 15 },
+  };
+  const ORDER = ['low', 'medium', 'high'];
+  const detected = detectPreset(game.renderer);
+  let choice = 'auto'; // 'auto' | 'high' | 'medium' | 'low' (what the player picked)
+  try { const v = localStorage.getItem(GFX_KEY); if (v === 'auto' || PRESETS[v]) choice = v; } catch { /* ignore */ }
+  let autoLevel = detected; // auto mode's current preset (may step down at runtime)
+  let gfx = choice === 'auto' ? autoLevel : choice;
+  const btn = { label: '', hint: '', onClick: () => openGraphicsMenu() };
   game.ui.menuButtons.push(btn);
-  const detailDist = { high: 230, low: 0 };
-  function setGraphics(q) {
-    gfx = q;
-    world.gfx = q;
-    btn.label = `Graphics: ${q === 'high' ? 'High' : 'Low'}`;
-    try { localStorage.setItem(GFX_KEY, q); } catch { /* ignore */ }
+  const labelBtn = () => {
+    btn.label = `Graphics: ${PRESETS[gfx].label}${choice === 'auto' ? ' (auto)' : ''}`;
+    btn.hint = 'quality / speed';
+  };
+  function openGraphicsMenu() {
+    const opt = (id, label, hint) => ({ label: (choice === id ? '▶ ' : '') + label, hint, onSelect: () => { setGraphics(id); game.ui.toast(`Graphics: ${PRESETS[gfx].label}${choice === 'auto' ? ' (auto)' : ''}`, 'info', 1600); } });
+    game.ui.dialog({
+      title: 'Graphics',
+      text: `Running at ~${world.stats.fps || '?'} fps. Pick lower settings if the city feels like a slideshow.`,
+      options: [
+        opt('auto', `Auto (${PRESETS[autoLevel].label})`, 'picks for this device'),
+        opt('high', 'High', 'full shadows, post-fx, max detail'),
+        opt('medium', 'Medium', 'lighter shadows, fewer lights & crowds'),
+        opt('low', 'Low', 'no shadows/post-fx, shorter view, thin crowds'),
+        { label: 'Back', onSelect: () => {} },
+      ],
+    });
+  }
+  function applyPreset(id) {
+    const prev = world.quality;
+    const q = PRESETS[id];
+    gfx = id;
+    world.gfx = id;
+    world.quality = { ...q, auto: choice === 'auto', detected };
+    world.postActive = !!(post && q.post);
+    labelBtn();
     atmo.setQuality(q);
-    game.renderer.shadowMap.enabled = q === 'high';
-    game.renderer.setPixelRatio(q === 'high' ? Math.min(devicePixelRatio, 1.75) : 1);
+    const r = game.renderer;
+    r.shadowMap.enabled = q.shadows;
+    const wantType = q.softShadows ? THREE.PCFSoftShadowMap : THREE.PCFShadowMap;
+    const typeChanged = r.shadowMap.type !== wantType;
+    r.shadowMap.type = wantType;
+    r.shadowMap.autoUpdate = true;
+    r.setPixelRatio(Math.min(devicePixelRatio, q.pixelRatio));
+    try { post?.setSamples(q.msaa); } catch (e) { console.warn('[world] msaa change failed', e); }
     game.resize();
-    game.scene.traverse((o) => { if (o.material && !Array.isArray(o.material)) o.material.needsUpdate = true; });
+    if (!prev || prev.shadows !== q.shadows || typeChanged || prev.lights !== q.lights) {
+      game.scene.traverse((o) => { if (o.material && !Array.isArray(o.material)) o.material.needsUpdate = true; });
+    }
+    game.bus.emit('graphics:change', { preset: id, quality: world.quality });
+  }
+  function setGraphics(q) {
+    if (q !== 'auto' && !PRESETS[q]) q = 'high';
+    choice = q;
+    try { localStorage.setItem(GFX_KEY, q); } catch { /* ignore */ }
+    if (q === 'auto') autoLevel = detected;
+    applyPreset(q === 'auto' ? autoLevel : q);
   }
   world.setGraphics = setGraphics;
-  if (gfx === 'low') setGraphics('low');
+  world.graphicsPresets = PRESETS;
+  applyPreset(gfx);
+
+  // Auto mode safety net: if real gameplay keeps averaging under ~30 fps, step down one preset (once per level).
+  let perfAcc = 0, perfN = 0, perfWarm = 0;
+  function autoTune(dt) {
+    if (choice !== 'auto' || game.devMode || !game.started || document.hidden || gfx === 'low') { perfAcc = perfN = 0; return; }
+    if (dt > 0.25 || game.ui.isBlocking()) return; // hitches, tab switches, menus
+    if ((perfWarm += dt) < 6) return;          // let shaders / textures settle after start
+    perfAcc += dt; perfN++;
+    if (perfAcc < 10) return;
+    const fps = perfN / perfAcc;
+    perfAcc = perfN = 0;
+    if (fps < 30) {
+      autoLevel = ORDER[Math.max(0, ORDER.indexOf(gfx) - 1)];
+      applyPreset(autoLevel);
+      perfWarm = 0;
+      game.ui.toast(`Running at ${Math.round(fps)} fps, so graphics dropped to <b>${PRESETS[autoLevel].label}</b>. Change it in Esc → Graphics.`, 'info', 5000);
+    }
+  }
 
   // ---- per-frame visuals (run from renderFn so they see this frame's camera)
   const tmpBox = new THREE.Vector3();
@@ -407,7 +537,7 @@ export async function installWorld(game) {
     try { particles.update(dt, cam, game.scene, 0.22 + env.daylight * 0.78); } catch (e) { if (!visuals._e3) { console.error('[world] particles', e); visuals._e3 = true; } }
     // chunk culling by distance
     const far = Math.min(900, atmo.fogFar + 160);
-    const dd = detailDist[gfx];
+    const Q = world.quality, dd = Q.detailDist, drd = Q.dressDist;
     for (const c of chunks) {
       const b = c.userData.box;
       tmpBox.set(Math.max(b.min.x, Math.min(cam.x, b.max.x)), 0, Math.max(b.min.z, Math.min(cam.z, b.max.z)));
@@ -415,7 +545,7 @@ export async function installWorld(game) {
       c.visible = d < far;
       const det = d < dd;
       for (const m of c.userData.detail) m.visible = det;
-      const dr = d < (gfx === 'high' ? 240 : 150);
+      const dr = d < drd;
       for (const m of c.userData.dress) m.visible = dr;
     }
     if (post) post.update(env);
@@ -427,12 +557,16 @@ export async function installWorld(game) {
     fpsAcc += dt; fpsN++;
     if (fpsAcc > 1) { world.stats.fps = Math.round(fpsN / fpsAcc); fpsAcc = 0; fpsN = 0; }
   }
+  let shadowFrame = 0;
   game.renderer.info.autoReset = false;
   game.renderFn = (dt) => {
     game.renderer.info.reset();
     visuals(dt);
-    if (post && gfx === 'high') post.render(dt);
-    else game.renderer.render(game.scene, game.camera);
+    // Medium refreshes the sun's shadow map every other frame (the sampling matrix stays in sync with the map).
+    const r = game.renderer, every = world.quality.shadowEvery;
+    if (every > 1) { r.shadowMap.autoUpdate = false; if ((++shadowFrame) % every === 0) r.shadowMap.needsUpdate = true; } else r.shadowMap.autoUpdate = true;
+    if (post && world.quality.post) post.render(dt);
+    else r.render(game.scene, game.camera);
     world.stats.calls = game.renderer.info.render.calls;
     world.stats.tris = game.renderer.info.render.triangles;
   };
@@ -444,6 +578,7 @@ export async function installWorld(game) {
     name: 'world',
     update(dt) {
       if (!game.started) return;
+      try { autoTune(dt); } catch { /* never let tuning break the frame */ }
       if (game.input.wasPressed('KeyM')) {
         if (map.panel && !map.panel.closed) map.panel.close();
         else if (!game.ui.isBlocking()) map.openFull();
@@ -458,6 +593,8 @@ export async function installWorld(game) {
   });
   game.bus.on('game:start', () => { map.district = null; });
 
+  stageMs[stName] = Math.round(performance.now() - stT);
+  world.stats.stages = stageMs;
   world.stats.buildMs = Math.round(performance.now() - t0);
   world.stats.islandWaterBoxes = C.islandWaterBoxes;
   console.info(`[world] Rotwell built in ${world.stats.buildMs}ms: ${layout.nodes.length} nodes, ${layout.edges.length} edges, ${layout.lots.length} lots, ${chunks.length} chunks, ${verts} verts, ${lights.length} light sources`);

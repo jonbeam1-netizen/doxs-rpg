@@ -7,8 +7,23 @@
 <meta name="description" content="Dox's RPG — a grimy 3D stick-figure life-sim RPG. Work, fight, deal, drive, and drag your friends along in co-op.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Special+Elite&family=Barlow+Condensed:wght@400;600;800&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="styles.css">
+<style>
+  /* Loading screen (inline so it paints before styles.css or any module arrives) */
+  #loading { position: fixed; inset: 0; z-index: 100; display: flex; flex-direction: column; align-items: center; justify-content: center;
+    background: radial-gradient(ellipse at 50% 40%, #1a1511 0%, #070605 70%); color: #d8ccb0; font-family: 'Barlow Condensed', 'Arial Narrow', sans-serif;
+    transition: opacity .45s; padding: 0 16px; box-sizing: border-box; text-align: center; }
+  #loading.done { opacity: 0; pointer-events: none; }
+  #loading .loading-title { font-family: 'Special Elite', monospace; font-size: clamp(40px, 9vw, 72px); color: #e8dcc0; letter-spacing: 2px; text-shadow: 3px 3px 0 #7a1410; }
+  #loading .loading-bar { width: min(460px, 86vw); height: 14px; margin-top: 22px; background: #15110e; border: 2px solid #3a3027; border-radius: 3px; overflow: hidden; box-shadow: inset 0 2px 6px #000; }
+  #loading .loading-fill { height: 100%; width: 0%; background: repeating-linear-gradient(-45deg, #9a2a1c 0 10px, #7a1c12 10px 20px); background-size: 28px 28px;
+    animation: loadstripe 0.8s linear infinite; transition: width .25s ease-out; box-shadow: 0 0 10px rgba(200, 60, 30, .45); }
+  @keyframes loadstripe { to { background-position: 28px 0; } }
+  #loading .loading-row { width: min(460px, 86vw); display: flex; justify-content: space-between; gap: 12px; margin-top: 6px; font-size: 15px; color: #8f8470; letter-spacing: .5px; text-transform: uppercase; }
+  #loading .loading-sub { margin-top: 26px; color: #b8ab90; font-size: clamp(16px, 2.6vw, 20px); max-width: 560px; min-height: 2.6em; line-height: 1.3; transition: opacity .3s; }
+</style>
 <script type="importmap">
 {
   "imports": {
@@ -17,7 +32,85 @@
   }
 }
 </script>
-<script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
+<!-- Preload the whole module graph up front. Without this the browser discovers imports one level at a time
+     (main -> index -> manager -> data ...), which took ~12 s on GitHub Pages; with it everything downloads in parallel.
+     No build step, so this list is hand-maintained: after adding/removing a module, open a ?dev session and run
+     __preloadCheck() in the console to get the missing/stale entries. A missing entry only costs speed; a stale one a 404. -->
+<link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js">
+<link rel="modulepreload" href="src/main.js">
+<link rel="modulepreload" href="src/core/game.js"><link rel="modulepreload" href="src/player/player.js">
+<link rel="modulepreload" href="src/audio/ambience.js"><link rel="modulepreload" href="src/ui/title.js">
+<link rel="modulepreload" href="src/audio/radio.js"><link rel="modulepreload" href="src/progress/index.js">
+<link rel="modulepreload" href="src/phone/index.js"><link rel="modulepreload" href="src/npc/index.js">
+<link rel="modulepreload" href="src/vehicles/index.js"><link rel="modulepreload" href="src/systems/index.js">
+<link rel="modulepreload" href="src/world/index.js"><link rel="modulepreload" href="src/quests/index.js">
+<link rel="modulepreload" href="src/skate/index.js"><link rel="modulepreload" href="src/heists/index.js">
+<link rel="modulepreload" href="src/island/index.js"><link rel="modulepreload" href="src/interact/index.js">
+<link rel="modulepreload" href="src/net/index.js"><link rel="modulepreload" href="src/core/input.js">
+<link rel="modulepreload" href="src/core/state.js"><link rel="modulepreload" href="src/core/time.js">
+<link rel="modulepreload" href="src/core/events.js"><link rel="modulepreload" href="src/core/physics.js">
+<link rel="modulepreload" href="src/core/interactions.js"><link rel="modulepreload" href="src/core/locations.js">
+<link rel="modulepreload" href="src/core/net-base.js"><link rel="modulepreload" href="src/ui/ui.js">
+<link rel="modulepreload" href="src/entities/stickman.js"><link rel="modulepreload" href="src/core/util.js">
+<link rel="modulepreload" href="src/ui/creator.js"><link rel="modulepreload" href="src/progress/perks.js">
+<link rel="modulepreload" href="src/progress/achievements.js"><link rel="modulepreload" href="src/progress/milestones.js">
+<link rel="modulepreload" href="src/data/drugs.js"><link rel="modulepreload" href="src/data/locations.js">
+<link rel="modulepreload" href="src/data/quests.js"><link rel="modulepreload" href="src/npc/manager.js">
+<link rel="modulepreload" href="src/npc/police.js"><link rel="modulepreload" href="src/npc/talk.js">
+<link rel="modulepreload" href="src/data/weapons.js"><link rel="modulepreload" href="src/npc/fx.js">
+<link rel="modulepreload" href="src/npc/combat.js"><link rel="modulepreload" href="src/npc/ambient.js">
+<link rel="modulepreload" href="src/data/cars.js"><link rel="modulepreload" href="src/vehicles/car.js">
+<link rel="modulepreload" href="src/vehicles/shops.js"><link rel="modulepreload" href="src/vehicles/audio.js">
+<link rel="modulepreload" href="src/vehicles/models.js"><link rel="modulepreload" href="src/vehicles/fx.js">
+<link rel="modulepreload" href="src/vehicles/traffic.js"><link rel="modulepreload" href="src/vehicles/race.js">
+<link rel="modulepreload" href="src/systems/sfx.js"><link rel="modulepreload" href="src/systems/common.js">
+<link rel="modulepreload" href="src/systems/ui-kit.js"><link rel="modulepreload" href="src/vehicles/police.js">
+<link rel="modulepreload" href="src/systems/effects.js"><link rel="modulepreload" href="src/systems/market.js">
+<link rel="modulepreload" href="src/systems/items.js"><link rel="modulepreload" href="src/systems/jobs.js">
+<link rel="modulepreload" href="src/systems/delivery.js"><link rel="modulepreload" href="src/systems/home.js">
+<link rel="modulepreload" href="src/systems/shops.js"><link rel="modulepreload" href="src/systems/civic.js">
+<link rel="modulepreload" href="src/systems/training.js"><link rel="modulepreload" href="src/systems/dating.js">
+<link rel="modulepreload" href="src/systems/nightlife.js"><link rel="modulepreload" href="src/systems/casino.js">
+<link rel="modulepreload" href="src/systems/fightclub.js"><link rel="modulepreload" href="src/systems/places.js">
+<link rel="modulepreload" href="src/systems/news.js"><link rel="modulepreload" href="src/island/data.js">
+<link rel="modulepreload" href="src/island/common.js"><link rel="modulepreload" href="src/island/arcade.js">
+<link rel="modulepreload" href="src/island/fishing.js"><link rel="modulepreload" href="src/island/travel.js">
+<link rel="modulepreload" href="src/island/ambience.js"><link rel="modulepreload" href="src/island/places.js">
+<link rel="modulepreload" href="src/interact/place.js"><link rel="modulepreload" href="src/interact/meshes.js">
+<link rel="modulepreload" href="src/interact/street.js"><link rel="modulepreload" href="src/interact/jobs.js">
+<link rel="modulepreload" href="src/interact/events.js"><link rel="modulepreload" href="src/interact/collect.js">
+<link rel="modulepreload" href="src/world/layout.js"><link rel="modulepreload" href="src/world/roads.js">
+<link rel="modulepreload" href="src/world/geo.js"><link rel="modulepreload" href="src/world/mats.js">
+<link rel="modulepreload" href="src/world/buildings.js"><link rel="modulepreload" href="src/world/landmarks.js">
+<link rel="modulepreload" href="src/world/districts.js"><link rel="modulepreload" href="src/world/atmosphere.js">
+<link rel="modulepreload" href="src/world/particles.js"><link rel="modulepreload" href="src/world/post.js">
+<link rel="modulepreload" href="src/world/minimap.js"><link rel="modulepreload" href="src/world/textures.js">
+<link rel="modulepreload" href="src/world/island.js"><link rel="modulepreload" href="src/world/island-layout.js">
+<link rel="modulepreload" href="src/world/signals.js"><link rel="modulepreload" href="src/world/audit.js">
+<link rel="modulepreload" href="src/world/camcollide.js"><link rel="modulepreload" href="src/quests/engine.js">
+<link rel="modulepreload" href="src/quests/world.js"><link rel="modulepreload" href="src/quests/panels.js">
+<link rel="modulepreload" href="src/quests/places.js"><link rel="modulepreload" href="src/quests/street.js">
+<link rel="modulepreload" href="src/skate/boards.js"><link rel="modulepreload" href="src/skate/pose.js">
+<link rel="modulepreload" href="src/skate/audio.js"><link rel="modulepreload" href="src/skate/vendor.js">
+<link rel="modulepreload" href="src/data/heists.js"><link rel="modulepreload" href="src/heists/manager.js">
+<link rel="modulepreload" href="src/heists/planner.js"><link rel="modulepreload" href="src/net/transport.js">
+<link rel="modulepreload" href="src/net/avatars.js"><link rel="modulepreload" href="src/net/chat.js">
+<link rel="modulepreload" href="src/data/courses.js"><link rel="modulepreload" href="src/data/jobs.js">
+<link rel="modulepreload" href="src/npc/names.js"><link rel="modulepreload" href="src/data/items.js">
+<link rel="modulepreload" href="src/npc/weapons-mesh.js"><link rel="modulepreload" href="src/core/materials.js">
+<link rel="modulepreload" href="src/world/props.js"><link rel="modulepreload" href="src/npc/crowd.js">
+<link rel="modulepreload" href="src/quests/goals.js"><link rel="modulepreload" href="src/net/labels.js">
+<link rel="modulepreload" href="src/heists/hud.js"><link rel="modulepreload" href="src/heists/meshes.js">
+<link rel="modulepreload" href="src/heists/minigames.js"><link rel="modulepreload" href="src/data/barks.js">
+<link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/postprocessing/EffectComposer.js"><link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/postprocessing/RenderPass.js">
+<link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/postprocessing/UnrealBloomPass.js"><link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/postprocessing/ShaderPass.js">
+<link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/postprocessing/OutputPass.js"><link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/postprocessing/Pass.js">
+<link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/postprocessing/MaskPass.js"><link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/shaders/CopyShader.js">
+<link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/shaders/LuminosityHighPassShader.js"><link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/shaders/OutputShader.js">
+<link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/utils/BufferGeometryUtils.js">
+<link rel="modulepreload" href="src/touch/index.js"><link rel="modulepreload" href="src/touch/touch.js"><link rel="modulepreload" href="src/touch/gamepad.js">
+<link rel="modulepreload" href="src/life/index.js"><link rel="modulepreload" href="src/life/common.js"><link rel="modulepreload" href="src/life/birds.js"><link rel="modulepreload" href="src/life/dogs.js"><link rel="modulepreload" href="src/life/bits.js"><link rel="modulepreload" href="src/life/rats.js"><link rel="modulepreload" href="src/life/sfx.js">
+<script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js" defer></script>
 <script>
   // Test sessions (?dev or ?mute) are silent: every AudioContext stays suspended
   // and speech synthesis is a no-op, whichever module creates them.
@@ -51,7 +144,64 @@
 <div id="title-layer"></div>
 <div id="grain"></div>
 <div id="vignette"></div>
-<div id="loading"><div class="loading-title">DOX'S RPG</div><div class="loading-sub">scraping the city off the pavement...</div></div>
+<div id="loading">
+  <div class="loading-title">DOX'S RPG</div>
+  <div class="loading-bar"><div class="loading-fill"></div></div>
+  <div class="loading-row"><span class="loading-step">downloading the city...</span><span class="loading-pct">0%</span></div>
+  <div class="loading-sub">scraping the city off the pavement...</div>
+</div>
+<script>
+  // Loading screen: window.__loading.progress(fraction 0..1, stepLabel), .done(), .fail(msg).
+  // The first third of the bar is the module download (counted as each preloaded module arrives);
+  // the rest is driven by boot() in src/main.js (world build stages, each module install, shader warm-up).
+  (function () {
+    var root = document.getElementById('loading');
+    var fill = root.querySelector('.loading-fill'), pct = root.querySelector('.loading-pct');
+    var step = root.querySelector('.loading-step'), sub = root.querySelector('.loading-sub');
+    var TIPS = [
+      "Tip: The bank can't rob you if you're already broke. Checkmate, capitalism.",
+      'Tip: Energy drinks count as a meal if you believe hard enough.',
+      'Tip: One star and the cops jog after you. Five stars and the sky starts asking questions.',
+      'Tip: Break line of sight to shake the cops. Hiding behind a hobo counts.',
+      "Tip: Hold C to block. Or don't, and let your face do it.",
+      'Tip: Z rolls out of the way. Rolling into traffic is also, technically, out of the way.',
+      "Tip: Low on HP? Y quick-heals. Low on dignity? There's no key for that.",
+      'Tip: Street product is cheaper in some districts than others. Buy low, sell high, run fast.',
+      'Tip: F steals a car. Pressing F again does not un-steal it.',
+      'Tip: Send your friends an invite link and ruin their evening too. Co-op!',
+      'Tip: Sleep at home. Energy comes back. Self-respect is sold separately.',
+      'Tip: Heists pay big. Prison food does not.',
+      'Tip: Choppy? Esc → Graphics. Your laptop fan will send a thank-you card.',
+      'Loading: teaching the pigeons to steal fries...',
+      'Loading: rusting the fire escapes to city code...',
+      "Loading: misplacing this year's road budget...",
+      'Loading: calibrating the smog to "eye-watering"...',
+      'Loading: hiring the cheapest contractors in Rotwell...',
+      'Loading: refilling the potholes with fresh potholes...',
+      'Loading: bribing the building inspector (again)...',
+    ];
+    var cur = 0, shown = -1, tipI = Math.floor(Math.random() * TIPS.length), obs = null;
+    function tip() { tipI = (tipI + 1) % TIPS.length; sub.style.opacity = '0'; setTimeout(function () { sub.textContent = TIPS[tipI]; sub.style.opacity = '1'; }, 300); }
+    sub.textContent = TIPS[tipI];
+    var tipT = setInterval(tip, 3600);
+    function draw() { if (cur > shown) { shown = cur; fill.style.width = (shown * 100).toFixed(1) + '%'; pct.textContent = Math.floor(shown * 100) + '%'; } }
+    var api = window.__loading = {
+      t0: performance.now(),
+      progress: function (f, label) { if (f > cur) cur = Math.min(1, f); if (label) step.textContent = label; draw(); },
+      done: function () { api.progress(1, 'here we go'); clearInterval(tipT); if (obs) obs.disconnect(); root.classList.add('done'); setTimeout(function () { root.remove(); }, 500); },
+      fail: function (msg) { clearInterval(tipT); if (obs) obs.disconnect(); step.textContent = 'it broke'; sub.style.opacity = '1'; sub.textContent = msg; },
+    };
+    // module download progress: count arriving scripts against the preload list
+    var want = document.querySelectorAll('link[rel=modulepreload]').length || 120, got = 0;
+    try {
+      obs = new PerformanceObserver(function (list) {
+        list.getEntries().forEach(function (e) { if (/\.js(\?|$)/.test(e.name)) got++; });
+        if (cur < 0.35) api.progress(Math.min(0.34, (got / want) * 0.34), got < want ? 'downloading the city... ' + Math.min(got, want) + '/' + want : 'unpacking...');
+      });
+      obs.observe({ type: 'resource', buffered: true });
+    } catch (e) { /* old browser: the bar starts at the boot steps */ }
+  })();
+</script>
 <script type="module" src="src/main.js"></script>
 </body>
 </html>

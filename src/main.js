@@ -14,17 +14,46 @@ import { installHeists } from './heists/index.js';
 import { installSkate } from './skate/index.js';
 import { installIsland } from './island/index.js';
 import { installInteract } from './interact/index.js';
+import { installLife } from './life/index.js';
 import { installNet } from './net/index.js';
 
+// ---- loading screen plumbing (the bar itself lives in index.html: window.__loading)
+const bootT0 = performance.now();
+const bootTimes = {};
+function loadProgress(f, label) { try { window.__loading?.progress(f, label); } catch { /* cosmetic */ } }
+// Let the browser paint the loading bar between heavy steps. rAF alone never fires in a hidden
+// tab, so a short timeout backs it up.
+function nextFrame() {
+  const t = performance.now();
+  return new Promise((resolve) => {
+    let done = false;
+    const go = () => { if (!done) { done = true; bootTimes.yields = (bootTimes.yields ?? 0) + Math.round(performance.now() - t); resolve(); } };
+    requestAnimationFrame(() => setTimeout(go, 0));
+    setTimeout(go, 20);
+  });
+}
+const INSTALL_LABELS = {
+  installNPCs: 'hiring pedestrians, thugs and cops', installVehicles: 'hot-wiring the traffic', installSystems: 'opening the shops, bars and banks',
+  installQuests: 'writing everybody\'s problems', installIsland: 'towing Blackwater Isle into place', installHeists: 'casing the joints',
+  installSkate: 'waxing the curbs', installProgress: 'printing participation trophies', installPhone: 'cracking your phone screen',
+  installInteract: 'leaving trash everywhere', installNet: 'running cables to your friends',
+};
+
 async function boot() {
+  loadProgress(0.35, 'starting the engine');
   const game = new Game(document.getElementById('game'));
+  game.bootTimes = bootTimes;
+  bootTimes.modules = Math.round(bootT0 - (window.__loading?.t0 ?? 0));
   window.game = game; // handy in the console
+  import('./touch/index.js').then((m) => m.installTouch(game)).catch((e) => console.error('[boot] touch/gamepad controls failed', e));
   game.devMode = new URLSearchParams(location.search).has('dev');
   game.titleButtons = [];
 
   installAudio(game);
   try { installRadio(game); } catch (e) { console.error('[boot] radio failed', e); }
-  await installWorld(game);
+  let tStep = performance.now();
+  await installWorld(game, { progress: (f, label) => loadProgress(0.36 + f * 0.44, label), nextFrame });
+  bootTimes.world = Math.round(performance.now() - tStep);
 
   game.cameraRig = new CameraRig(game);
   game.player = new Player(game);
@@ -33,8 +62,14 @@ async function boot() {
   game.player.spawn(sp.x, sp.z, sp.facing ?? 0);
   game.cameraRig.follow(game.player.group);
 
-  for (const install of [installNPCs, installVehicles, installSystems, installQuests, installIsland, installHeists, installSkate, installProgress, installPhone, installInteract, installNet]) {
+  const installs = [installNPCs, installVehicles, installSystems, installQuests, installIsland, installHeists, installSkate, installProgress, installPhone, installInteract, installLife, installNet];
+  for (let i = 0; i < installs.length; i++) {
+    const install = installs[i];
+    loadProgress(0.8 + (i / installs.length) * 0.16, INSTALL_LABELS[install.name] ?? 'bolting on ' + install.name.replace(/^install/, '').toLowerCase());
+    await nextFrame();
+    tStep = performance.now();
     try { await install(game); } catch (e) { console.error('[boot] install failed:', install.name, e); }
+    bootTimes[install.name.replace(/^install/, '').toLowerCase()] = Math.round(performance.now() - tStep);
   }
 
   game.addSystem(game.cameraRig);
@@ -46,7 +81,7 @@ async function boot() {
   game.addSystem({
     name: 'overlays',
     update() {
-      const post = !!game.renderFn;
+      const post = game.world?.postActive ?? !!game.renderFn;
       if (post === hadPost) return;
       hadPost = post;
       for (const el of overlays) el?.classList.toggle('hidden', post);
@@ -79,8 +114,30 @@ async function boot() {
   game.bus.on('time:day', () => { if (game.started) game.state.save(); });
   addEventListener('beforeunload', () => { if (game.started) game.state.save(); });
 
+  // Compile every material's shader while the loading screen is still up (in parallel where the
+  // browser supports it), so the first rendered frame doesn't freeze for a third of a second.
+  loadProgress(0.97, 'mixing the paint (shaders)');
+  await nextFrame();
+  tStep = performance.now();
+  try {
+    const r = game.renderer;
+    if (r.compileAsync) await Promise.race([r.compileAsync(game.scene, game.camera), new Promise((res) => setTimeout(res, 4000))]);
+    else r.compile(game.scene, game.camera);
+  } catch (e) { console.warn('[boot] shader warm-up skipped', e); }
+  bootTimes.shaders = Math.round(performance.now() - tStep);
+  // One real frame under the loading screen: uploads the visible city's buffers/textures and builds the
+  // shadow + post-fx shaders, so the first frame you actually see doesn't hitch.
+  loadProgress(0.99, 'hosing down the streets');
+  await nextFrame();
+  tStep = performance.now();
+  try { game._frame(); } catch (e) { console.warn('[boot] warm-up frame failed', e); }
+  bootTimes.warmFrame = Math.round(performance.now() - tStep);
+
   game.start();
-  document.getElementById('loading')?.remove();
+  bootTimes.total = Math.round(performance.now() - (window.__loading?.t0 ?? 0));
+  if (window.__loading) window.__loading.done();
+  else document.getElementById('loading')?.remove();
+  console.info('[boot] ready in', bootTimes.total, 'ms', bootTimes);
 
   const params = new URLSearchParams(location.search);
   if (params.has('dev')) {
@@ -97,6 +154,7 @@ async function boot() {
 
 boot().catch((e) => {
   console.error(e);
-  const l = document.getElementById('loading');
-  if (l) l.querySelector('.loading-sub').textContent = 'Something exploded while loading. Check the console (F12).';
+  const msg = 'Something exploded while loading. Check the console (F12).';
+  if (window.__loading) window.__loading.fail(msg);
+  else { const l = document.getElementById('loading'); if (l) l.querySelector('.loading-sub').textContent = msg; }
 });

@@ -165,9 +165,12 @@ export class MapSystem {
       if (Math.hypot(wp.x - f.x, wp.z - f.z) < 7) { g.world.markers.delete('waypoint'); g.ui.toast('Waypoint reached. Now what?', 'info', 1800); }
     } else this.beacon.visible = false;
 
-    // minimap (every other frame)
+    // minimap: redrawn at a fixed rate (~30 Hz on High) instead of every other frame, so 144 Hz
+    // screens don't pay for 72 redraws a second
     this.frame++;
-    if (this.ctx && this.frame % 2 === 0) this.drawMini(f);
+    this.miniT = (this.miniT ?? 1) + dt;
+    const hz = g.world?.quality?.miniHz ?? 30;
+    if (this.ctx && this.miniT >= 0.9 / hz) { this.miniT = 0; this.drawMini(f); }
     if (this.panel && !this.panel.closed && this.frame % 10 === 0) this.drawFull();
   }
 

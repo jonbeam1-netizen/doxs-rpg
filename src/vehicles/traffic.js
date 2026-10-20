@@ -81,7 +81,7 @@ export class Traffic {
     if (t.isBetween(1, 5)) n *= 0.35;
     else if (t.isNight) n *= 0.7;
     else if (t.isBetween(7, 9) || t.isBetween(17, 19)) n *= 1.25; // rush hour
-    return Math.round(n);
+    return Math.round(n * (this.game.world?.quality?.traffic ?? 1)); // graphics preset traffic density
   }
 
   // A curbside parking spot on a street that has a parking lane (world roads.info[i].park), tight

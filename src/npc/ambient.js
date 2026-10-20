@@ -108,7 +108,7 @@ export class Ambient {
     let target = (night ? 14 + danger : 20 + danger * 2) * 0.6;
     if (lateNight) target *= 0.7;
     if (pl.vehicle) target *= 0.8;
-    target = Math.round(target * this.density);
+    target = Math.round(target * this.density * (g.world?.quality?.crowd ?? 1)); // graphics preset crowd density
     const fill = !this.filled;
     let spawned = 0;
     while (localCount < target && spawned < (fill ? 30 : 2)) {
