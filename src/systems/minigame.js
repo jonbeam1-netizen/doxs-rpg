@@ -106,6 +106,90 @@ function injectMgStyles() {
   .mg-chip { display:inline-block; padding: 2px 8px; margin: 2px; border-radius: 3px; background:#2a231b; border: 1px solid #4a4034; font-size: 15px; }
   .mg-chip.on { background: #3c5a26; border-color: #7fbf4d; }
   .mg-chip.no { background: #4a0e0a; border-color: #e2402f; text-decoration: line-through; }
+  /* canvas scenes (mg/art.js) */
+  .mg-stage.mg-cv { padding: 0; min-height: 0; background: #0f0d0b; }
+  .mg-scene { position: relative; line-height: 0; }
+  .mg-canvas { display: block; width: 100%; height: auto; touch-action: manipulation; }
+  .mg-ui { position: absolute; inset: 0; pointer-events: none; line-height: 1.25; }
+  .mg-ui .on { pointer-events: auto; }
+  .mg-ic { display: inline-block; vertical-align: middle; image-rendering: auto; pointer-events: none; }
+  .mg-pad button .mg-ic { width: 34px !important; height: 34px !important; margin-bottom: 1px; }
+  .mg-pad button.ic { flex: 1 1 54px; max-width: 120px; min-height: 60px; font-size: 16px; padding: 4px 3px; }
+  .mg-pad button.ic small { font-size: 12px; }
+  /* intro: icon rows instead of a wall of text */
+  .mg-howgrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 6px; margin: 8px 0 4px; }
+  .mg-hw { display: flex; align-items: center; gap: 8px; background: #1b1713; border: 1px solid #3b342b; border-radius: 6px; padding: 5px 8px; font-size: 16px; line-height: 1.2; }
+  .mg-hw .mg-ic { flex: 0 0 auto; }
+  .mg-hw b { color: var(--energy); }
+  .mg-hw .ks { white-space: nowrap; }
+  .mg-howfoot { font-size: 15px; color: var(--bone-dim); margin-top: 4px; }
+  .mg-howfoot b { color: var(--bone); }
+  .mg-how.grid { background: none; border: 0; padding: 0; margin: 4px 0; }
+  @media (max-width: 520px) { .mg-howgrid { grid-template-columns: 1fr; } .mg-pad button { min-height: 52px; } .mg-pad button.ic { flex-basis: 54px; } }
+  /* HTML-in-scene helpers */
+  .mg-ans { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 8px; }
+  .mg-ans button { min-height: 56px; font-size: 17px; text-align: left; display: flex; align-items: center; gap: 8px; padding: 6px 10px; background: #efe8d6; color: #141210; border: 2px solid #4a4034;
+    border-bottom-width: 5px; border-radius: 6px; cursor: pointer; font-family: var(--font-body); line-height: 1.15; touch-action: manipulation; }
+  .mg-ans button i { font-style: normal; flex: 0 0 30px; height: 30px; border-radius: 50%; background: #2a231b; color: #ffd84a; display: grid; place-items: center; font-family: var(--font-title); font-size: 17px; }
+  .mg-ans button.right { background: #b9dc96; border-color: #3c5a26; } .mg-ans button.wrong { background: #e8a090; border-color: #6d1510; }
+  @media (max-width: 520px) { .mg-ans { grid-template-columns: 1fr; } }
+  /* quiz classroom */
+  .qz-room { display: flex; gap: 6px; align-items: stretch; background: linear-gradient(#3a3026, #241a12); padding: 8px 8px 10px; border-radius: 4px; }
+  .qz-prof { flex: 0 0 104px; align-self: flex-end; }
+  .qz-board { flex: 1; position: relative; background: radial-gradient(ellipse at 30% 20%, #3f6a4a, #24402e 75%); border: 8px solid #7a5228; border-radius: 4px;
+    box-shadow: inset 0 0 30px rgba(0,0,0,.55), 0 3px 0 #000; padding: 6px 12px 12px; color: #eef0e8; font-family: var(--font-title); min-height: 150px; line-height: 1.3; }
+  .qz-head { display: flex; justify-content: space-between; font-size: 13px; opacity: .75; letter-spacing: 1px; }
+  .qz-q { font-size: 21px; margin-top: 6px; text-shadow: 0 0 2px rgba(255,255,255,.45); }
+  .qz-stamp { position: absolute; right: 8px; bottom: 4px; display: flex; align-items: center; gap: 4px; font-size: 22px; }
+  .qz-stamp:not(:empty) { animation: mgPop .3s ease-out; }
+  @media (max-width: 520px) { .qz-prof { flex-basis: 64px; } .qz-q { font-size: 17px; } }
+  /* lineup witness card */
+  .mg-wit { background: #efe8d6; color: #141210; border-radius: 4px 4px 0 0; padding: 6px 10px 6px 30px; position: relative; line-height: 1.25; font-size: 16.5px;
+    background-image: repeating-linear-gradient(#efe8d6 0 21px, #c8d4e0 21px 22px); border-left: 0; }
+  .mg-wit::before { content: ''; position: absolute; left: 20px; top: 0; bottom: 0; width: 2px; background: #d27a7a; }
+  .mg-wit small { display: block; font-size: 13px; color: #6a5a4a; }
+  .mg-wit-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
+  .mg-wit-chips span { display: inline-flex; align-items: center; gap: 4px; background: #fff; border: 2px solid #141210; border-radius: 16px; padding: 1px 9px 1px 3px; font-weight: 700; font-size: 15px; }
+  .mg-wit-chips i { font-style: normal; }
+  /* email: Grimco Mail 97 */
+  .em-mon { background: linear-gradient(#cfc6ae, #a9a08a); padding: 10px 10px 14px; border-radius: 10px; border: 2px solid #000; box-shadow: inset 0 2px 0 #e8e0c8; position: relative; }
+  .em-scr { background: #0f7a7a; border: 3px solid #222; border-radius: 4px; position: relative; overflow: hidden; font-family: Tahoma, Verdana, sans-serif; color: #111; line-height: 1.2; }
+  .em-title { display: flex; justify-content: space-between; align-items: center; background: linear-gradient(90deg, #0a246a, #3a6ea5); color: #fff; font-size: 13px; font-weight: 700; padding: 3px 6px; }
+  .em-wb i { display: inline-block; width: 16px; height: 14px; margin-left: 2px; background: #c0c0c0; color: #000; font-style: normal; font-size: 10px; line-height: 13px; text-align: center; border: 1px solid #fff; border-right-color: #404040; border-bottom-color: #404040; }
+  .em-body { display: flex; background: #d4d0c8; min-height: 268px; }
+  .em-side { width: 118px; flex: 0 0 auto; background: #ece9d8; border-right: 2px solid #9a968a; padding: 4px; display: flex; flex-direction: column; gap: 2px; }
+  .em-f { display: flex; align-items: center; gap: 4px; font-size: 13px; padding: 3px 4px; border-radius: 2px; cursor: pointer; }
+  .em-f span { flex: 1; } .em-f b { font-size: 12px; background: #fff; border: 1px solid #888; border-radius: 8px; padding: 0 5px; min-width: 14px; text-align: center; }
+  .em-f.on { background: #316ac5; color: #fff; } .em-f.on b { color: #000; }
+  .em-f.bump b { animation: mgPop .3s ease-out; background: #ffd84a; }
+  .em-mug { margin-top: auto; text-align: center; font-size: 30px; line-height: 1; } .em-mug small { display: block; font-size: 8px; color: #6a5a4a; }
+  .em-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+  .em-list { background: #fff; border-bottom: 2px solid #9a968a; }
+  .em-row { display: flex; align-items: center; gap: 6px; padding: 2px 6px; font-size: 13px; border-bottom: 1px solid #e4e0d4; white-space: nowrap; overflow: hidden; color: #555; }
+  .em-row.sel { background: #316ac5; color: #fff; font-weight: 700; }
+  .em-from { width: 128px; flex: 0 0 auto; overflow: hidden; text-overflow: ellipsis; }
+  .em-subj { flex: 1; overflow: hidden; text-overflow: ellipsis; } .em-tm { font-size: 11px; opacity: .7; }
+  .em-imp { display: inline-block; font-style: normal; color: #fff; background: #c0201a; border-radius: 3px; padding: 0 4px; margin-right: 3px; font-weight: 900; }
+  .em-more { font-size: 11px; color: #888; padding: 1px 6px; }
+  .em-prev { flex: 1; padding: 8px 10px; background: #fffef8; position: relative; }
+  .em-prev.em-in { animation: emIn .22s ease-out; }
+  @keyframes emIn { from { transform: translateY(14px); opacity: 0; } to { transform: none; opacity: 1; } }
+  .em-ph { display: flex; gap: 10px; align-items: center; }
+  .em-pf { font-weight: 700; font-size: 17px; } .em-pa { font-size: 13px; color: #555; font-family: 'Courier New', monospace; }
+  .em-ps { font-size: 19px; font-weight: 700; margin: 6px 0 2px; font-family: var(--font-body); line-height: 1.15; }
+  .em-pb { font-size: 13px; color: #444; font-style: italic; }
+  .em-pat { display: flex; align-items: center; gap: 6px; margin-top: 6px; } .em-pat .mg-time { background: #ccc; }
+  .em-fx { position: absolute; inset: 0; pointer-events: none; }
+  .em-ghost { position: absolute; left: 118px; right: 0; bottom: 0; height: 130px; transition: none; animation-duration: .45s; animation-fill-mode: forwards; animation-timing-function: ease-in; box-shadow: 0 4px 12px rgba(0,0,0,.5); }
+  .em-ghost.go-r { animation-name: emGoR; } .em-ghost.go-hr { animation-name: emGoHR; } .em-ghost.go-d { animation-name: emGoD; } .em-ghost.go-x { animation-name: emGoD; }
+  @keyframes emGoR { to { transform: translate(120%, -40%) rotate(12deg) scale(.4); opacity: 0; } }
+  @keyframes emGoHR { to { transform: translate(-80%, -100%) scale(.15); opacity: 0; } }
+  @keyframes emGoD { 50% { transform: scale(.6) rotate(-8deg); } to { transform: translate(-60%, -40%) scale(.05) rotate(-40deg); opacity: 0; } }
+  .em-stamp { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); display: flex; align-items: center; gap: 6px; font-family: var(--font-title); font-size: 30px;
+    padding: 4px 14px 4px 6px; border: 4px solid currentColor; border-radius: 8px; background: rgba(255,255,255,.88); animation: emStamp .7s ease-out forwards; }
+  .em-stamp.ok { color: #2e7a1e; } .em-stamp.bad { color: #c0201a; }
+  @keyframes emStamp { 0% { transform: translate(-50%, -50%) scale(2.2) rotate(-10deg); opacity: 0; } 20% { transform: translate(-50%, -50%) scale(1) rotate(-6deg); opacity: 1; } 75% { opacity: 1; } 100% { transform: translate(-50%, -60%) scale(1) rotate(-6deg); opacity: 0; } }
+  @media (max-width: 520px) { .em-side { width: 70px; } .em-f span { display: none; } .em-from { width: 70px; } .em-mug { display: none; } .em-ghost { left: 70px; } }
   `;
   document.head.appendChild(el);
 }
@@ -158,7 +242,7 @@ export function installMinigames(game) {
       wrap.innerHTML = `
         <div class="mg-intro">
           ${opts.intro ? `<div class="sys-intro">${opts.intro}</div>` : ''}
-          <div class="mg-how">${how || ''}</div>
+          <div class="mg-how ${String(how || '').includes('mg-howgrid') ? 'grid' : ''}">${how || ''}</div>
           ${opts.stakes ? `<div class="mg-stakes">${opts.stakes}</div>` : ''}
           <div class="mg-best">Best grade: ${prevBest ? `<b style="color:${GRADE_COLOR[prevBest]}">${prevBest}</b>` : '<i>never played</i>'} · Grade multiplies the payout: <b>F 0.6×</b> … <b>C 1×</b> … <b>S 1.5×</b>${def.statGame ? ' (stats: up to 1.3×)' : ''}</div>
           <div class="mg-row"><button class="ui-btn primary" data-start>${opts.playLabel || 'Start'} <kbd>Enter</kbd></button><button class="ui-btn" data-skip>${opts.skipLabel || 'Skip (auto, 80%)'} <kbd>X</kbd></button></div>
@@ -217,6 +301,7 @@ export function installMinigames(game) {
         },
         flashKey(k) { const b = wrap.querySelector(`.mg-pad [data-k="${k}"]`); if (b) { b.classList.add('hit'); setTimeout(() => b.classList.remove('hit'), 90); } },
         done(score, info = {}) { if (!finished) finish(clamp(score, 0, 1), info); },
+        press: (code) => press(code),   // canvas hit regions route taps through here
       };
 
       function press(code) {
