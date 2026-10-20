@@ -18,7 +18,7 @@ const SILENCE_TIMEOUT = 30000;
 const HEARTBEAT_MS = 2000;
 // Only the host may originate these (a client sending one is dropped, never relayed).
 const HOST_ONLY = new Set(['time', 'timeskip', 'npc:snap', 'police:snap', 'npc:kill', 'combat:hitPlayer',
-  'combat:brawlResult', 'police:tire', 'heist:payout']);
+  'combat:brawlResult', 'police:tire', 'heist:payout', 'crew:pot', 'crew:grant', 'crew:deny']);
 // A client sending more than this many messages per second gets the excess dropped (normal play is ~20-40/s).
 const CLIENT_MSG_CAP = 120;
 

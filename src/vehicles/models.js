@@ -764,6 +764,47 @@ function poseDriver(v, steer) {
   poseFigure(v, fl, fr, hand(B.hands.L), hand(B.hands.R));
 }
 
+// ---------------------------------------------------------------- co-op passengers
+// Seat i of a car in body space (0 = driver, 1 = front passenger, 2/3 = back row). null for bikes.
+export function passengerSeat(carId, i) {
+  const B = getBuild(carId);
+  if (B.bike || !(i >= 1)) return null;
+  const s = B.seat;
+  const x = (i % 2 === 1 ? -1 : 1) * s.x;
+  return { x, y: s.y, u: i >= 2 ? s.u - 1.0 : s.u };
+}
+
+// Pose a stickman (scale PASSENGER_SCALE, parented to the car's vis.body) in seat i.
+// aim = yaw relative to the car (radians, 0 = straight ahead) to lean out of the window and point a gun.
+export const PASSENGER_SCALE = 0.8;
+export function posePassenger(sm, carId, i, aim = null) {
+  const B = getBuild(carId);
+  const seat = passengerSeat(carId, i);
+  if (!seat) return;
+  const s = PASSENGER_SCALE;
+  const root = new THREE.Vector3(seat.x, seat.y - 0.95 * s, seat.u);
+  const v = { driver: sm, dScale: s, tilt: -0.12, driverRoot: root };
+  const x = seat.x, du = seat.u - B.seat.u;
+  poseFigure(v,
+    [x + 0.12, B.pedals.y, B.pedals.u + du - 0.1], [x - 0.12, B.pedals.y, B.pedals.u + du - 0.1],
+    [x + 0.16, seat.y + 0.2, seat.u + 0.3], [x - 0.16, seat.y + 0.2, seat.u + 0.3]);
+  sm.group.position.copy(root);
+  sm.group.rotation.set(0, 0, 0);
+  if (aim == null) return;
+  // Lean out: shift toward this side's window, rise a little, turn toward the target, arm out.
+  const side = Math.sign(seat.x) || -1;
+  const a = Math.atan2(Math.sin(aim), Math.cos(aim));
+  sm.group.position.x += side * 0.4;
+  sm.group.position.y += 0.34;
+  sm.group.rotation.y = a;
+  sm.group.rotation.z = -side * 0.18;
+  const P = sm.parts;
+  P.armR.upper.rotation.set(-Math.PI / 2 + 0.05, 0, -0.05);
+  P.armR.lower.rotation.set(0, 0, 0);
+  P.armL.upper.rotation.set(-0.4, 0, 0.5);
+  P.armL.lower.rotation.set(-0.6, 0, 0);
+}
+
 // Spin wheels, steer, pedal. speed = signed forward speed (units/s), steer -1..1 (+ = left).
 export function animateCarMesh(group, speed, steer, dt) {
   const v = group?.userData?.vis;

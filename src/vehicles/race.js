@@ -63,7 +63,8 @@ class Race {
   // ---------------------------------------------------------------- UI
   open(loc) {
     const g = this.game;
-    if (this.active) { g.ui.toast('A race is already on. Focus!', 'bad'); return; }
+    if (this.active || g.coop?.drag?.active) { g.ui.toast('A race is already on. Focus!', 'bad'); return; }
+    const friends = g.net?.connected ? (g.net.peers?.() || []).length : 0;
     const rival = pick(RIVALS);
     const dx = loc.doorX ?? loc.x, dz = loc.doorZ ?? loc.z;
     let near = null, nd = 150;
@@ -80,8 +81,10 @@ class Race {
         near ? { label: `Race your ${near.def.name}`, hint: 'it gets towed to the start line', onSelect: () => this.askBet(loc, rival, near, false) }
           : { label: 'Race your own ride', disabled: true, hint: 'park a car you own nearby' },
         { label: 'Borrow the track junker', hint: 'free · smells like feet', onSelect: () => this.askBet(loc, rival, null, true) },
+        g.coop?.drag ? (friends ? { label: 'Race a friend', hint: 'co-op · same track, synced start', onSelect: () => g.coop.drag.challenge(loc) }
+          : { label: 'Race a friend', disabled: true, hint: g.net?.connected ? 'nobody else is here yet' : 'co-op only (pause menu → invite)' }) : null,
         { label: 'Leave', hint: money < 50 ? 'you can\'t afford the minimum anyway' : '' },
-      ],
+      ].filter(Boolean),
     });
   }
 

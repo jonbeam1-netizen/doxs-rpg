@@ -8,6 +8,7 @@ import { Chat } from './chat.js';
 // Message types owned here:
 //   ps        player state ~15 Hz  {x,y,z,f,s,hp,mh,ts, w?,a?,d?,b?(block),k?(1 knocked flat/2 KO),v?{carId,color,speed,steer}}
 //             + name/look every 15th packet or on change. ts = sender ms & 0xffff (snapshot interpolation)
+//             r?{d: driver peer id, s: seat} + ay? (aim yaw) while riding shotgun (src/coop)
 //   pa        one-shot animation    {k?:'w'|'c'|'r'|'h' (wind-up/cancel/roll/flinch, default punch), d, ss?, sd?}
 //   time      host clock            {total}
 //   timereq   client -> host        {minutes}
@@ -97,6 +98,7 @@ export async function installNet(game) {
 
   // ------------------------------------------------------------------ facade (mutate, don't replace)
   net.session = session;
+  Object.defineProperty(net, 'chat', { configurable: true, get: () => chat });
   net.ping = session.ping;
   net.hostId = null;
   net.broadcast = (msg) => session.broadcast(msg);
@@ -277,7 +279,9 @@ export async function installNet(game) {
       if (text.startsWith('/')) {
         const cmd = text.slice(1).split(/\s+/)[0].toLowerCase();
         if (Object.hasOwn(EMOTES, cmd)) { doEmote(cmd); return; }
-        if (cmd === 'help' || cmd === '?') { sys('Commands: /wave /dance /flip /players /help'); return; }
+        if (cmd === 'help' || cmd === '?') { sys('Commands: /wave /dance /flip /players /crew /spar /help'); return; }
+        if (cmd === 'crew') { game.coop?.crew?.open?.(); return; }
+        if (cmd === 'spar') { game.coop?.spar?.inviteMenu?.(); return; }
         if (cmd === 'players' || cmd === 'who') {
           if (!net.connected) { sys("It's just you. It's always been just you."); return; }
           sys(`Online: ${[myName() + ' (you)', ...net.peers().map((p) => p.name + (p.ping != null ? ` ${p.ping}ms` : ''))].join(', ')}`);
@@ -337,6 +341,7 @@ export async function installNet(game) {
     name: 'net',
     update(dt) {
       avatars.update(dt);
+      try { game.coop?.afterAvatars?.(dt); } catch (e) { if (!game._coopErr) { console.error('[net] coop afterAvatars failed', e); game._coopErr = true; } }
       hudAcc += dt;
       if (hudAcc > 0.5) { hudAcc = 0; refreshHud(); }
       if (!net.connected) return;
@@ -377,6 +382,11 @@ export async function installNet(game) {
     if (pl.aiming) m.a = 1;
     if (pl.dead || p.hp <= 0) m.d = 1;
     if (v) m.v = v;
+    else if (veh?.passenger) {
+      // riding shotgun (src/coop): which car + seat, and where we're leaning out to aim
+      m.r = { d: veh.driverId, s: veh.seat };
+      if (Number.isFinite(veh.aimYaw)) { m.ay = Math.round(veh.aimYaw * 100) / 100; m.a = 1; }
+    }
     let cb = null;
     try { cb = game.combat; } catch { cb = null; }
     if (cb?.blocking) m.b = 1;
@@ -389,6 +399,7 @@ export async function installNet(game) {
   }
 
   // ------------------------------------------------------------------ HUD
+  net.refreshHud = () => refreshHud();
   function refreshHud() {
     const st = session.status;
     let html = '';
@@ -403,6 +414,11 @@ export async function installNet(game) {
     } else if (st === 'reconnecting') {
       html = '<span class="net-hud bad">CO-OP: <b>reconnecting…</b></span>';
     }
+    // the drag strip / co-op races own the 'extra' slot while they run
+    if (game.vehicles?.race?.active || game.coop?.hudBusy?.()) return;
+    let extra = '';
+    try { extra = game.coop?.hudExtra?.() || ''; } catch { extra = ''; }
+    if (extra && html) html = html.replace(/<\/span>$/, extra + '</span>');
     try { game.ui.setHud('extra', html); } catch { /* ignore */ }
   }
 
@@ -493,8 +509,11 @@ export async function installNet(game) {
     return i != null && i < peers.length ? peers[i] : null;
   }
 
-  async function giveCash() {
-    const f = await pickFriend('Give cash', 'bankroll');
+  net.pickFriend = (title, verb) => pickFriend(title, verb);
+  net.giveCash = (peerId) => giveCash(peerId);
+  net.teleportTo = () => teleport();
+  async function giveCash(peerId = null) {
+    const f = (peerId && net.peers().find((p) => p.id === peerId)) || await pickFriend('Give cash', 'bankroll');
     if (!f) return;
     const money = Math.floor(game.state.p.money);
     if (money < 1) { toast("You're broke. You can't even give them a nickel.", 'bad'); return; }

@@ -207,3 +207,7 @@ Also owns `src/data/barks.js` (`bark(kind)` one-liners).
 - Audio (round 5): src/audio/mixer.js buses (sfx/ambience/music/ui) + limiter; game.audio.play3D(preset|fn, x, z, opts).
 - Minigames (src/systems/minigame.js + mg/): job shifts and training are 15-45s skill games (grade F-S; pay 0.6-1.5x,
   skip = 0.8x). Event 'minigame:result' {id, grade, score, skipped, newBest}. Save: p.mg.
+- Co-op features (src/coop): ride shotgun (F at a friend's passenger door; LMB shoots), crew panel (K) with shared
+  pot/pins/pings (L), friend drag races, consensual sparring, crew bonus +10% within 40 m.
+  Net: ride:*, crew:*, drag:*, spar:*.
+- Economy/late game and atmosphere passes: see commit history (round 7).

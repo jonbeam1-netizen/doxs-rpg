@@ -46,6 +46,9 @@ class VehicleManager {
     this.pendingEnter = null;
     this.baseFov = null;
     this.race = null;
+    // Co-op hooks (src/coop sets this): { tryHopIn(nearCar) -> bool, onPassengerF(), prompt(nearCar) -> html|null }
+    // Riding shotgun in a friend's car sets player.vehicle to a seat proxy while _current stays null.
+    this.coop = null;
 
     // One spotlight for the player's ride at night; always in the scene so the
     // light count never changes (no shader recompiles).
@@ -286,7 +289,9 @@ class VehicleManager {
 
   tryEnter() {
     const g = this.game;
+    if (g.player.vehicle) return false;
     const car = this.findEnterable();
+    try { if (this.coop?.tryHopIn?.(car)) return true; } catch (e) { console.error('[vehicles] coop hop-in failed', e); }
     if (!car) return false;
     if (car.dead) { g.ui.toast("It's on fire. Even you have standards.", 'bad'); return true; }
     if (car.owner === 'player') { this.enter(car); return true; }
@@ -561,6 +566,8 @@ class VehicleManager {
     if (!locked && g.input.wasPressed('KeyF') && !pl.dead) {
       if (this._current) {
         if (!this._current.frozen || this._current.dead) this.exit();
+      } else if (pl.vehicle) {
+        try { this.coop?.onPassengerF?.(); } catch (e) { console.error('[vehicles] coop passenger F failed', e); }
       } else if (!pl.moveLocked) this.tryEnter();
     }
 
@@ -690,9 +697,12 @@ class VehicleManager {
     const g = this.game, ui = g.ui;
     let text = null;
     const pl = g.player;
-    if (!this._current && !g.controlsLocked && !pl.dead && !g.interact.current) {
+    if (!this._current && pl.vehicle && !g.controlsLocked && !pl.dead) {
+      try { text = this.coop?.prompt?.(null) || null; } catch { text = null; }
+    } else if (!this._current && !g.controlsLocked && !pl.dead && !g.interact.current) {
       const c = this.findEnterable();
-      if (c && !c.dead) {
+      try { text = this.coop?.prompt?.(c) || null; } catch { text = null; }
+      if (!text && c && !c.dead) {
         if (c.owner === 'player') text = `<kbd>F</kbd>${c.isBike ? 'Ride' : 'Drive'} your ${c.def.name}`;
         else if (c.speed <= 3.5) text = `<kbd>F</kbd>${c.hasDriver ? 'Carjack' : 'Steal'} ${c.def.name}`;
       }
@@ -761,7 +771,7 @@ class VehicleManager {
 
   pushPlayer() {
     const g = this.game, pl = g.player;
-    if (pl.dead) return;
+    if (pl.dead || pl.vehicle) return;
     const p = pl.group.position;
     for (const c of this.cars) {
       if (c.removed) continue;

@@ -192,6 +192,10 @@ export class Avatars {
     const v = m.v && typeof m.v === 'object' ? m.v : null;
     rp.vehicle = v ? { carId: wordOk(v.carId) ? v.carId : 'rustbucket', color: colorOk(v.color) ? v.color : 0x555555,
       speed: clamp(num(v.speed), -120, 120), steer: clamp(num(v.steer), -1, 1) } : null;
+    // riding shotgun in another player's car: r = { d: driver peer id, s: seat }, ay = lean-out aim yaw (world)
+    const r = !rp.vehicle && m.r && typeof m.r === 'object' ? m.r : null;
+    rp.ride = r && typeof r.d === 'string' && r.d.length <= 64 && Number.isInteger(r.s) && r.s >= 1 && r.s <= 7 ? { d: r.d, s: r.s } : null;
+    rp.rideAim = rp.ride && Number.isFinite(m.ay) ? m.ay : null;
     if ('look' in m) {
       const look = cleanLook(m.look);
       if (lookKey(look) !== rp._lookKey) { rp.look = look; this._buildModel(rp, look); }
@@ -218,7 +222,7 @@ export class Avatars {
   // 'pa' packets: k = 'p' punch/kick (d, ss) · 'w' wind-up (d, ss) · 'c' cancel wind-up · 'r' dodge roll (d) · 'h' flinch (sd)
   punch(id, m) {
     const rp = this.map.get(id);
-    if (!rp || rp.dead || rp.vehicle || rp._down) return;
+    if (!rp || rp.dead || rp.vehicle || rp.ride || rp._down) return;
     const ss = typeof m.ss === 'string' && /^[a-z_]{1,16}$/.test(m.ss) ? m.ss : null;
     const d = clamp(Number(m.d) || 0.28, 0.05, 1.6);
     const model = rp._model;
@@ -237,7 +241,7 @@ export class Avatars {
     if (typeof kind !== 'string' || !Object.hasOwn(EMOTES, kind)) return;
     if (id === 'local') { this.localEmote = { kind, t: 0 }; return; }
     const rp = this.map.get(id);
-    if (!rp || rp.dead || rp.vehicle) return;
+    if (!rp || rp.dead || rp.vehicle || rp.ride) return;
     if (rp._emote) endEmote(rp._model);
     rp._emote = { kind, t: 0 };
   }
@@ -276,7 +280,7 @@ export class Avatars {
   }
 
   _syncWeapon(rp) {
-    const want = rp.vehicle || rp.dead ? null : rp.weapon;
+    const want = rp.vehicle || rp.ride || rp.dead ? null : rp.weapon;
     if (want === rp._weaponId) return;
     rp._weaponMesh?.removeFromParent();
     rp._weaponMesh = want ? weaponMesh(want) : null;
@@ -355,20 +359,33 @@ export class Avatars {
 
   _updateOne(rp, dt, now) {
     if (rp._fresh) return;
-    const t = this._sample(rp, now) || rp._t;
+    let t = this._sample(rp, now) || rp._t;
     rp._age += dt;
     const p = rp.group.position;
+    // Passengers ride the driver's car as WE see it (the coop module seats their figure in it), so the
+    // tag/hitbox never lags behind a fast car.
+    let anchored = false;
+    if (rp.ride) {
+      let a = null;
+      try { a = this.game.coop?.anchor?.(rp.ride.d) || null; } catch { a = null; }
+      if (a) { t = a; anchored = true; }
+    }
     const dx = t.x - p.x, dz = t.z - p.z;
-    if (dx * dx + dz * dz > 30 * 30) p.set(t.x, t.y, t.z);
+    if (anchored || dx * dx + dz * dz > 30 * 30) p.set(t.x, t.y, t.z);
     else {
       const k = 1 - Math.exp((rp._buf.length ? -30 : -14) * dt);
       p.x += dx * k; p.z += dz * k; p.y += (t.y - p.y) * k;
     }
-    rp.facing = angleLerp(rp.facing, t.f, 1 - Math.exp(-20 * dt));
+    rp.facing = anchored ? t.f : angleLerp(rp.facing, t.f, 1 - Math.exp(-20 * dt));
     rp.group.rotation.y = rp.facing;
 
     const model = rp._model;
-    if (rp.vehicle) {
+    if (rp.ride) {
+      model.group.visible = false; // the seated figure lives in the driver's car mesh
+      if (rp._car) { rp._car.visible = false; rp._car = null; rp._carKey = null; }
+      rp._tag.sprite.position.y = 3.45;
+      if (rp._emote) { endEmote(model); rp._emote = null; }
+    } else if (rp.vehicle) {
       model.group.visible = false;
       const car = this._carFor(rp, rp.vehicle);
       // spin wheels / steer the front wheels like a local car
