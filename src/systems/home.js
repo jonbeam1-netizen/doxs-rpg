@@ -94,10 +94,15 @@ export function installHomes(game) {
       { label: 'Take a nap', hint: '2 hours', run: () => sleep(loc, 120) },
       { label: 'Stash', hint: 'safe from cops & muggers', run: () => openStash(loc) },
       { label: 'Take a shower', hint: today(game).shower ? 'already clean-ish' : '+Charm', run: () => shower(loc) },
-      { label: 'Watch TV', hint: '1 hour', run: () => watchTv() },
+      { label: 'Watch TV', hint: '1 hour', run: () => watchTv(loc) },
       { label: 'Wardrobe', hint: 'change outfit', run: () => game.sysShops?.wardrobe?.() },
       { label: 'Read the paper', run: () => game.sysNews?.open() },
     ];
+    // home improvements (src/systems/ventures.js) — only for places you own
+    if (owns(loc.id) || loc.home.price === 0) {
+      try { out.push(...(game.lifestyle?.homeActions?.(loc) || [])); } catch (e) { console.error('[home] upgrade actions failed', e); }
+      if (game.lifestyle) out.push({ label: 'Home improvements', hint: 'upgrades & perks', run: () => game.lifestyle.openHomeUpgrades(loc) });
+    }
     if (p.home !== loc.id) out.push({ label: 'Make this my main home', hint: 'respawn here', run: () => { p.home = loc.id; st.changed('home'); game.ui.toast(`${loc.name} is now home. Lower your standards accordingly.`, 'good'); } });
     out.push({ label: 'Save game', run: () => { st.save(false); } });
     if (!owns(loc.id) && loc.home.price > 0) {
@@ -221,6 +226,7 @@ export function installHomes(game) {
   }
 
   function roaches(loc) {
+    if (game.lifestyle?.homeUp?.(loc.id, 'safe')) return 'Roaches tried the floor safe. The floor safe won. They settle for licking your toothbrush.';
     const s = stash(loc.id);
     const p = st.p;
     const foods = Object.keys(s.items).filter((k) => ITEMS[k]?.cat === 'food');
@@ -258,12 +264,13 @@ export function installHomes(game) {
     await say(game, 'Shower', `${line}<br><br><span class="ui-good">Fresh: +2 Charm for 10 hours.</span>`);
   }
 
-  async function watchTv() {
+  async function watchTv(loc) {
     const [ch, txt] = pick(TV);
     game.time.advance(60);
-    st.addStat('energy', 4);
+    const theater = game.lifestyle?.homeUp?.(loc?.id ?? st.p.home, 'theater') || false;
+    st.addStat('energy', theater ? 12 : 4);
     let note = '';
-    if (ch === 'Nature Documentary' && chance(0.6)) { train(game, 'int', 0.3, 'tv'); note = 'You actually learned something.'; }
+    if ((ch === 'Nature Documentary' || theater) && chance(theater ? 0.5 : 0.6)) { train(game, 'int', theater ? 0.5 : 0.3, 'tv'); note = theater ? 'On a screen this big, even the documentaries stick. +INT' : 'You actually learned something.'; }
     else if (chance(0.25)) { st.addStat('int', -0.1); note = 'You feel your brain cells packing their bags.'; }
     await say(game, `📺 ${ch}`, `${txt}${note ? `<br><br><em>${note}</em>` : ''}`);
   }
@@ -273,7 +280,7 @@ export function installHomes(game) {
     return new Promise((resolve) => {
       const p = st.p;
       const s = stash(loc.id);
-      const cap = STASH_CAP[clamp(loc.home.tier, 0, 4)];
+      const cap = STASH_CAP[clamp(loc.home.tier, 0, 4)] * (game.lifestyle?.homeUp?.(loc.id, 'safe') ? 2 : 1);
       const wrap = document.createElement('div');
       const entry = game.ui.openPanel({ title: `Stash — ${loc.name}`, body: wrap, width: 760, onClose: resolve });
       const render = () => {

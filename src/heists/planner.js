@@ -72,10 +72,12 @@ export class Planner {
     const cards = HEIST_ORDER.map((id) => {
       const d = HEISTS[id];
       const st = mgr.status(id);
-      const avg = Math.round((d.bags.count * (d.bags.value[0] + d.bags.value[1])) / 2 + (d.extra[0] + d.extra[1]) / 2);
+      const est = mgr.estimate(id, 'quiet');
+      const avg = est.gross;
       const needIntel = st.locked && INTEL[id] && !h.intel[id] && /inside line|way in/.test(st.why || '');
       return `<div class="hb-card ${st.ok ? '' : 'locked'}">
         <h4><span>${esc(d.name)}</span><span class="pay">~${fmtMoney(avg)}</span></h4>
+        <div class="d" style="font-size:13px">You keep ~<b>${fmtMoney(Math.max(0, est.net))}</b> (fence ${Math.round(est.fence * 100)}%${est.fee ? ` Â· Terry's fee ${fmtMoney(est.fee)}` : ''}${est.press ? ` Â· <span class="ui-bad">they're still jumpy: loot -${Math.round((1 - est.pressMult) * 100)}%</span>` : ''})</div>
         <div class="d">${esc(d.blurb)}</div>
         <div class="r ${st.ok ? 'ok' : 'no'}">${st.ok ? `✔ Ready · ${Math.floor(d.time / 60)} min clock · ${d.bags.count} bags` : esc(st.why || d.reqText)}</div>
         <div class="d" style="font-size:13px">Needs: ${esc(d.reqText)}${h.done[id] ? ` · pulled ${h.done[id]}× · best ${fmtMoney(h.best[id] || 0)}` : ''}</div>
@@ -132,7 +134,7 @@ export class Planner {
     rec.push('getaway');
     // Don't "recommend" one-use gear that costs more than half the job pays
     // (a $1,200 drill for a ~$1,000 corner-store safe is a trap for new players).
-    const est = Math.round((d.bags?.count || 0) * (((d.bags?.value?.[0] || 0) + (d.bags?.value?.[1] || 0)) / 2) + (((d.extra?.[0] || 0) + (d.extra?.[1] || 0)) / 2));
+    const est = mgr.estimate(id, 'loud').gross;
     for (let i = rec.length - 1; i >= 0; i--) if (!GEAR[rec[i]].perm && est > 0 && GEAR[rec[i]].price > est * 0.5) rec.splice(i, 1);
     // gear check loop
     for (;;) {
@@ -148,7 +150,7 @@ export class Planner {
       opts.push({ label: 'Back out' });
       const gi = await g.ui.dialog({
         title: `${d.name} — ${approach === 'quiet' ? 'Quiet' : 'Loud'}`, speaker: PLANNER.name,
-        text: `Expected take: ~${fmtMoney(est)}\nRecommended kit:\n${lines || '(nothing worth buying for this one)'}\n\nMask: ${MASKS[h.mask].name}${d.gearText ? `\n\nTerry's advice: ${d.gearText}\nYou: STR ${Math.floor(g.state.p.str)} · ${this.armsLine()}` : ''}${missing.length ? `\n\n"${pick(PLANNER.noGear)}"` : ''}`,
+        text: `Expected take: ~${fmtMoney(est)}${mgr.fee(id) ? ` · Terry's fee: ${fmtMoney(mgr.fee(id))} (due when you roll out, gone if it fails)` : ''}\nYou keep after the fence (${Math.round(mgr.fenceCut() * 100)}%) and fee: ~${fmtMoney(Math.max(0, mgr.estimate(id, approach).net))}\nRecommended kit:\n${lines || '(nothing worth buying for this one)'}\n\nMask: ${MASKS[h.mask].name}${d.gearText ? `\n\nTerry's advice: ${d.gearText}\nYou: STR ${Math.floor(g.state.p.str)} · ${this.armsLine()}` : ''}${missing.length ? `\n\n"${pick(PLANNER.noGear)}"` : ''}`,
         options: opts,
       });
       if (gi == null || gi === opts.length - 1) return;
@@ -173,6 +175,7 @@ export class Planner {
         return;
       }
       if (ci !== 1) return;
+      if (!this.payFee(id)) return;
       mgr.startRun(id, approach, { invite: false });
       return;
     }
@@ -186,7 +189,18 @@ export class Planner {
       if (ci !== 0 && ci !== 1) return;
       invite = ci === 0;
     }
+    if (!this.payFee(id)) return;
     mgr.startRun(id, approach, { invite });
+  }
+
+  // Terry's planning fee (balance pass 6): paid up front, lost if the job goes bad.
+  payFee(id) {
+    const g = this.g, fee = this.mgr.fee(id);
+    if (!fee) return true;
+    if (!g.state.canAfford(fee)) { g.ui.toast(`Terry rubs two fingers together. "Planning fee's ${fmtMoney(fee)}. Up front. I don't do layaway."`, 'bad', 4000); return false; }
+    g.state.spend(fee, 'heist fee');
+    g.ui.toast(`Paid Terry's ${fmtMoney(fee)} planning fee. "Pleasure. Don't die, I hate refunds."`, 'money', 3500);
+    return true;
   }
 
   // ------------------------------------------------------------------ shop

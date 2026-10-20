@@ -60,13 +60,42 @@ export function installMarket(game) {
     return Math.max(1, Math.round(d.base * f * dm * eventMult(id, district)));
   }
 
-  // What a dealer pays you (spread + perks).
+  // What a dealer pays you (spread + perks) for the NEXT unit.
   function sellPrice(id, district) {
+    return Math.max(1, Math.floor(basePay(id, district) * satMult(id, district, soldToday(id, district))));
+  }
+  function basePay(id, district) {
     const p = st.p;
     let mult = 0.9;
     if (hasCourse(p, 'remedial_math')) mult += 0.05;
     if (hasCourse(p, 'chem')) mult += 0.1;
-    return Math.max(1, Math.floor(price(id, district) * mult));
+    return price(id, district) * mult;
+  }
+
+  // Street demand (balance pass 6): each dealer only moves so much of one product a day before the price
+  // sags (dump 2x the demand and the last units go for half). Spreads routes across districts instead of
+  // one infinite money hose. demand ~ units per dealer per product per day.
+  function demandOf(id) {
+    const b = DRUGS[id]?.base || 100;
+    return b < 100 ? 40 : b < 600 ? 24 : b < 2000 ? 10 : 6;
+  }
+  function satMult(id, district, k) {
+    const D = demandOf(id);
+    return k < D ? 1 : D / (D + (k - D + 1));
+  }
+  function soldMap() {
+    const mk = m();
+    if (!mk.sold || mk.sold.day !== game.time.day) mk.sold = { day: game.time.day, d: {} };
+    return mk.sold.d;
+  }
+  function soldToday(id, district) { return soldMap()[district]?.[id] || 0; }
+  // Total for selling n units right now (walks down the demand curve).
+  function sellQuote(id, district, n) {
+    const base = basePay(id, district);
+    const k0 = soldToday(id, district);
+    let total = 0;
+    for (let k = 0; k < n; k++) total += Math.max(1, Math.floor(base * satMult(id, district, k0 + k)));
+    return total;
   }
 
   function restock() {
@@ -78,7 +107,7 @@ export function installMarket(game) {
         const base = DRUGS[id].base;
         const smuggled = dist === 'blackwater' && base >= 900;
         if (!smuggled && chance(0.12)) { s[id] = 0; continue; }
-        const scale = base < 100 ? 2.2 : base < 600 ? 1.3 : base < 2000 ? 0.8 : 0.45;
+        const scale = base < 100 ? 2.2 : base < 600 ? 1.3 : base < 2000 ? 0.65 : 0.35;
         let q = Math.round(randInt(6, 34) * scale);
         // Blackwater smugglers: the rare stuff comes in by boat (never sold out, deeper stock).
         if (smuggled) q = Math.max(4, Math.round(q * 1.8));
@@ -218,7 +247,7 @@ export function installMarket(game) {
       }
       html += `</table><div class="ui-row" style="margin-top:10px"><button class="ui-btn" data-rumor="1">Ask about the word on the street</button>
         <button class="ui-btn" data-sellall="1" ${total ? '' : 'disabled'}>Sell everything</button><span style="flex:1"></span>
-        <span class="sys-hint">Dealing raises heat — more with cops nearby.</span></div>`;
+        <span class="sys-hint">Dealing raises heat — more with cops nearby. Each dealer only moves so much of one thing a day.</span></div>`;
       wrap.innerHTML = html;
     };
     wrap.addEventListener('click', async (e) => {
@@ -243,7 +272,8 @@ export function installMarket(game) {
       } else if (b.dataset.sell) {
         const id = b.dataset.sell;
         const have = p.drugs[id] || 0;
-        const n = await game.ui.promptNumber({ title: `Sell ${DRUGS[id].name}`, text: `${dealer.name} pays ${fmtMoney(sellPrice(id, dist))} each.`, max: have, min: 1, initial: have });
+        const left = Math.max(0, demandOf(id) - soldToday(id, dist));
+        const n = await game.ui.promptNumber({ title: `Sell ${DRUGS[id].name}`, text: `${dealer.name} pays ${fmtMoney(sellPrice(id, dist))} each${left > 0 ? ` for about ${left} more today, then less` : ' (and less for each one: the street here is saturated today)'}. All ${have}: ${fmtMoney(sellQuote(id, dist, have))}.`, max: have, min: 1, initial: have });
         if (!n || entry.closed) { if (!entry.closed) render(); return; }
         doSell(id, n, dist);
         msg = pick([`"Nice. This'll sell like hotcakes. Drug hotcakes."`, `"Mmm. Smells legit. Smells like a felony."`, `"Here's your cash. Count it later, cops are everywhere."`]);
@@ -260,14 +290,19 @@ export function installMarket(game) {
     const p = st.p;
     n = Math.min(n, p.drugs[id] || 0);
     if (n <= 0) return;
-    const sp = sellPrice(id, dist);
-    const total = sp * n;
+    const total = sellQuote(id, dist, n);
+    const sp = Math.round(total / n);
+    const sm = soldMap();
+    (sm[dist] ??= {})[id] = (sm[dist][id] || 0) + n;
     st.addDrug(id, -n);
     st.addMoney(total, 'drugs');
     p.totals.drugsSold = (p.totals.drugsSold || 0) + n;
     game.bus.emit('drug:sold', { drugId: id, qty: n, price: sp, district: dist });
     // heat + karma
-    let heat = 0.06 + Math.min(0.35, n * 0.006 + total / 40000);
+    // balance pass 6: big deals get noticed (a $12k dump is half a star), and the PD wants its cut (civic.js heatCost)
+    let heat = 0.08 + Math.min(0.6, n * 0.008 + total / 12000);
+    p.sys.dealLog = (p.sys.dealLog || []).filter((e) => game.time.day - e.d < 3);
+    p.sys.dealLog.push({ d: game.time.day, a: total });
     const pos = playerXZ(game);
     const cops = (game.npcs?.near?.(pos.x, pos.z, 30) || []).filter((x) => x && !x.dead && x.kind === 'cop');
     if (cops.length) { heat += 0.6; game.ui.toast('A cop was watching that. Smooth move, Einstein.', 'bad', 3000); }
@@ -289,7 +324,7 @@ export function installMarket(game) {
   }
 
   const market = {
-    DRUGS, name: (id) => DRUGS[id]?.name ?? id, price, sellPrice, use, openDealer, daily, rumor, cheapest, priciest,
+    DRUGS, name: (id) => DRUGS[id]?.name ?? id, price, sellPrice, sellQuote, demandOf, use, openDealer, daily, rumor, cheapest, priciest,
     events: () => m().events, nextEvent: () => m().next, todayEvent: () => m().today, state: m,
   };
   game.market = market;

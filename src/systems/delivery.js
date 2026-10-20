@@ -110,7 +110,7 @@ export function installDelivery(game) {
     const p = st.p;
     const job = p.job?.id === 'pizza' ? p.job : { rank: 0 };
     const r = JOBS.pizza.ranks[job.rank] || JOBS.pizza.ranks[0];
-    let pay = r.pay;
+    let pay = Math.round(r.pay * (1 + (game.jobs?.seniority?.(p.job?.id === 'pizza' ? p.job : null) || 0)));
     let tip = 0;
     const late = a.t > a.limit;
     let speedTag = '';
@@ -119,6 +119,7 @@ export function installDelivery(game) {
       const speed = 1 - a.t / a.limit;
       tip = Math.round(rand(0.4, 1) * (3 + p.cha * 0.18) * (0.5 + speed));
       if (game.player?.vehicle) tip = Math.round(tip * 0.9);
+      if (game.lifestyle?.owns?.('butt')) tip = Math.round(tip * 1.25);
       a.perf.push(0.45 + 0.55 * speed);
       speedTag = speed >= 0.6 ? ' ⚡ <b>BLAZING</b>' : speed >= 0.35 ? ' ⚡ fast' : '';
       a.tips += tip;
@@ -144,7 +145,7 @@ export function installDelivery(game) {
     if (p.job?.id !== 'pizza') return;
     p.job.shifts++;
     const c = game.jobs.career('pizza');
-    c.shifts = p.job.shifts; c.rank = p.job.rank; c.total++;
+    c.shifts = p.job.shifts; c.rank = p.job.rank; c.total++; c.lastDay = game.time.day;
     st.addXP(6 * a.total);
     game.bus.emit('job:worked', { jobId: 'pizza', rank: p.job.rank, pay: a.earned, deliveries: a.done });
     const promo = game.jobs.checkPromotion('pizza');

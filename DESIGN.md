@@ -211,3 +211,6 @@ Also owns `src/data/barks.js` (`bark(kind)` one-liners).
   pot/pins/pings (L), friend drag races, consensual sparring, crew bonus +10% within 40 m.
   Net: ride:*, crew:*, drag:*, spar:*.
 - Economy/late game and atmosphere passes: see commit history (round 7).
+- Economy (round 7): play styles within ~2x of each other (game.sysDebug.econ() runs the sim). Career perks + passive
+  income, heist fence cut/fees/diminishing repeats, dealer saturation, ventures (src/systems/ventures.js: businesses,
+  charity, home upgrades, collectibles). Bought CHA capped at +25. Events: job:perk, venture:bought, legacy:funded, home:upgraded.

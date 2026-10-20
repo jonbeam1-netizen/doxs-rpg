@@ -99,7 +99,8 @@ export function installItems(game) {
         const gains = [];
         for (const [stat, v] of Object.entries(fx.perm)) {
           const amt = d.cat === 'book' && v > 0 ? Math.round(dim(v * k, p[stat] ?? 0, 50) * 100) / 100 : v;
-          const got = st.addStat(stat, amt, 'item:' + id);
+          // wearable "permanent Charm" goodies (the Funland jacket...) count as style: capped (systems/ventures.js)
+          const got = stat === 'cha' && v > 0 && d.cat !== 'book' && game.lifestyle?.styleGain ? game.lifestyle.styleGain(amt, 'item:' + id) : st.addStat(stat, amt, 'item:' + id);
           if (d.cat === 'book' && v > 0) gains.push(`+${Math.round((got ?? amt) * 100) / 100} ${stat.toUpperCase()}`);
         }
         if (d.cat === 'book') bookGain = ` ${gains.join(' ')}${k < 1 ? ' (you\'ve read this one before)' : ''}.`;

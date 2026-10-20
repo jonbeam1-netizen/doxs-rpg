@@ -6,14 +6,23 @@
 //            next promotion is considered }
 // kind: 'shift' (pick 2/4/8h, time skips) | 'delivery' (Pizza Butt timed missions; pay = per delivery)
 // events: random things that happen on a shift. { text, money?, hp?, energy?, cha?, karma?, heat? }
+// perks[rank] (balance pass 6): what a rung unlocks, for good. Earned the first time you reach that rank and kept
+//   even if you quit (you keep the connections). { text, mult?: {perkKey: x}, daily?: $ (paid each active day
+//   while it's your CURRENT job), item?, weapon?, car?, gear?, flag? }  mult keys are game.perks keys.
+// Pay also grows with seniority (+5%/shift at a rank, max +50%) and promotions pay a signing bonus
+// (20 h of the new wage), so a rung you can't climb past still pays better every week.
 export const JOBS = {
   diner: {
     name: 'The Greasy Spoon', loc: 'greasy_spoon', boss: 'Big Marge', hours: [5, 23], energy: 9, gain: { str: 0.04 },
     ranks: [
-      { title: 'Dishwasher', pay: 10, req: {}, shifts: 4 },
-      { title: 'Line Cook', pay: 16, req: { str: 8, int: 8 }, shifts: 8 },
-      { title: 'Shift Manager', pay: 24, req: { int: 18, cha: 15 }, shifts: 999 },
+      { title: 'Dishwasher', pay: 12, req: {}, shifts: 3 },
+      { title: 'Line Cook', pay: 24, req: { str: 8, int: 8 }, shifts: 6 },
+      { title: 'Shift Manager', pay: 40, req: { int: 18, cha: 15 }, shifts: 999 },
     ],
+    perks: {
+      1: { text: 'Family meal: one free Mystery Meat Platter a day at the Greasy Spoon.', flag: 'perk_family_meal' },
+      2: { text: "Marge's right hand: buy into the Greasy Spoon at 30% off (it pays you 25% more), food is 15% cheaper everywhere, +$60/day.", mult: { shopDiscount: 0.85 }, daily: 60, flag: 'perk_marge' },
+    },
     lines: [
       'You scrape a fossilized egg off a plate. It might be from the Jurassic period.',
       'Marge yells "ORDER UP" at a man who did not order anything. He eats it anyway.',
@@ -31,21 +40,30 @@ export const JOBS = {
   pizza: {
     name: 'Pizza Butt', loc: 'pizza_butt', boss: 'Tony Butt', hours: [10, 3], energy: 5, kind: 'delivery', gain: { str: 0.02 },
     ranks: [
-      { title: 'Delivery Monkey', pay: 12, req: {}, shifts: 4 },
-      { title: 'Senior Delivery Driver', pay: 20, req: { cha: 10 }, shifts: 8 },
-      { title: 'Assistant Butt Manager', pay: 32, req: { int: 20, cha: 20 }, shifts: 999 },
+      { title: 'Delivery Monkey', pay: 14, req: {}, shifts: 3 },
+      { title: 'Senior Delivery Driver', pay: 28, req: { cha: 10 }, shifts: 6 },
+      { title: 'Assistant Butt Manager', pay: 46, req: { int: 20, cha: 20 }, shifts: 999 },
     ],
+    perks: {
+      1: { text: 'Company wheels: Tony gives you a Sputter 49cc Moped. +5% vehicle speed (you know every shortcut).', car: 'moped', mult: { carSpeed: 1.05 } },
+      2: { text: 'Franchise insider: the Pizza Butt franchise venture opens to you at 25% off. +$80/day manager stipend.', daily: 80, flag: 'perk_butt_franchise' },
+    },
     lines: ['"Remember: if it\'s not there in time, it\'s free. And then YOU pay for it." - Tony Butt'],
     events: [],
   },
   factory: {
     name: 'Rotwell Meat & Rendering', loc: 'meat_plant', boss: 'Foreman Gristle', hours: [5, 23], energy: 13, gain: { str: 0.22 },
     ranks: [
-      { title: 'Gut Shoveler', pay: 14, req: { str: 10 }, shifts: 5 },
-      { title: 'Bone Saw Operator', pay: 22, req: { str: 25 }, shifts: 10 },
-      { title: 'Rendering Foreman', pay: 38, req: { str: 50, int: 15 }, shifts: 14 },
-      { title: 'Plant Boss', pay: 62, req: { str: 85, int: 35 }, shifts: 999 },
+      { title: 'Gut Shoveler', pay: 18, req: { str: 10 }, shifts: 4 },
+      { title: 'Bone Saw Operator', pay: 34, req: { str: 25 }, shifts: 8 },
+      { title: 'Rendering Foreman', pay: 62, req: { str: 45, int: 12 }, shifts: 11 },
+      { title: 'Plant Boss', pay: 110, req: { str: 70, int: 25 }, shifts: 999 },
     ],
+    perks: {
+      1: { text: 'Meat-locker conditioning: +15% STR gains. Gristle lets you keep a cleaver (machete).', mult: { strGain: 1.15 }, weapon: 'machete' },
+      2: { text: 'Foreman\'s cut: +$120/day in "byproduct sales" while you run the floor. You take 10% less damage (mostly callus now).', mult: { damageTaken: 0.9 }, daily: 120 },
+      3: { text: 'Plant Boss: the hot dog contract pays +$450/day. The Pit crowd respects the apron: +10% melee damage.', mult: { meleeDamage: 1.1 }, daily: 450 },
+    },
     lines: [
       'You shovel guts for hours. Some of the guts shovel back.',
       'The conveyor belt carries something with a collar. You do not look at the collar.',
@@ -63,12 +81,18 @@ export const JOBS = {
   office: {
     name: 'Grimco Tower', loc: 'grimco', boss: 'Mr. Grimsby', hours: [7, 19], energy: 8, gain: { int: 0.12, cha: 0.05 },
     ranks: [
-      { title: 'Unpaid-ish Intern', pay: 12, req: { int: 15 }, shifts: 5 },
-      { title: 'Spreadsheet Goblin', pay: 26, req: { int: 30, cha: 15 }, shifts: 10 },
-      { title: 'Middle Manager', pay: 52, req: { int: 60, cha: 40 }, shifts: 14 },
-      { title: 'VP of Synergy', pay: 120, req: { int: 100, cha: 75, course: 'mba' }, shifts: 20 },
-      { title: 'CEO', pay: 320, req: { int: 160, cha: 130, course: 'mba' }, shifts: 999 },
+      { title: 'Unpaid-ish Intern', pay: 16, req: { int: 15 }, shifts: 4 },
+      { title: 'Spreadsheet Goblin', pay: 38, req: { int: 30, cha: 15 }, shifts: 8 },
+      { title: 'Middle Manager', pay: 80, req: { int: 50, cha: 32 }, shifts: 11 },
+      { title: 'VP of Synergy', pay: 170, req: { int: 75, cha: 50, course: 'mba' }, shifts: 16 },
+      { title: 'CEO', pay: 360, req: { int: 105, cha: 80, course: 'mba' }, shifts: 999 },
     ],
+    perks: {
+      1: { text: 'Expense account: 10% off at shops, bars and restaurants. Savings interest +25%.', mult: { shopDiscount: 0.9, bankRate: 1.25 } },
+      2: { text: 'Keycard + IT friends: a working Grimco keycard (the Penthouse job\'s "way in") and a free Hack-O-Matic 3000.', gear: 'hacker', flag: 'perk_grimco_keycard' },
+      3: { text: 'Stock options: +$600/day while you\'re VP or better, and every business venture pays 20% more.', daily: 600, mult: { ventureIncome: 1.2 } },
+      4: { text: 'CEO: +$2,500/day in "performance bonuses" and a private-banking rate (+50% savings interest).', daily: 2500, mult: { bankRate: 1.5 } },
+    },
     lines: [
       'You attend a meeting about meetings. It could have been an email. The email could have been nothing.',
       'You "reply all" by accident. Forty people now know about your foot fungus.',
@@ -87,10 +111,14 @@ export const JOBS = {
   bartender: {
     name: 'The Rusty Nail', loc: 'rusty_nail', boss: 'One-Eyed Sal', hours: [11, 4], energy: 9, gain: { cha: 0.1 },
     ranks: [
-      { title: 'Barback', pay: 11, req: {}, shifts: 4 },
-      { title: 'Bartender', pay: 18, req: { cha: 20 }, shifts: 10 },
-      { title: 'Head Mixologist', pay: 32, req: { cha: 50, int: 20 }, shifts: 999 },
+      { title: 'Barback', pay: 12, req: {}, shifts: 3 },
+      { title: 'Bartender', pay: 26, req: { cha: 20 }, shifts: 8 },
+      { title: 'Head Mixologist', pay: 48, req: { cha: 42, int: 20 }, shifts: 999 },
     ],
+    perks: {
+      1: { text: 'You hear everything: +10% odds on dates, and bar gossip gets you 5% more for product.', mult: { dateChance: 1.1, drugPrice: 1.05 } },
+      2: { text: 'Head Mixologist: +$90/day from your signature cocktail ("The Rusty Divorce") and +10% casino winnings (drunks talk).', daily: 90, mult: { gambling: 1.1 } },
+    },
     tips: true,
     lines: [
       'A man tells you his whole divorce. Then his second divorce. Then his third. He\'s 29.',
@@ -107,12 +135,18 @@ export const JOBS = {
   cop: {
     name: 'Rotwell PD', loc: 'rotwell_pd', boss: 'Chief Lardner', hours: null, energy: 11, gain: { str: 0.08, int: 0.06 },
     ranks: [
-      { title: 'Cadet', pay: 16, req: { karma: 10, str: 20, int: 20 }, shifts: 6 },
-      { title: 'Patrol Officer', pay: 28, req: { karma: 15, str: 35, int: 35 }, shifts: 10 },
-      { title: 'Detective', pay: 50, req: { karma: 25, int: 70, course: 'crim_justice' }, shifts: 14 },
-      { title: 'Captain', pay: 90, req: { karma: 40, str: 80, int: 100 }, shifts: 20 },
-      { title: 'Chief of Police', pay: 170, req: { karma: 60, str: 110, int: 140, course: 'law' }, shifts: 999 },
+      { title: 'Cadet', pay: 20, req: { karma: 10, str: 20, int: 20 }, shifts: 5 },
+      { title: 'Patrol Officer', pay: 40, req: { karma: 15, str: 32, int: 32 }, shifts: 8 },
+      { title: 'Detective', pay: 75, req: { karma: 25, int: 55, course: 'crim_justice' }, shifts: 11 },
+      { title: 'Captain', pay: 130, req: { karma: 35, str: 60, int: 75 }, shifts: 16 },
+      { title: 'Chief of Police', pay: 240, req: { karma: 50, str: 80, int: 100, course: 'law' }, shifts: 999 },
     ],
+    perks: {
+      1: { text: 'Service weapon: a department 9mm. Fines and bribes cost 25% less (professional courtesy).', weapon: 'pistol', mult: { fineCost: 0.75 } },
+      2: { text: 'Case files: you\'ve read the Golden Tooth\'s file (it counts as the casino job\'s inside line). Heat cools 30% faster.', mult: { heatDecay: 1.3 }, flag: 'perk_casino_file' },
+      3: { text: 'Captain: +$350/day in "overtime". Crimes raise 25% less heat.', daily: 350, mult: { heatGain: 0.75 } },
+      4: { text: 'Chief: +$1,200/day. The evidence locker is basically your pantry.', daily: 1200 },
+    },
     lines: [
       'You write 14 parking tickets. One of them is to a parked bicycle.',
       'You eat a donut in the cruiser. It\'s the most peaceful moment of your life.',
@@ -129,10 +163,14 @@ export const JOBS = {
   bouncer: {
     name: 'Club Velvet', loc: 'club_velvet', boss: 'Velvet Vince', hours: [20, 3], energy: 10, gain: { str: 0.12, cha: 0.03 },
     ranks: [
-      { title: 'Door Goon', pay: 17, req: { str: 30 }, shifts: 6 },
-      { title: 'Head Bouncer', pay: 32, req: { str: 60, cha: 20 }, shifts: 12 },
-      { title: 'Security Chief', pay: 55, req: { str: 100, cha: 40 }, shifts: 999 },
+      { title: 'Door Goon', pay: 24, req: { str: 30 }, shifts: 5 },
+      { title: 'Head Bouncer', pay: 46, req: { str: 50, cha: 20 }, shifts: 10 },
+      { title: 'Security Chief', pay: 80, req: { str: 75, cha: 35 }, shifts: 999 },
     ],
+    perks: {
+      1: { text: 'Door cred: brass knuckles from Vince, and the Golden Tooth\'s security guys owe you (the casino job\'s inside line).', weapon: 'brass', flag: 'perk_casino_file' },
+      2: { text: 'Security Chief: +$200/day from "VIP arrangements". You take 10% less damage.', daily: 200, mult: { damageTaken: 0.9 } },
+    },
     lines: [
       'You tell a man in a fedora he can\'t come in. He says "m\'lady" and leaves.',
       'You check 300 IDs. Forty say "McLovin". You let them in. Vince says it\'s good for business.',
@@ -148,10 +186,14 @@ export const JOBS = {
   scrapper: {
     name: "Scrapper Pete's Junkyard", loc: 'junkyard', boss: 'Scrapper Pete', hours: [6, 21], energy: 11, gain: { str: 0.16 },
     ranks: [
-      { title: 'Junk Sorter', pay: 10, req: {}, shifts: 4 },
-      { title: 'Car Crusher', pay: 17, req: { str: 20 }, shifts: 10 },
-      { title: 'Yard Boss', pay: 30, req: { str: 45, int: 20 }, shifts: 999 },
+      { title: 'Junk Sorter', pay: 12, req: {}, shifts: 3 },
+      { title: 'Car Crusher', pay: 24, req: { str: 20 }, shifts: 8 },
+      { title: 'Yard Boss', pay: 44, req: { str: 40, int: 20 }, shifts: 999 },
     ],
+    perks: {
+      1: { text: 'Pete\'s cast-off: a Rustbucket \'88 that "mostly runs". Junk & loot pawn for 40% more.', car: 'rustbucket', flag: 'perk_scrap_eye' },
+      2: { text: 'Yard Boss: +$110/day in scrap contracts, and a free spike strip for heists every day (Pete has a pile).', daily: 110, flag: 'perk_spikes' },
+    },
     lines: [
       'You sort 300 hubcaps by "vibe". Pete approves of your vibes.',
       'The junkyard dog, Mr. Chompers, stares at you for six hours. He doesn\'t blink. He never blinks.',

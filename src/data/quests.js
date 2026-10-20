@@ -1796,6 +1796,41 @@ export const ENDINGS = {
   },
 };
 
+// Balance pass 6: how you lived colors how it ends. Up to three extra epilogue lines from your career, your
+// money, your stuff and your charity (src/systems/ventures.js game.lifestyle.status()).
+function lifestyleLines(g) {
+  const L = g.lifestyle?.status?.();
+  if (!L) return [];
+  const p = g.state.p;
+  const out = [];
+  const top = (id, r) => p.careers?.[id]?.rank >= r;
+  if (L.manor) out.push(L.helipad
+    ? 'Grimsworth Manor stays yours. Pemberton still flies the helicopter, still badly, and still says "Another triumph, I presume" every time you land on the lawn instead of the pad.'
+    : 'Grimsworth Manor stays yours. Pemberton is writing your memoirs. Chapter one is titled "Regrettably, Sir Came Into Money".');
+  else if (L.penthouse) out.push('You watch it all from the Pinnacle Penthouse hot tub, above the smog line, where the air only smells a little bit like the meat plant.');
+  if (L.goldcar) out.push('You still drive the Vendetta GT \'24K\' to the Gas-N-Gulp for roller dogs. Dwayne the night clerk salutes it. Nobody has ever salted a gold car in a Rotwell winter and lived.');
+  else if (L.supercar) out.push('Your ridiculous car becomes a Rotwell landmark. Tourists, if Rotwell ever gets any, will photograph it. Kids key it out of love.');
+  if (L.ventures.includes('grimco')) out.push('Your seat on the Grimco board means every rent hike in Rotwell now needs your signature. You sign with a crayon, out of spite.');
+  else if (L.ventures.includes('golden')) out.push('Your slice of the Golden Tooth pays out every night. The house always wins, and now you are, in a small and greasy way, the house.');
+  else if (L.ventures.includes('greasy')) out.push('Big Marge names a breakfast after you: two eggs, burnt toast and a side of "where\'d you get that money, sugar?" It sells out daily.');
+  if (L.legacy.includes('park')) out.push('Rotwell Memorial Park opens with your statue in the middle. The pigeons hold a meeting and agree, unanimously, to respect it on weekdays.');
+  else if (L.legacy.includes('library')) out.push('The library wing with your name on it is the quietest place in Rotwell. Mrs. Shush guards it like a dragon guards gold.');
+  else if (L.legacy.includes('shelter')) out.push('The Overpass Shelter has heat, cots and a sign that says "NO PLUNGERS". Reg wrote it. It\'s a joke. Mostly.');
+  if (top('office', 4)) out.push('Grimco\'s org chart still has you at the top. The ficus is your chief of staff. The ficus is very good at it.');
+  else if (top('cop', 4)) out.push('As Chief, you finally clean out the evidence locker. Forty pounds of donuts are given a proper burial.');
+  else if (top('factory', 3)) out.push('The meat plant hangs your apron in the break room, framed. It is still wet. Nobody knows why.');
+  if (out.length === 0 && (L.netWorth || 0) < 2000) out.push('You end it the way you started: broke, sticky and somehow still owing Randy rent. Some legends are made of money. Yours is made of grit.');
+  return out.slice(0, 3);
+}
+for (const E of Object.values(ENDINGS)) {
+  const base = E.epilogue;
+  E.epilogue = (g, v) => {
+    const out = (base?.(g, v) || []).slice();
+    try { out.push(...lifestyleLines(g)); } catch (e) { console.error('[quests] lifestyle epilogue failed', e); }
+    return out;
+  };
+}
+
 // Wisdom Reg dispenses at the camp (once per day for +INT).
 export const PROPHECIES = [
   'A man who sleeps on a bench sees the stars. A man who sleeps in a mansion sees his ceiling. Both are bitten by bugs. Only one of them pays for it.',

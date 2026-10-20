@@ -9,6 +9,8 @@ const ROOMS = {
   floor: { name: 'Main Floor', min: 5, max: 200, limit: 4000 },
   vip: { name: 'VIP Lounge', min: 50, max: 2500, limit: 40000 },
   high: { name: 'High Roller Suite', min: 500, max: 25000, limit: 400000 },
+  // balance pass 6: a late-game money sink. Same house edge, bigger swings, and Vinnie comps nothing.
+  whale: { name: "Vinnie's Private Room", min: 5000, max: 100000, limit: 2000000 },
 };
 const SUITS = ['♠', '♥', '♦', '♣'];
 const RANKS = ['A', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K'];
@@ -38,6 +40,11 @@ export function installCasino(game) {
     if (amount > 0 && gm > 1) {
       const bonus = Math.round(amount * (gm - 1));
       if (bonus > 0) { st.addMoney(bonus, 'casino bonus'); c.net += bonus; }
+    }
+    // Golden Tooth shareholders get 10% of their table losses comped (src/systems/ventures.js)
+    if (amount < 0 && game.lifestyle?.owns?.('golden')) {
+      const comp = Math.round(-amount * 0.1);
+      if (comp > 0) { st.addMoney(comp, 'casino comp'); c.net += comp; }
     }
     game.bus.emit('casino:result', { game: gameName, amount });
     if (amount > 0) sfx(amount >= ROOMS[room].max * 10 ? 'jackpot' : 'win');
@@ -392,8 +399,10 @@ export function installCasino(game) {
       },
       options: () => {
         const p = st.p;
-        const vipOk = p.cha >= 35 || p.level >= 8;
+        const L = g.lifestyle?.status?.() || {};
+        const vipOk = p.cha >= 35 || p.level >= 8 || L.supercar || L.penthouse || L.manor;
         const hrOk = netWorth(p) >= 100000;
+        const whaleOk = g.lifestyle?.owns?.('golden') || L.manor || L.goldcar || netWorth(p) >= 750000;
         const out = [
           { label: 'Blackjack', hint: 'hit, stand, double', run: blackjack },
           { label: 'Slots', hint: 'pull the lever, Kronk', run: slots },
@@ -404,8 +413,9 @@ export function installCasino(game) {
               title: 'Rooms', text: 'Where do you want to lose money?',
               choices: [
                 { label: `Main Floor (${fmtMoney(5)}–${fmtMoney(200)})`, value: 'floor' },
-                { label: `VIP Lounge (${fmtMoney(50)}–${fmtMoney(2500)})`, hint: vipOk ? '' : 'needs CHA 35 or level 8', disabled: !vipOk, value: 'vip' },
+                { label: `VIP Lounge (${fmtMoney(50)}–${fmtMoney(2500)})`, hint: vipOk ? '' : 'needs CHA 35, level 8, or a ride/home that impresses Vinnie', disabled: !vipOk, value: 'vip' },
                 { label: `High Roller Suite (${fmtMoney(500)}–${fmtMoney(25000)})`, hint: hrOk ? '' : 'needs $100k net worth', disabled: !hrOk, value: 'high' },
+                { label: `Vinnie's Private Room (${fmtMoney(5000)}–${fmtMoney(100000)})`, hint: whaleOk ? 'whales only. the carpet is mink.' : 'needs a Golden Tooth share, the Manor, the 24K Vendetta, or $750k net worth', disabled: !whaleOk, value: 'whale' },
               ],
             });
             if (r) room = r;

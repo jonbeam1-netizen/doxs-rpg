@@ -1,5 +1,6 @@
 import { esc, fmtMoney } from '../core/util.js';
 import { BACKGROUNDS } from '../ui/creator.js';
+import { JOBS } from '../data/jobs.js';
 
 // Perk trees. One perk point per level-up (+ background bonus points).
 //
@@ -30,6 +31,10 @@ import { BACKGROUNDS } from '../ui/creator.js';
 //   lockpick      x  lockpick/hack success chance   (NOT applied here — heists module should read it)
 //   dateChance    x  dating success odds            (NOT applied here — systems/dating should read it)
 //   bankInterest  — Compound Interest perk pays its own daily interest here.
+//   bankRate      x  savings interest rate          (applied by systems/civic.js)
+//   ventureIncome x  business-venture daily income  (applied by systems/ventures.js)
+// mult() also folds in career perks (data/jobs.js perks[rank], p.careerPerks) and game.lifestyle.mult(key)
+// (ventures / home upgrades / status purchases, src/systems/ventures.js).
 
 export const TREES = {
   brawler: { name: 'Brawler', color: '#e2402f', blurb: 'Solve problems with your face. Mostly other people\'s faces.' },
@@ -100,6 +105,11 @@ export function installPerks(game) {
       if (pr?.perks) for (const id of pr.perks) { const v = PERKS[id]?.mult?.[key]; if (v) m *= v; }
       const bg = BACKGROUNDS[st.p.background];
       if (bg?.mult?.[key]) m *= bg.mult[key];
+      // career perks (data/jobs.js perks[rank], earned on promotion, kept for good)
+      const cp = st.p.careerPerks;
+      if (cp) for (const k in cp) { const [j, r] = k.split(':'); const v = JOBS[j]?.perks?.[r]?.mult?.[key]; if (v) m *= v; }
+      // lifestyle: ventures, home upgrades, status purchases (src/systems/ventures.js)
+      try { const v = game.lifestyle?.mult?.(key); if (typeof v === 'number' && Number.isFinite(v) && v >= 0) m *= v; } catch { /* ignore */ }
       return m;
     },
     status(id) {

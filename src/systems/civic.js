@@ -20,7 +20,7 @@ export function installCivic(game) {
     const p = st.p;
     return Math.min(250000, Math.round(500 + p.level * 750 + p.int * 25 + Math.max(0, netWorth(p)) * 0.25));
   };
-  const savingsRate = () => (hasCourse(st.p, 'mba') ? 0.003 : 0.002);
+  const savingsRate = () => (hasCourse(st.p, 'mba') ? 0.003 : 0.002) * (Number(game.perks?.mult?.('bankRate')) || 1);
 
   async function deposit() {
     const p = st.p;
@@ -114,6 +114,8 @@ export function installCivic(game) {
       { label: 'Withdraw', run: () => withdraw(0) },
       { label: st.p.sys.loan ? 'Loan: repay' : 'Apply for a loan', hint: st.p.sys.loan ? fmtMoney(st.p.sys.loan.amount) : `up to ${fmtMoney(loanMax())}`, run: loanMenu },
       { label: 'Rotwell Mutual Fund', hint: 'risky investing', run: fundMenu },
+      { label: 'Business ventures', hint: 'buy into businesses · daily income', run: () => game.lifestyle?.openVentures() },
+      { label: 'Legacy projects', hint: 'big charity · karma · perks', run: () => game.lifestyle?.openLegacy() },
       { label: 'Ask for a free lollipop', run: () => { const t = today(g); if (t.lolli) return say(g, 'Bank', 'Gloria: "One per day. That\'s federal law." It isn\'t.', 'Gloria'); t.lolli = true; st.addStat('energy', 2); return say(g, 'Bank', 'Gloria sighs and hands you a lollipop from the kids\' jar. It\'s root beer. Nobody\'s favorite. +2 energy.', 'Gloria'); } },
     ],
   }));
@@ -123,7 +125,9 @@ export function installCivic(game) {
     // savings interest
     if (p.bank > 0) {
       const base = Math.min(p.bank, 250000);
-      const interest = Math.floor(base * savingsRate() + Math.max(0, p.bank - 250000) * 0.0005);
+      // lazy days (slept through, < 40 energy spent) only earn a quarter — no sleeping your way rich
+      const lazy = game.lifestyle?.wasActive?.() === false ? 0.25 : 1;
+      const interest = Math.floor((base * savingsRate() + Math.max(0, p.bank - 250000) * 0.0005) * lazy);
       if (interest > 0) { p.bank += interest; st.changed('bank'); p.sys.lastInterest = interest; }
     }
     // mutual fund
@@ -226,7 +230,7 @@ export function installCivic(game) {
           if (!st.spend(cost, 'surgery')) return;
           g.time.advance(480);
           p.sys.surgery++;
-          st.addStat('cha', 5, 'surgery');
+          if (game.lifestyle?.styleGain) game.lifestyle.styleGain(5, 'surgery'); else st.addStat('cha', 5, 'surgery');
           st.damage(20, 'surgery');
           return say(g, 'Surgery', pick(['You wake up with a chin you could cut glass with. Literally. Be careful kissing.', 'Your new nose is perfect. A little to the left, but perfect.', 'They tightened your face so much you now look permanently surprised. People find it charming.']));
         } },
@@ -238,7 +242,10 @@ export function installCivic(game) {
   // ================= POLICE =================
   const heatCost = () => {
     const p = st.p;
-    return Math.round(p.heat * (300 + p.level * 60) * (hasCourse(p, 'crim_justice') ? 0.75 : 1) * (hasCourse(p, 'law') ? 0.5 : 1));
+    // balance pass 6: if you've been dealing, the "administrative fee" includes the PD's cut of the last 3 days' sales
+    const recent = (p.sys.dealLog || []).filter((e) => game.time.day - e.d < 3).reduce((x, e) => x + (e.a || 0), 0);
+    const cut = recent * 0.06;
+    return Math.round((p.heat * (300 + p.level * 60) + cut) * (hasCourse(p, 'crim_justice') ? 0.75 : 1) * (hasCourse(p, 'law') ? 0.5 : 1));
   };
   function clearAllHeat() {
     if (game.combat?.clearHeat) game.combat.clearHeat(true);
@@ -268,6 +275,7 @@ export function installCivic(game) {
         if (!st.spend(c, 'heat')) return;
         clearAllHeat();
         p.sys.dealHeat = 0;
+        p.sys.dealLog = [];
         return say(g, 'Rotwell PD', 'Mulligan pockets the cash without counting it. "Your file seems to have... fallen into a shredder. Clumsy me."', 'Sgt. Mulligan');
       } });
       if (p.sys.fines > 0) out.push({ label: 'Pay outstanding fines', hint: fmtMoney(p.sys.fines), run: () => { if (st.spend(p.sys.fines, 'fines')) { p.sys.fines = 0; game.ui.toast('Fines paid. Mulligan stamps your hand like it\'s a nightclub.', 'good'); } } });
@@ -278,6 +286,7 @@ export function installCivic(game) {
         st.changed('drugs');
         clearAllHeat();
         p.sys.dealHeat = 0;
+        p.sys.dealLog = [];
         g.time.advance(hrs * 60);
         st.addStat('karma', 2);
         p.totals.arrests = (p.totals.arrests || 0) + 1;

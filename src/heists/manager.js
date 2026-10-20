@@ -1,4 +1,4 @@
-import { HEISTS, GEAR, MASKS, GUARD_NAMES, GUARD_BARKS, RADIO, DROP_HOT, DROPOFF_LABEL } from '../data/heists.js';
+import { HEISTS, GEAR, MASKS, GUARD_NAMES, GUARD_BARKS, RADIO, DROP_HOT, DROPOFF_LABEL, FENCE_CUT, PRESS_VALUE, PRESS_FLOOR, PRESS_COOLDOWN, PRESS_DECAY_DAYS, FAIL_COOLDOWN, FAIL_LEGAL } from '../data/heists.js';
 import { clamp, rand, randInt, pick, chance, fmtMoney, esc, uid as makeUid, angleLerp } from '../core/util.js';
 import { HeistHud } from './hud.js';
 import { createBag, bagOnBack, wearMask, createProp, createBeacon, pulseBeacon } from './meshes.js';
@@ -34,6 +34,31 @@ export class HeistManager {
     this.t = 0;
     this.v = this._freshView();
     this.leftovers = [];     // npcs/cars to clean up after a run
+    // Yard Boss career perk: Scrapper Pete leaves a spike strip out for you every morning
+    game.bus.on('time:day', () => { try { if (game.state.getFlag('perk_spikes')) { const h = this.h; if ((h.gear.spikes || 0) < 1) { h.gear.spikes = 1; game.state.changed('heists'); } } } catch { /* ignore */ } });
+  }
+
+  // ------------------------------------------------------------------ economy (balance pass 6)
+  // Press on a target: completions pile up, bleeding off 1 per PRESS_DECAY_DAYS.
+  press(id) {
+    const P = this.h.press?.[id];
+    if (!P) return 0;
+    const decay = Math.floor(Math.max(0, this.g.time.total - (P.t || 0)) / (PRESS_DECAY_DAYS * 1440));
+    return Math.max(0, (P.n || 0) - decay);
+  }
+  pressMult(id) { return Math.max(PRESS_FLOOR, 1 - PRESS_VALUE * this.press(id)); }
+  fenceCut() { try { const f = this.g.lifestyle?.fenceCut?.(); if (Number.isFinite(f)) return f; } catch { /* ignore */ } return FENCE_CUT; }
+  fee(id) { return Math.round(HEISTS[id]?.fee || 0); }
+  cooldownFor(id) { const d = HEISTS[id]; return d ? Math.round(d.cooldown * (1 + PRESS_COOLDOWN * Math.max(0, this.press(id) - 1))) : 0; }
+  // What you'd actually pocket (solo), for the board: headline take x press x quiet, minus fence and fee.
+  estimate(id, approach = 'quiet') {
+    const d = HEISTS[id];
+    if (!d) return { gross: 0, net: 0 };
+    let gross = (d.bags.count * (d.bags.value[0] + d.bags.value[1]) / 2) * this.pressMult(id) + (d.extra[0] + d.extra[1]) / 2;
+    if (approach === 'quiet') gross *= d.quietBonus || 1;
+    let pm = 1; try { pm = Number(this.g.perks?.mult?.('heistTake') ?? 1) || 1; } catch { /* ignore */ }
+    const net = gross * pm * (1 - this.fenceCut()) - this.fee(id);
+    return { gross: Math.round(gross), net: Math.round(net), fence: this.fenceCut(), fee: this.fee(id), press: this.press(id), pressMult: this.pressMult(id) };
   }
 
   _freshView() {
@@ -68,8 +93,8 @@ export class HeistManager {
     try { u = def.unlock(this.g) || { ok: true }; } catch (e) { console.error('[heists] unlock check failed', e); }
     if (!u.ok) return { ok: false, locked: true, why: u.why };
     const h = this.h, now = this.g.time.total;
-    const cdA = (h.last[id] ?? -1e9) + def.cooldown - now;
-    const cdB = (h.failedAt[id] ?? -1e9) + 6 * 60 - now;
+    const cdA = (h.last[id] ?? -1e9) + this.cooldownFor(id) - now;
+    const cdB = (h.failedAt[id] ?? -1e9) + Math.max(6 * 60, def.cooldown * FAIL_COOLDOWN) - now;
     const cd = Math.max(cdA, cdB);
     if (cd > 0) return { ok: false, cooldown: cd, why: `Cooling off: ${Math.ceil(cd / 60)}h left.` };
     return { ok: true };
@@ -560,7 +585,8 @@ export class HeistManager {
       let bx = x + tx * a + Math.sin(f) * 1.2, bz = z + tz * a + Math.cos(f) * 1.2;
       const r = this.g.physics.resolveCircle(bx, bz, 0.4);
       bx = r.x; bz = r.z;
-      s.bags.push({ i: s.bags.length, v: Math.round(randInt(def.bags.value[0], def.bags.value[1]) / 10) * 10, s: 'g', by: null, x: bx, z: bz });
+      // a target you've hit recently keeps less cash on hand (press)
+      s.bags.push({ i: s.bags.length, v: Math.round(randInt(def.bags.value[0], def.bags.value[1]) * this.pressMult(def.id) / 10) * 10, s: 'g', by: null, x: bx, z: bz });
     }
   }
 
@@ -621,7 +647,17 @@ export class HeistManager {
     let share = Math.max(0, Math.round(Number(msg.share) || 0));
     try { const pm = Number(g.perks?.mult?.('heistTake') ?? 1); if (Number.isFinite(pm) && pm > 0) share = Math.round(share * pm); } catch { /* no perks */ }
     const take = Math.max(0, Math.round(Number(msg.take) || 0));
+    // the fence turns hot bills into spendable ones, for a cut (laundromat venture: less)
+    const cut = this.fenceCut();
+    const fenced = Math.round(share * cut);
+    share -= fenced;
     if (share > 0) g.state.addMoney(share, 'heist');
+    // press on the target + heat from the investigation
+    h.press ||= {};
+    h.press[def.id] = { n: this.press(def.id) + 1, t: g.time.total };
+    const heat = Number(def.heat?.[msg.quiet ? 'quiet' : 'loud']) || 0;
+    if (heat > 0) { try { g.state.addHeat(heat); } catch { /* ignore */ } }
+    setTimeout(() => this.toast(`💸 The fence keeps <b>${Math.round(cut * 100)}%</b> (${fmtMoney(fenced)}). You pocket <b>${fmtMoney(share)}</b>.${heat > 0 ? ` Detectives are sniffing around (+${heat}★).` : ''}${cut >= 0.3 ? ' <small>(A laundromat "front" would cut the fence’s share — ask at the bank.)</small>' : ''}`, 'money', 7000), 1200);
     g.state.addXP(def.xp);
     g.state.addStat('karma', -Math.min(5, def.tier), 'heist');
     h.done[def.id] = (h.done[def.id] || 0) + 1;
@@ -642,6 +678,15 @@ export class HeistManager {
   applyFail(id, reason) {
     const g = this.g, h = this.h, def = HEISTS[id];
     if (def) h.failedAt[id] = g.time.total;
+    // a blown job costs more than pride: lawyers and a heat bump (calling it off early is free-ish)
+    const soft = /called off|walked away/i.test(String(reason || ''));
+    if (def && !soft) {
+      const p = g.state.p;
+      const legal = Math.min(Math.round((p.money || 0) * FAIL_LEGAL), 2000 * def.tier);
+      if (legal > 0) g.state.addMoney(-legal, 'legal fees');
+      try { g.state.addHeat(1); } catch { /* ignore */ }
+      setTimeout(() => this.toast(`⚖️ Lawyer's retainer for the mess: <b>${fmtMoney(legal)}</b>. Terry keeps his fee. The ${esc(def.name)} is crawling with cops for a while.`, 'bad', 6000), 1500);
+    }
     g.ui.bigText('HEIST FAILED', esc(reason || 'It all went sideways.'), 3500);
     this.combatSfx('trombone');
     this.toast(pick(RADIO.fail), 'bad', 5000);
@@ -668,9 +713,12 @@ export class HeistManager {
   // Your own getaway car (if you bought one) waits near the target — local to your machine.
   spawnGetaway() {
     const g = this.g, h = this.h, vm = g.vehicles, s = this.s;
-    const gid = (h.gear.getaway_fast || 0) > 0 ? 'getaway_fast' : (h.gear.getaway || 0) > 0 ? 'getaway' : null;
+    let gid = (h.gear.getaway_fast || 0) > 0 ? 'getaway_fast' : (h.gear.getaway || 0) > 0 ? 'getaway' : null;
+    // Chop Chop partner (ventures): a free beige sedan at every job
+    const comp = !gid && !!g.lifestyle?.owns?.('chop');
+    if (comp) gid = 'getaway';
     if (!gid || !vm?.spawnCar) return;
-    h.gear[gid]--; if (h.gear[gid] <= 0) delete h.gear[gid];
+    if (!comp) { h.gear[gid]--; if (h.gear[gid] <= 0) delete h.gear[gid]; }
     const carId = GEAR[gid].car;
     try {
       const spot = vm.findSpot ? vm.findSpot(s.target.x, s.target.z, carId, 7, 28) : { x: s.target.x + 6, z: s.target.z + 6, rot: 0 };

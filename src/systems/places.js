@@ -183,6 +183,7 @@ export function installPlaces(game) {
         const r = g.market?.rumor?.(0.8);
         return say(g, 'Big Marge', `${pick(['"You didn\'t hear it from me, sugar, but..."', '"My cousin\'s husband\'s parole officer says..."', '"The truckers been talkin\'..."'])} ${r ? `"${r}"` : '"Nothin\'. Quiet week. Too quiet."'}`, 'Big Marge');
       } },
+      ...(g.lifestyle?.placeOptions?.('greasy_spoon') || []),
       ...g.jobs.options('diner'),
     ],
   }));

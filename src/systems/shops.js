@@ -50,6 +50,8 @@ const TATTOOS = {
 };
 
 export function installShops(game) {
+  // cosmetic Charm goes through the style cap (src/systems/ventures.js, STYLE_CAP)
+  const styleCha = (n, src) => (game.lifestyle?.styleGain ? game.lifestyle.styleGain(n, src) : game.state.addStat('cha', n, src));
   const st = game.state;
   const sfx = (n) => game.sysSfx?.play(n);
 
@@ -185,7 +187,7 @@ export function installShops(game) {
         buy: () => {
           if (!st.spend(o.price, 'clothes')) return;
           p.sys.outfits.push(id);
-          st.addStat('cha', o.cha, 'outfit');
+          styleCha(o.cha, 'outfit');
           setLook({ color: o.color });
           sfx('cash');
           game.ui.toast(pick(['Fabrizio: "Finally, you look like someone. Someone bad, but someone."', 'Fabrizio: "Stunning. Truly. I\'m lying, but it\'s still an improvement."']), 'good', 3000);
@@ -202,7 +204,7 @@ export function installShops(game) {
         buy: async () => {
           if (!st.spend(h.price, 'clothes')) return;
           p.sys.hats.push(id);
-          st.addStat('cha', h.cha, 'hat');
+          styleCha(h.cha, 'hat');
           const c = await pickHatColor();
           setLook({ hat: id, hatColor: c || '#2a2420' });
           sfx('cash');
@@ -221,7 +223,7 @@ export function installShops(game) {
       day: 'Fabrizio looks you up and down like you\'re a stain. "Darling. DARLING. No. Come. We fix."',
       evening: '"Closing soon, so make it fast. Fashion waits for no one. Except me. Fashion waits for me."',
       night: 'Fabrizio is counting the register and judging you simultaneously.',
-    }) + `<br><span class="sys-hint">Every new outfit or hat permanently boosts Charm the first time you buy it.</span>`,
+    }) + `<br><span class="sys-hint">Every new outfit or hat permanently boosts Charm the first time you buy it — up to a style cap (${Math.min(25, Math.round(st.p.sys.style ?? 0))}/25 used). Past that, it's pure vanity.</span>`,
     options: () => {
       const t = today(g);
       return [
@@ -293,7 +295,7 @@ export function installShops(game) {
             g.time.advance(90);
             st.damage(5, 'tattoo');
             st.p.sys.tattoos.push(id);
-            if (t.cha) st.addStat('cha', t.cha, 'tattoo');
+            if (t.cha) styleCha(t.cha, 'tattoo');
             if (t.str) st.addStat('str', t.str, 'tattoo');
             if (t.karma) st.addStat('karma', t.karma);
             game.ui.toast(pick(['Nancy: "Done! Don\'t look at it for a week. Or ever, honestly."', 'It stings like hell. You look like hell. Cool.', 'Nancy stops shaking halfway through. Unfortunately, it\'s the second half.']), 'good', 3500);
@@ -315,7 +317,7 @@ export function installShops(game) {
         if (!st.spend(40)) return;
         const where = pick(['eyebrow', 'nose', 'lip', 'tongue', 'nipple', '"somewhere secret"']);
         st.damage(3, 'piercing');
-        st.addStat('cha', where === 'tongue' ? 1 : 0.5, 'piercing');
+        styleCha(where === 'tongue' ? 1 : 0.5, 'piercing');
         return say(g, 'Piercing', `Nancy pierces your ${where} with what she claims is a "sterilized" safety pin. She licked it first. That\'s how she sterilizes.`);
       } },
     ],
@@ -333,7 +335,7 @@ export function installShops(game) {
     p.sys.pawn = { day: game.time.day, weapons, goods, sold: [] };
     return p.sys.pawn;
   }
-  const pawnItemPrice = (id) => Math.max(1, Math.floor((ITEMS[id]?.price ?? 0) * (ITEMS[id]?.pawnMult ?? (ITEMS[id]?.cat === 'junk' ? 0.6 : 0.35))));
+  const pawnItemPrice = (id) => Math.max(1, Math.floor((ITEMS[id]?.price ?? 0) * (ITEMS[id]?.pawnMult ?? (ITEMS[id]?.cat === 'junk' ? 0.6 * (st.getFlag('perk_scrap_eye') ? 1.4 : 1) : 0.35))));
   const pawnWeaponPrice = (id) => Math.floor((WEAPONS[id]?.price ?? 0) * 0.35);
 
   game.locations.register('pawn', (g, loc) => placeMenu(g, loc, {
@@ -348,6 +350,7 @@ export function installShops(game) {
     options: () => [
       { label: 'Sell your stuff', run: () => pawnSell() },
       { label: 'Browse the merchandise', hint: 'cheap weapons & "found" goods', run: () => pawnBuy() },
+      { label: 'The locked case', hint: 'rare oddities · collector perks', run: () => game.lifestyle?.openOddities() },
       { label: 'Ask Larry why he\'s "Lucky"', run: () => say(g, loc.name, pick([
         '"I got hit by lightning six times. Survived all six. Also lost both my wives in the same lightning strike. Lucky AND single."',
         '"I found a winning lottery ticket in a dead guy\'s shoe. Don\'t ask why I was in a dead guy\'s shoe."',

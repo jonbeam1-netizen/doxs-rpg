@@ -46,12 +46,17 @@ export const ARCH = {
   gunner:  { wind: 0.5,  recover: 0.5,  dmg: 1,    reach: 1,    block: 0,    dodge: 0.1,  style: null },
   cop:     { wind: 0.5,  recover: 0.6,  dmg: 1,    reach: 1,    block: 0.12, dodge: 0,    style: 'overhead', taser: true },
   boss:    { wind: 0.55, recover: 0.5,  dmg: 1.2,  reach: 1.1,  block: 0.3,  dodge: 0,    style: 'heavy', heavy: true, poise: true },
+  // Bar drunks (balance pass 6): sloppy but slippery. They wobble out of light hits (sway), shrug off a
+  // long combo after two hits (early-tier chain cap below) and throw a big red-telegraphed haymaker
+  // that knocks you flat — roll or block it and they stagger open for a long time.
+  drunk:   { wind: 0.56, recover: 0.6,  dmg: 1,    reach: 1.05, block: 0.2,  dodge: 0,    style: null, sway: 0.3,  haymaker: 0.32 },
 };
 const TELE = { normal: 0xff9a1a, heavy: 0xff3a12, taser: 0x3ad0ff };
 
 function archFor(npc) {
   if (npc.spec?.arch && ARCH[npc.spec.arch]) return npc.spec.arch;
   if (npc.boss) return 'boss';
+  if (npc.role === 'drunk' && npc.brawlId && (npc.tier || 0) <= 1) return 'drunk';
   const w = npc.weapon;
   if (npc.wdef?.kind === 'gun') return 'gunner';
   if (npc.kind === 'cop') return 'cop';
@@ -373,6 +378,15 @@ export class NPCManager {
         const l = Math.hypot(bx, bz) || 1;
         n.dodge = { x: bx / l, z: bz / l, t: 0.3 };
         n.dodgeCd = 2.5;
+      } else if (!big && A.sway && n.dodgeCd <= 0 && chance(A.sway)) {
+        // drunken wobble: the punch sails past their ear
+        this._cancelAttack(n);
+        const side = chance(0.5) ? 1 : -1;
+        const bx = rx / d * 0.5 + (-rz / d) * side * 0.85, bz = rz / d * 0.5 + (rx / d) * side * 0.85;
+        const l = Math.hypot(bx, bz) || 1;
+        n.dodge = { x: bx / l, z: bz / l, t: 0.26 };
+        n.dodgeCd = rand(1.3, 2.1);
+        if (n.barkCd <= 0 && chance(0.5)) { this.ctx.fx.say(n.group, pick(['*hic*', 'Whoooa.', 'Missed me! ...Did you?', "Floor's movin'."]), { ttl: 1 }); n.barkCd = 3; }
       } else if (!big && !n.atk && n.guard <= 0 && n.guardCd <= 0 && chance(A.block)) {
         this._setGuard(n, rand(0.6, 1.0));
         n.guardCd = rand(1.8, 3.2);
@@ -389,6 +403,9 @@ export class NPCManager {
       return { dealt: 0, killed: false };
     }
     amount = Math.max(0, amount);
+    // a drunk who just shrugged off a combo is numb for a beat: mashing through his haymaker wind-up
+    // barely hurts (kicks / charged heavies still land in full)
+    if (npc.A?.sway && npc.poiseT > 0 && !opts.guardBreak && !opts.blocked) amount = Math.round(amount * 0.45);
     npc.hp -= amount;
     npc.predictedHp = undefined;
     npc.lastAttacker = attackerId;
@@ -419,9 +436,16 @@ export class NPCManager {
         npc.stun = Math.max(npc.stun, opts.heavy || breaker ? 0.5 : 0.28);
         this._cancelAttack(npc); // interrupt their swing — combos feel good
       }
-      if (!npc.boss && npc.hitChain >= 3 + Math.min(2, Math.floor((npc.tier || 0) / 3)) && !breaker) {
+      // early-tier brawlers (tier 0-1) only eat two in a row before they shrug and swing back
+      const chainCap = (npc.brawlId && (npc.tier || 0) <= 1) ? 2 : 3 + Math.min(2, Math.floor((npc.tier || 0) / 3));
+      if (!npc.boss && npc.hitChain >= chainCap && !breaker) {
         npc.hitChain = 0;
-        if (A.block > 0 && npc.guardCd <= 0 && chance(A.block + 0.25)) { npc.stun = 0; this._setGuard(npc, 0.8); npc.guardCd = 2.5; }
+        if (A.sway) {
+          // drunk: cover up, or stumble out of the combo and swing right back
+          npc.stun = 0; npc.cd = 0;
+          if (npc.guardCd <= 0) { this._setGuard(npc, rand(0.8, 1.15)); npc.guardCd = rand(1.4, 2.2); }
+          else { npc.poiseT = 1.1; npc.forceHay = true; } // eats the hit and winds up a haymaker right back
+        } else if (A.block > 0 && npc.guardCd <= 0 && chance(A.block + 0.25)) { npc.stun = 0; this._setGuard(npc, 0.8); npc.guardCd = 2.5; }
         else if (A.dodge > 0 && chance(0.6)) {
           npc.stun = 0;
           const d = opts.dir || { x: -Math.sin(npc.facing), z: -Math.cos(npc.facing) };
@@ -762,7 +786,7 @@ export class NPCManager {
       if (npc.pendingHit <= 0) this._resolveNpcMelee(npc);
     }
     if (npc.atk) {
-      if (npc.stun > 0 && npc.atk.phase === 'wind' && !(npc.A?.poise || npc.boss)) this._cancelAttack(npc);
+      if (npc.stun > 0 && npc.atk.phase === 'wind' && !(npc.A?.poise || npc.boss || (npc.poiseT > 0 && npc.A?.sway))) this._cancelAttack(npc);
       else if (this._updateAttack(npc, dt)) return; // a charge is steering them
     }
 
@@ -1256,7 +1280,12 @@ export class NPCManager {
     else if (kind === 'combo') { wind = A.wind * 0.9 * enr; }
     else if (kind === 'taser') { wind = 0.65; style = 'taser'; color = TELE.taser; alert = 'warn'; }
     else if (kind === 'lunge') { style = 'slash'; }
-    npc.atk = { kind, phase: 'wind', t: wind, style, hits: kind === 'combo' ? 3 : 1, hit: false };
+    // drunk haymaker: slow, red, knocks you flat — and leaves them wide open if it whiffs
+    const hay = kind === 'swing' && A.haymaker > 0 && (npc.forceHay || chance(A.haymaker));
+    npc.forceHay = false;
+    if (hay) { wind = 0.82; style = 'overhead'; color = TELE.heavy; alert = 'danger'; }
+    npc.atk = { kind, phase: 'wind', t: wind, style, hits: kind === 'combo' ? 3 : 1, hit: false, hay };
+    if (hay && npc.dist < 20 && chance(0.5)) fx.say(npc.group, pick(["C'mere, you!", 'HAYMAKERRR!', 'Night night!', "I'm gonna... *hic* ...END you!"]), { ttl: 1.1, kind: 'angry' });
     npc.windSeq++;
     npc.model.windup?.(wind, style, color);
     fx.alert(npc.group, alert, wind, 2.55 * npc.scale);
@@ -1321,7 +1350,7 @@ export class NPCManager {
           npc.punchSeq++;
           npc.pendingHit = 0.08;
           if (tp) npc.faceTo = Math.atan2(tp.x - npc.pos.x, tp.z - npc.pos.z);
-        } else { a.phase = 'recover'; a.t = A.recover; }
+        } else { a.phase = 'recover'; a.t = A.recover * (a.hay ? 2.1 : 1); }
       }
       return false;
     }
@@ -1462,10 +1491,11 @@ export class NPCManager {
     if (this._targetInVehicle(npc.target)) return;
     const A = npc.A || ARCH.brawler;
     const last = npc.atk?.kind === 'combo' && npc.atk.hits <= 1;
-    const dmg = Math.max(2, Math.round(def.damage * npc.dmgMult * (A.dmg || 1) * (last ? 1.3 : 1) * rand(0.85, 1.15) * (npc.tierMult || 1)));
+    const hay = !!npc.atk?.hay;
+    const dmg = Math.max(2, Math.round(def.damage * npc.dmgMult * (A.dmg || 1) * (last ? 1.3 : 1) * (hay ? 2.2 : 1) * rand(0.85, 1.15) * (npc.tierMult || 1)));
     const sfx = def.swing === 'overhead' || npc.weapon === 'bat' || npc.weapon === 'baton' ? 'smack' : (npc.weapon === 'knife' || npc.weapon === 'machete' || npc.weapon === 'bottle') ? 'slash' : 'punch';
     this.ctx.fx.sfx.play(sfx, { pos: npc.pos });
-    this.ctx.combat?.hurtTarget(npc, npc.target, dmg, { dir: { x: dx / (d || 1), z: dz / (d || 1) }, melee: true, heavyHit: !!A.heavy || last });
+    this.ctx.combat?.hurtTarget(npc, npc.target, dmg, { dir: { x: dx / (d || 1), z: dz / (d || 1) }, melee: true, heavyHit: !!A.heavy || last || hay, knockdown: hay || undefined });
   }
 
   _npcShoot(npc, tp, d) {

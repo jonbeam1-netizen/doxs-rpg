@@ -85,7 +85,7 @@ export function installJobs(game) {
       const hours = await choose(game, {
         title: `Work a shift — ${r.title}`,
         html: `${fmtMoney(r.pay)}/hour · costs ${d.energy} energy/hour. You have ${Math.floor(p.energy)} energy.`,
-        choices: [2, 4, 8].map((h) => ({ label: `${h}-hour shift`, hint: `${fmtMoney(r.pay * h)} · -${d.energy * h} energy`, disabled: p.energy < d.energy * h, value: h })),
+        choices: [2, 4, 8].map((h) => ({ label: `${h}-hour shift`, hint: `${fmtMoney(r.pay * h * (1 + seniority(p.job)))} · -${d.energy * h} energy`, disabled: p.energy < d.energy * h, value: h })),
       });
       if (!hours) return;
       const mg = jobGame(id, p.job.rank);
@@ -135,14 +135,17 @@ export function installJobs(game) {
     const r = d.ranks[p.job.rank];
     st.addStat('energy', -d.energy * hours);
     game.time.advance(hours * 60);
-    const mult = res ? payMult(res) : 1;
-    const base = r.pay * hours;
+    // balance pass 6: the better the job, the more a great shift is worth (rank scales the bonus above 1x)
+    let mult = res ? payMult(res) : 1;
+    if (mult > 1) mult = 1 + (mult - 1) * (1 + 0.3 * p.job.rank);
+    const sen = seniority(p.job);
+    const base = Math.round(r.pay * hours * (1 + sen));
     let pay = base * mult;
     let extra = '';
     if (hasCourse(p, 'bs101')) pay *= 1.1;
     let perfLine = '';
     if (res) {
-      perfLine = `Base ${fmtMoney(base)} × <b>${res.skipped ? 'autopilot' : 'grade ' + res.grade}</b> (${mult.toFixed(2)}×${hasCourse(p, 'bs101') ? ', +10% BS degree' : ''})`;
+      perfLine = `Base ${fmtMoney(base)}${sen > 0 ? ` (incl. +${Math.round(sen * 100)}% seniority)` : ''} × <b>${res.skipped ? 'autopilot' : 'grade ' + res.grade}</b> (${mult.toFixed(2)}×${hasCourse(p, 'bs101') ? ', +10% BS degree' : ''})`;
     }
     if (d.tips) {
       const tipMult = res ? (res.skipped ? 0.8 : 0.5 + res.score) : 1;
@@ -173,6 +176,7 @@ export function installJobs(game) {
     c.shifts = p.job.shifts;
     c.rank = p.job.rank;
     c.total++;
+    c.lastDay = game.time.day;
     st.changed('job');
     game.bus.emit('job:worked', { jobId: id, rank: p.job.rank, pay, hours });
     const promo = checkPromotion(id);
@@ -187,7 +191,7 @@ export function installJobs(game) {
     if (!next || p.job.shifts < r.shifts) return '';
     const chk = reqCheck(game, next.req);
     if (!chk.ok) {
-      return `<span class="sys-hint">${d.boss}: "You've put in the time for <b>${next.title}</b>, but you're missing: ${reqMissing(game, next.req)}."</span>`;
+      return `<span class="sys-hint">${d.boss}: "You've put in the time for <b>${next.title}</b>, but you're missing: ${reqMissing(game, next.req)}." (Seniority still bumps your pay +5% a shift, up to +50%.)</span>`;
     }
     p.job.rank++;
     p.job.shifts = 0;
@@ -196,9 +200,64 @@ export function installJobs(game) {
     st.changed('job');
     game.bus.emit('job:promoted', { jobId: id, rank: p.job.rank, pay: next.pay });
     st.addXP(50 * p.job.rank);
+    // signing bonus: 20 hours of the new wage (10 deliveries for Pizza Butt)
+    const bonus = Math.round(next.pay * (d.kind === 'delivery' ? 10 : 20));
+    st.addMoney(bonus, 'job');
+    const perkLine = grantCareerPerk(id, p.job.rank);
     setTimeout(() => game.ui.bigText('PROMOTED!', `${next.title} — ${fmtMoney(next.pay)}${d.kind === 'delivery' ? '/drop' : '/hr'}`, 3000), 50);
-    return `<b class="ui-good">PROMOTION!</b> ${promoLine(id, next.title)} New pay: <b>${fmtMoney(next.pay)}${d.kind === 'delivery' ? ' per delivery' : '/hr'}</b>.`;
+    return `<b class="ui-good">PROMOTION!</b> ${promoLine(id, next.title)} New pay: <b>${fmtMoney(next.pay)}${d.kind === 'delivery' ? ' per delivery' : '/hr'}</b> · signing bonus <b class="ui-good">${fmtMoney(bonus)}</b>.${perkLine}`;
   }
+
+  // Seniority: +5% per shift worked at your current rank, max +50% (resets on promotion — the raise is bigger).
+  function seniority(j) {
+    if (!j) return 0;
+    return Math.min(0.5, 0.05 * Math.max(0, j.shifts || 0));
+  }
+  jobs.seniority = seniority;
+
+  // Career perks (data/jobs.js perks[rank]): granted once, kept for good. p.careerPerks = { 'jobId:rank': day }.
+  function grantCareerPerk(id, rank) {
+    const P = JOBS[id]?.perks?.[rank];
+    const p = st.p;
+    p.careerPerks ??= {};
+    const key = `${id}:${rank}`;
+    if (!P || p.careerPerks[key]) return '';
+    p.careerPerks[key] = game.time.day;
+    const got = [];
+    try {
+      if (P.flag) st.setFlag(P.flag, true);
+      if (P.item) { st.addItem(P.item, 1); got.push(game.items?.name(P.item)); }
+      if (P.weapon && !p.weapons.includes(P.weapon)) { if (game.combat?.giveWeapon) game.combat.giveWeapon(P.weapon, P.weapon === 'pistol' ? 24 : 0); else p.weapons.push(P.weapon); got.push(P.weapon); }
+      if (P.gear) { p.heists ??= {}; p.heists.gear ??= {}; p.heists.gear[P.gear] = Math.max(1, p.heists.gear[P.gear] || 0); got.push('heist gear'); }
+      if (P.car && game.vehicles?.giveCar && !(p.cars || []).some((c) => c.carId === P.car)) { game.vehicles.giveCar(P.car); got.push('a ride'); }
+    } catch (e) { console.error('[jobs] career perk failed', e); }
+    st.changed('job');
+    game.bus.emit('job:perk', { jobId: id, rank, perk: P });
+    return `<br><span class="ui-good">⭐ Career perk unlocked:</span> ${P.text}`;
+  }
+  jobs.grantCareerPerk = grantCareerPerk;
+
+  // Every career perk you've earned (for game.perks.mult and the sheet).
+  jobs.earnedPerks = () => {
+    const p = st.p, out = [];
+    for (const key of Object.keys(p.careerPerks || {})) {
+      const [id, r] = key.split(':');
+      const P = JOBS[id]?.perks?.[r];
+      if (P) out.push({ jobId: id, rank: Number(r), ...P });
+    }
+    return out;
+  };
+
+  // Daily retainer for the current job's earned perks (paid by systems' daily tick on active days).
+  jobs.dailyIncome = () => {
+    const p = st.p, j = p.job;
+    if (!j || !JOBS[j.id]) return 0;
+    let n = 0;
+    for (let r = 0; r <= j.rank; r++) { const P = JOBS[j.id].perks?.[r]; if (P?.daily && p.careerPerks?.[`${j.id}:${r}`]) n += P.daily; }
+    // you have to actually show up: no retainer if you haven't worked in 3 days
+    const last = p.careers?.[j.id]?.lastDay ?? -99;
+    return game.time.day - last <= 3 ? n : 0;
+  };
   jobs.checkPromotion = checkPromotion;
   jobs.career = career;
 
@@ -261,5 +320,13 @@ export function installJobs(game) {
   }
 
   game.bus.on('state:reset', () => ensureState(st.p));
+  // Old saves (pre balance pass 6): hand out the career perks for ranks you'd already earned.
+  game.bus.on('game:start', () => {
+    try {
+      let n = 0;
+      for (const [id, c] of Object.entries(st.p.careers || {})) for (let r = 1; r <= (c.rank || 0); r++) if (grantCareerPerk(id, r)) n++;
+      if (n) setTimeout(() => game.ui.toast(`⭐ ${n} career perk${n > 1 ? 's' : ''} unlocked for ranks you already earned. Check your character sheet (Tab).`, 'good', 5000), 3000);
+    } catch (e) { console.error('[jobs] retro perks failed', e); }
+  });
   return jobs;
 }

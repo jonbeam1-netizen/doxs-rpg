@@ -1333,7 +1333,10 @@ export class Combat {
       }
       if (isBoss && boss.weapon) weapon = boss.weapon;
       const baseHp = ({ drunk: 45, thug: 65, gang: 75, fighter: 70 })[kind];
-      let hp = Math.round(baseHp * (1 + 0.42 * tier) * rand(0.9, 1.1) * (weapon === 'knife' || weapon === 'bottle' ? 0.88 : 1));
+      // balance pass 6: tier 0-1 fights used to end in 2-3 s. A little more meat (not a sponge — the drunk
+      // sway / haymaker / two-hit chain cap in npc/manager.js do most of the work) for an ~8-15 s scrap.
+      const early = tier <= 1 ? (kind === 'drunk' ? (tier === 0 ? 2.5 : 1.95) : kind === 'fighter' ? 1.8 : 1.25) : 1;
+      let hp = Math.round(baseHp * (1 + 0.42 * tier) * early * rand(0.9, 1.1) * (weapon === 'knife' || weapon === 'bottle' ? 0.88 : 1));
       if (isBoss) hp = Math.round(boss.hp ?? baseHp * (1 + 0.42 * tier) * (count === 1 ? 2.5 : 1.6));
       const npc = this.ctx.npcs.spawn({
         kind: kind === 'fighter' ? 'fighter' : kind, role: kind, faction, x, z,

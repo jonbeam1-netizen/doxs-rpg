@@ -32,7 +32,7 @@
 //     fines,  surgery,  haircuts,  rent: { homeId: paidThroughDay },  drunk,  addiction: { level, last },
 //     dealHeat (fractional heat accumulator),  partner,  casino: { day, net, bannedDay },
 //     pawn: { day, weapons, goods, sold },  news: { day, headline, stories, announced },  collectors,
-//     lastInterest
+//     lastInterest,  ventures/legacy/homeUp/style/activity/lastActive/lastIncome/galaDay (src/systems/ventures.js)
 //   }
 // ---------------------------------------------------------------------------------------------
 import { ensureState, capacity, today } from './common.js';
@@ -53,6 +53,7 @@ import { installNightlife } from './nightlife.js';
 import { installFightClub } from './fightclub.js';
 import { installPlaces } from './places.js';
 import { installNews } from './news.js';
+import { installVentures } from './ventures.js';
 import { installMinigames } from './minigame.js';
 import { registerWorkGames } from './mg/work.js';
 import { registerTrainGames } from './mg/train.js';
@@ -67,7 +68,7 @@ export async function installSystems(game) {
     ['sfx', installSfx], ['minigames', (g) => { const m = installMinigames(g); registerWorkGames(m); registerTrainGames(m); return m; }], ['effects', installEffects], ['items', installItems], ['market', installMarket],
     ['jobs', installJobs], ['delivery', installDelivery], ['homes', installHomes], ['shops', installShops],
     ['civic', installCivic], ['training', installTraining], ['casino', installCasino], ['dating', installDating],
-    ['nightlife', installNightlife], ['fightclub', installFightClub], ['places', installPlaces], ['news', installNews],
+    ['nightlife', installNightlife], ['fightclub', installFightClub], ['places', installPlaces], ['news', installNews], ['ventures', installVentures],
   ];
   for (const [name, fn] of steps) {
     try { parts[name] = fn(game); } catch (e) { console.error(`[systems] ${name} failed to install`, e); }
@@ -81,9 +82,11 @@ export async function installSystems(game) {
     const p = game.state.p;
     ensureState(p);
     for (const [name, fn] of [
+      ['activity', () => parts.ventures?.beginDay()],   // was yesterday an active day? (passive income rule)
       ['market', () => parts.market?.daily()],
       ['civic', () => parts.civic?.daily()],
       ['homes', () => parts.homes?.daily()],
+      ['ventures', () => parts.ventures?.daily()],
       ['dating', () => parts.dating?.daily()],
       ['news', () => parts.news?.daily()],
     ]) {
@@ -108,5 +111,7 @@ export async function installSystems(game) {
     stats(n = 100) { const p = game.state.p; p.str = p.int = p.cha = n; game.state.changed('all'); },
     day() { game.time.advance(game.time.minutesUntil(7)); },
     enter(id) { const l = game.locations.get(id); if (l) game.locations.enter(l); },
+    // economy sim (balance pass 6): game.sysDebug.econ({ era: 'before'|'after', seeds, minutes }) — see systems/econsim.js
+    async econ(opts = {}) { const m = await import('./econsim.js'); return m.runEcon(opts); },
   };
 }

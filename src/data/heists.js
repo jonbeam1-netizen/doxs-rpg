@@ -13,7 +13,13 @@
 //   objectives: { quiet:[...], loud:[...] }   objective specs (see below)
 //   uses: gear ids that get consumed when you bring them
 //   civ: optional flavor civilian { name, color, hat, lines[] }
+//   fee: Terry's planning fee, paid when you roll out (lost if the job fails)
+//   heat: { quiet, loud } wanted stars added when the job is done (investigators, witnesses)
 // }
+// Balance pass 6 — heists keep big headline takes, but your cut has real costs: the fence keeps FENCE_CUT
+// of every dollar (less with the laundromat venture), Terry charges a fee, hitting the same target again
+// soon pays less and cools off longer (PRESS), finishing adds heat, and failing costs the fee, legal fees
+// and a long cooldown.
 // Objective spec: { k, type, label, spot?, need?, fast?, pins?, rounds?, onDone? }
 //   type: goto | mask | hold | lockpick | hack | truck_find | truck_stop | loot | escape
 //   spot: door | left | right | farLeft | farRight | street | truckRear  (relative to the target door)
@@ -60,7 +66,7 @@ export const HEISTS = {
   gas: {
     id: 'gas', name: 'Gas-N-Gulp Stickup', tier: 1, loc: 'gas_n_gulp', dropoff: 'lucky_larrys',
     blurb: 'A corner store with a floor safe, one rent-a-cop and a night clerk who stopped caring in 2009. Training wheels.',
-    cooldown: 12 * 60, time: 240, xp: 150, bags: { count: 2, value: [300, 480] }, extra: [120, 280], quietBonus: 1.25,
+    cooldown: 12 * 60, time: 240, xp: 150, bags: { count: 2, value: [300, 480] }, extra: [120, 280], quietBonus: 1.25, fee: 0, heat: { quiet: 0, loud: 1 },
     reqText: 'Anyone with a mask and a pulse',
     unlock: () => ({ ok: true }),
     guards: { quiet: ['baton'], loud: ['baton', 'bat'] },
@@ -102,7 +108,7 @@ export const HEISTS = {
   truck: {
     id: 'truck', name: 'Armored Truck Hit', tier: 2, loc: 'first_bank', dropoff: 'chop_chop',
     blurb: 'A Grimco Armored Transport makes cash pickups downtown. Ram it, spike it, or boot it while the guards grab coffee at the bank.',
-    cooldown: 24 * 60, time: 420, xp: 400, bags: { count: 4, value: [1500, 2100] }, extra: [0, 0], quietBonus: 1.25,
+    cooldown: 24 * 60, time: 420, xp: 400, bags: { count: 4, value: [1100, 1600] }, extra: [0, 0], quietBonus: 1.25, fee: 400, heat: { quiet: 0.5, loud: 1.5 },
     reqText: 'Level 3 · pulled the Gas-N-Gulp job',
     unlock: (g) => (lvl(g) < 3 ? { ok: false, why: 'Level 3 needed. Terry doesn\'t work with infants.' }
       : !done(g, 'gas') ? { ok: false, why: 'Prove yourself on the Gas-N-Gulp first.' } : { ok: true }),
@@ -139,7 +145,7 @@ export const HEISTS = {
   bank: {
     id: 'bank', name: 'First Bank of Rotwell', tier: 3, loc: 'first_bank', dropoff: 'warehouse_13',
     blurb: 'The vault under First Bank. Drill it loud with the lobby on the floor, or pick, hack and crack it while the guards scroll their phones.',
-    cooldown: 48 * 60, time: 480, xp: 900, bags: { count: 6, value: [3600, 5000] }, extra: [400, 900], quietBonus: 1.25,
+    cooldown: 48 * 60, time: 480, xp: 900, bags: { count: 6, value: [2800, 3800] }, extra: [400, 900], quietBonus: 1.25, fee: 2000, heat: { quiet: 1, loud: 2 },
     reqText: 'Level 5 · hit the armored truck',
     unlock: (g) => (lvl(g) < 5 ? { ok: false, why: 'Level 5 needed. Banks have, like, rules.' }
       : !done(g, 'truck') ? { ok: false, why: 'Hit the armored truck first. Terry needs to see you can handle a moving target.' } : { ok: true }),
@@ -183,12 +189,12 @@ export const HEISTS = {
   casino: {
     id: 'casino', name: 'Golden Tooth Counting Room', tier: 4, loc: 'golden_tooth', dropoff: 'junkyard',
     blurb: 'Every losing bet in Rotwell ends up in one room behind the cage. The house always wins. Until tonight.',
-    cooldown: 72 * 60, time: 540, xp: 1500, bags: { count: 6, value: [7500, 10500] }, extra: [800, 1800], quietBonus: 1.25,
-    reqText: 'Level 6 · robbed the bank · an inside line (Rats/Syndicate rep 25 or bought floor plans)',
+    cooldown: 72 * 60, time: 540, xp: 1500, bags: { count: 6, value: [6000, 8500] }, extra: [800, 1800], quietBonus: 1.25, fee: 5000, heat: { quiet: 1, loud: 2.5 },
+    reqText: "Level 6 · robbed the bank · an inside line (Rats/Syndicate rep 25, a PD Detective's case file, Head Bouncer pals, or bought floor plans)",
     unlock: (g) => {
       if (lvl(g) < 6) return { ok: false, why: 'Level 6 needed. The Golden Tooth eats amateurs.' };
       if (!done(g, 'bank')) return { ok: false, why: 'Hit First Bank first. Baby steps. Expensive baby steps.' };
-      if (rep(g, 'rats') >= 25 || rep(g, 'syndicate') >= 25 || g.state.p.heists?.intel?.casino) return { ok: true };
+      if (rep(g, 'rats') >= 25 || rep(g, 'syndicate') >= 25 || g.state.p.heists?.intel?.casino || g.state.getFlag?.('perk_casino_file')) return { ok: true };
       return { ok: false, why: 'You need an inside line: Gutter Rats or Velvet Syndicate rep 25, or buy the floor plans from Terry.' };
     },
     guards: { quiet: ['pistol', 'baton', 'pistol', 'baton'], loud: ['pistol', 'smg', 'shotgun', 'baton', 'pistol'] },
@@ -231,13 +237,13 @@ export const HEISTS = {
   grimco: {
     id: 'grimco', name: 'Grimco Tower Penthouse', tier: 5, loc: 'grimco', dropoff: 'hobo_camp',
     blurb: 'Mr. Grimsby keeps a private vault in his penthouse: bearer bonds, gold bars and a solid-gold toilet seat. The finale.',
-    cooldown: 96 * 60, time: 600, xp: 3000, bags: { count: 8, value: [17000, 25000] }, extra: [2000, 5000], quietBonus: 1.3,
-    reqText: 'Level 8 · cleaned out the casino · a way in (Grimco keycard, finished a faction storyline, or bought the codes)',
+    cooldown: 96 * 60, time: 600, xp: 3000, bags: { count: 8, value: [15000, 21000] }, extra: [2000, 5000], quietBonus: 1.3, fee: 12000, heat: { quiet: 1.5, loud: 3 },
+    reqText: 'Level 8 · cleaned out the casino · a way in (Grimco keycard — Grimco middle managers get one —, finished a faction storyline, or bought the codes)',
     unlock: (g) => {
       if (lvl(g) < 8) return { ok: false, why: 'Level 8 needed. Grimco security eats level 7s for breakfast.' };
       if (!done(g, 'casino')) return { ok: false, why: 'Pull the casino job first. This is the big one.' };
       const p = g.state.p;
-      if ((p.inventory?.q_keycard_live || 0) > 0 || qDone(g, 'main_corp') || qDone(g, 'main_rats') || p.heists?.intel?.grimco) return { ok: true };
+      if ((p.inventory?.q_keycard_live || 0) > 0 || g.state.getFlag?.('perk_grimco_keycard') || qDone(g, 'main_corp') || qDone(g, 'main_rats') || p.heists?.intel?.grimco) return { ok: true };
       return { ok: false, why: 'You need a way in: a working Grimco keycard, a finished faction storyline, or the penthouse codes from Terry.' };
     },
     guards: { quiet: ['smg', 'pistol', 'baton', 'pistol', 'rifle'], loud: ['smg', 'rifle', 'shotgun', 'smg', 'baton', 'pistol'] },
@@ -281,6 +287,18 @@ export const HEISTS = {
 };
 
 export const HEIST_ORDER = ['gas', 'truck', 'bank', 'casino', 'grimco'];
+
+// The fence's share of every heist dollar (src/systems/ventures.js lowers it: laundromat 15%, second books 8%).
+export const FENCE_CUT = 0.3;
+// "Press" on a target: every completion adds 1, and it bleeds off 1 per PRESS_DECAY_DAYS. Each point of press
+// knocks PRESS_VALUE off the bag values (floor PRESS_FLOOR) and stretches the cooldown by PRESS_COOLDOWN.
+export const PRESS_VALUE = 0.15;
+export const PRESS_FLOOR = 0.45;
+export const PRESS_COOLDOWN = 0.5;
+export const PRESS_DECAY_DAYS = 3;
+// Failing a job: cooldown = this share of the full cooldown (min 6h), legal fees = this share of cash on hand.
+export const FAIL_COOLDOWN = 0.5;
+export const FAIL_LEGAL = 0.1;
 
 // Where the loot gets taken (overridden by def.dropoff label if missing).
 export const DROPOFF_LABEL = {
