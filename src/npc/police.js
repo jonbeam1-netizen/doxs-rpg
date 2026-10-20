@@ -172,7 +172,7 @@ export class Police {
       for (const [id, h] of this.remoteHeat) {
         const r = g.net.remotePlayers?.get?.(id);
         if (!r) { this.remoteHeat.delete(id); continue; }
-        if (h.heat < 1 || r.dead || !r.pos) continue;
+        if (h.heat < 1 || h.ar || r.dead || r.down || !r.pos) continue;
         const v = r.vehicle;
         const spd = v ? Math.abs(Number(v.speed) || 0) : (r.speed || 0);
         const hd = v ? (Number(v.rot) || 0) : (r.facing || 0);
@@ -270,7 +270,7 @@ export class Police {
     const g = this.game;
     try {
       const lk = this.lastKnown;
-      g.net.sendToHost({ t: 'police:heat', heat: Math.round(this.heat * 100) / 100, seen: this.lastSeen < 1, lx: lk ? Math.round(lk.x) : null, lz: lk ? Math.round(lk.z) : null, hid: this.hiding });
+      g.net.sendToHost({ t: 'police:heat', heat: Math.round(this.heat * 100) / 100, seen: this.lastSeen < 1, lx: lk ? Math.round(lk.x) : null, lz: lk ? Math.round(lk.z) : null, hid: this.hiding, ar: this.arresting ? 1 : 0 });
       this._sentHeat = this.heat;
     } catch { /* ignore */ }
   }
@@ -546,6 +546,7 @@ export class Police {
     this.arresting = true;
     pl.moveLocked = true;
     pl.aiming = false;
+    if (g.net.isClient) this._sendHeat(); // tell the host we're cuffed so its cops stop swinging
     this.bustT = 0;
     this.bustEl.style.display = 'none';
     const fx = this.ctx.fx;
@@ -623,6 +624,13 @@ export class Police {
   // Host: a client reported their heat / whether cops can see them.
   onRemoteHeat(msg, from) {
     const lk = Number.isFinite(msg.lx) && Number.isFinite(msg.lz) ? { x: msg.lx, z: msg.lz } : null;
-    this.remoteHeat.set(from, { heat: clamp(Number(msg.heat) || 0, 0, 5), seen: msg.seen !== false, lk, hid: !!msg.hid });
+    const ar = !!msg.ar;
+    this.remoteHeat.set(from, { heat: clamp(Number(msg.heat) || 0, 0, 5), seen: msg.seen !== false, lk, hid: !!msg.hid, ar });
+    if (ar) {
+      // that client is being booked: the cops on them stand down
+      for (const n of this.ctx.npcs.map.values()) {
+        if (n.kind === 'cop' && !n.replica && n.target?.type === 'remote' && n.target.id === from) this._standDown(n);
+      }
+    }
   }
 }

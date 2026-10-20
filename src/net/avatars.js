@@ -53,7 +53,25 @@ export function endEmote(model) {
   if (!model.dead) { model.body.rotation.x = 0; model.body.position.set(0, 0, 0); }
 }
 
+const INTERP_MS = 110; // render remote players this far in the past (ps is 15 Hz = 67 ms apart)
+const EXTRAP_MS = 250; // ...and coast at most this long past the newest packet
+
 const lookKey = (l) => `${l?.color ?? ''}|${l?.hat ?? ''}|${l?.hatColor ?? ''}|${l?.skin ?? ''}|${l?.build ?? ''}`;
+
+// Remote look objects come off the wire: keep only sane fields.
+const colorOk = (c) => (Number.isFinite(c) && c >= 0 && c <= 0xffffff) || (typeof c === 'string' && /^#[0-9a-f]{3,6}$/i.test(c));
+const wordOk = (s) => typeof s === 'string' && /^[a-z0-9_-]{1,20}$/i.test(s);
+export function cleanLook(l) {
+  if (!l || typeof l !== 'object') return null;
+  const out = {};
+  if (colorOk(l.color)) out.color = l.color;
+  if (colorOk(l.skin)) out.skin = l.skin;
+  if (colorOk(l.hatColor)) out.hatColor = l.hatColor;
+  if (wordOk(l.hat)) out.hat = l.hat;
+  if (wordOk(l.build)) out.build = l.build;
+  return out;
+}
+const cleanTag = (s, d) => (typeof s === 'string' ? String(s).replace(/[\u0000-\u001f\u007f]/g, '').trim().slice(0, 16) : '') || d; // eslint-disable-line no-control-regex
 
 let gunGeo, gunMat, goldMat, clubGeo, clubMat;
 function weaponMesh(id) {
@@ -102,8 +120,8 @@ export class Avatars {
     rp = {
       id, name, group: root, pos: root.position, facing: 0, hp: 100, maxHp: 100, vehicle: null,
       look: null, dead: false, weapon: 'fists', aiming: false, speed: 0, ping: null, lastSeen: performance.now(),
-      _model: null, _tag: tag, _t: { x: 0, y: 0, z: 0, f: 0 }, _last: { x: 0, z: 0 }, _vel: { x: 0, z: 0 }, _age: 0, _fresh: true,
-      _cars: new Map(), _car: null, _carKey: null, _emote: null, _swing: null, _weaponMesh: null, _weaponId: null,
+      _model: null, _tag: tag, _t: { x: 0, y: 0, z: 0, f: 0 }, _buf: [], _ts: null, _off: null, _age: 0, _fresh: true,
+      _cars: new Map(), _car: null, _carKey: null, _emote: null, _swing: null, _weaponMesh: null, _weaponId: null, _down: false, _block: false,
     };
     this._buildModel(rp, null);
     root.visible = false; // until the first state packet
@@ -119,23 +137,44 @@ export class Avatars {
     rp._model = model;
     rp._lookKey = lookKey(look);
     rp._weaponId = null; rp._weaponMesh = null;
-    if (rp.dead) model.setDead(true);
+    if (rp.dead || rp._down) model.setDead(true);
+    if (rp._block) model.setBlock?.(true);
   }
 
   onState(id, m) {
     const rp = this.ensure(id, m.name);
     const num = (v, d = 0) => (Number.isFinite(v) ? v : d);
-    const x = num(m.x), y = num(m.y), z = num(m.z), f = num(m.f);
+    const x = clamp(num(m.x), -5000, 5000), y = clamp(num(m.y), -50, 200), z = clamp(num(m.z), -5000, 5000), f = num(m.f);
     const now = performance.now();
-    const dtp = (now - rp.lastSeen) / 1000;
-    const L = rp._last;
-    const jump = Math.hypot(x - L.x, z - L.z);
-    if (!rp._fresh && dtp > 0.02 && dtp < 0.5 && jump < 6) {
-      rp._vel.x = clamp((x - L.x) / dtp, -45, 45);
-      rp._vel.z = clamp((z - L.z) / dtp, -45, 45);
-    } else { rp._vel.x = 0; rp._vel.z = 0; }
-    L.x = x; L.z = z;
-    rp._t.x = x; rp._t.y = y; rp._t.z = z; rp._t.f = f; rp._age = 0;
+    // Snapshot interpolation: packets carry the sender's clock (ms, 16-bit wrap). We render each remote
+    // player INTERP_MS in the past, between the two packets around that moment, so arrival jitter
+    // doesn't turn into stutter. Out-of-order / duplicate packets are ignored for movement.
+    let accept = true;
+    if (Number.isFinite(m.ts)) {
+      const ts16 = m.ts & 0xffff;
+      let T;
+      if (rp._ts == null) T = ts16;
+      else {
+        let d = (ts16 - (rp._ts & 0xffff)) & 0xffff;
+        if (d > 0x8000) d -= 0x10000;
+        T = rp._ts + d;
+      }
+      if (rp._ts != null && T <= rp._ts) accept = false;
+      else {
+        rp._ts = T;
+        const off = now - T;
+        if (rp._off == null || off < rp._off) rp._off = off; else rp._off += (off - rp._off) * 0.02;
+        const buf = rp._buf;
+        const last = buf[buf.length - 1];
+        if (last && Math.hypot(x - last.x, z - last.z) > 30) buf.length = 0; // teleported / respawned: no sliding across the map
+        buf.push({ t: T, x, y, z, f });
+        if (buf.length > 12) buf.shift();
+      }
+    } else {
+      rp._buf.length = 0; rp._off = null; rp._ts = null; // legacy sender: chase the latest packet
+    }
+    if (accept) { rp._t.x = x; rp._t.y = y; rp._t.z = z; rp._t.f = f; }
+    rp._age = 0;
     rp.lastSeen = now;
     if (rp._fresh) {
       rp._fresh = false;
@@ -143,33 +182,59 @@ export class Avatars {
       rp.facing = f;
       rp.group.visible = true;
     }
-    if (typeof m.name === 'string') rp.name = m.name.slice(0, 16) || rp.name;
+    // name & look only ride along every ~1 s (or when they change) to keep 'ps' small
+    if (typeof m.name === 'string') rp.name = cleanTag(m.name, rp.name);
     rp.speed = clamp(num(m.s), 0, 80);
     rp.aiming = !!m.a;
-    rp.hp = num(m.hp, rp.hp);
-    rp.maxHp = Math.max(1, num(m.maxHp, rp.maxHp));
-    rp.weapon = typeof m.w === 'string' ? m.w : 'fists';
-    rp.vehicle = m.v && typeof m.v === 'object' ? m.v : null;
-    const look = m.look && typeof m.look === 'object' ? m.look : null;
-    if (lookKey(look) !== rp._lookKey) { rp.look = look; this._buildModel(rp, look); }
+    rp.hp = clamp(num(m.hp, rp.hp), 0, 1e5);
+    rp.maxHp = clamp(num(m.maxHp ?? m.mh, rp.maxHp), 1, 1e5);
+    rp.weapon = typeof m.w === 'string' && WEAPONS[m.w] ? m.w : 'fists';
+    const v = m.v && typeof m.v === 'object' ? m.v : null;
+    rp.vehicle = v ? { carId: wordOk(v.carId) ? v.carId : 'rustbucket', color: colorOk(v.color) ? v.color : 0x555555,
+      speed: clamp(num(v.speed), -120, 120), steer: clamp(num(v.steer), -1, 1) } : null;
+    if ('look' in m) {
+      const look = cleanLook(m.look);
+      if (lookKey(look) !== rp._lookKey) { rp.look = look; this._buildModel(rp, look); }
+    }
     const dead = !!m.d;
+    const down = !dead && !!m.k; // knocked down / KO'd (lying on the ground, not dead)
+    rp.down = !dead && m.k === 2; // KO'd: host AI treats them as out of the fight (npc/manager _targetPos)
     if (dead !== rp.dead) {
       rp.dead = dead;
       rp._emote = null;
       endEmote(rp._model);
-      rp._model.setDead(dead);
+      rp._model.setDead(dead, { fall: dead });
+      rp._down = false;
+    }
+    if (!dead && down !== !!rp._down) {
+      rp._down = down;
+      if (down) { rp._emote = null; endEmote(rp._model); }
+      rp._model.setDead(down, { fall: true });
+    }
+    const blk = !!m.b && !dead && !down;
+    if (blk !== !!rp._block) { rp._block = blk; rp._model.setBlock?.(blk); }
+  }
+
+  // 'pa' packets: k = 'p' punch/kick (d, ss) · 'w' wind-up (d, ss) · 'c' cancel wind-up · 'r' dodge roll (d) · 'h' flinch (sd)
+  punch(id, m) {
+    const rp = this.map.get(id);
+    if (!rp || rp.dead || rp.vehicle || rp._down) return;
+    const ss = typeof m.ss === 'string' && /^[a-z_]{1,16}$/.test(m.ss) ? m.ss : null;
+    const d = clamp(Number(m.d) || 0.28, 0.05, 1.6);
+    const model = rp._model;
+    switch (m.k || 'p') {
+      case 'w': model.windup?.(d, ss); break;
+      case 'c': model.cancelWindup?.(); break;
+      case 'r': if (rp._emote) { endEmote(model); rp._emote = null; } model.roll?.(clamp(d, 0.2, 0.8)); break;
+      case 'h': model.flash?.(); model.hitReact?.(clamp(Math.round(Number(m.sd) || 0), -1, 1)); break;
+      default:
+        rp._swing = ss;
+        model.punch(d, ss);
     }
   }
 
-  punch(id, m) {
-    const rp = this.map.get(id);
-    if (!rp || rp.dead || rp.vehicle) return;
-    rp._swing = typeof m.ss === 'string' && /^[a-z_]{1,16}$/.test(m.ss) ? m.ss : null;
-    rp._model.punch(clamp(Number(m.d) || 0.28, 0.1, 1.2));
-  }
-
   emote(id, kind) {
-    if (!EMOTES[kind]) return;
+    if (typeof kind !== 'string' || !Object.hasOwn(EMOTES, kind)) return;
     if (id === 'local') { this.localEmote = { kind, t: 0 }; return; }
     const rp = this.map.get(id);
     if (!rp || rp.dead || rp.vehicle) return;
@@ -198,7 +263,9 @@ export class Avatars {
     if (rp._car) rp._car.visible = false;
     let car = rp._cars.get(key);
     if (!car) {
-      try { car = this.game.vehicles?.createCarMesh?.(carId, color) || null; } catch (e) { console.warn('[net] createCarMesh failed', e); car = null; }
+      const lk = rp.look || {};
+      const opts = { driver: true, driverColor: lk.color ?? 0x1a1a1a, hat: lk.hat ?? null };
+      try { car = this.game.vehicles?.createCarMesh?.(carId, color, opts) || null; } catch (e) { console.warn('[net] createCarMesh failed', e); car = null; }
       if (!car) car = fallbackCar(color);
       rp._cars.set(key, car);
       rp.group.add(car);
@@ -241,6 +308,32 @@ export class Avatars {
     return this._v.set(rp.pos.x, rp.pos.y + (rp.vehicle ? 2.6 : 2.85), rp.pos.z);
   }
 
+  // Interpolated pose INTERP_MS behind the sender (extrapolates up to EXTRAP_MS when packets are late).
+  _sample(rp, now) {
+    const buf = rp._buf;
+    if (!buf.length || rp._off == null) return null;
+    const rt = now - rp._off - INTERP_MS;
+    const out = this._s || (this._s = { x: 0, y: 0, z: 0, f: 0 });
+    const first = buf[0], last = buf[buf.length - 1];
+    if (rt <= first.t) { out.x = first.x; out.y = first.y; out.z = first.z; out.f = first.f; return out; }
+    if (rt >= last.t) {
+      const prev = buf[buf.length - 2];
+      out.x = last.x; out.y = last.y; out.z = last.z; out.f = last.f;
+      if (prev && last.t > prev.t) {
+        const ahead = Math.min(rt - last.t, EXTRAP_MS) / (last.t - prev.t);
+        out.x += (last.x - prev.x) * ahead; out.z += (last.z - prev.z) * ahead;
+      }
+      return out;
+    }
+    let i = buf.length - 2;
+    while (i > 0 && buf[i].t > rt) i--;
+    const a = buf[i], b = buf[i + 1];
+    const k = (rt - a.t) / Math.max(1, b.t - a.t);
+    out.x = a.x + (b.x - a.x) * k; out.y = a.y + (b.y - a.y) * k; out.z = a.z + (b.z - a.z) * k;
+    out.f = angleLerp(a.f, b.f, k);
+    return out;
+  }
+
   // ---------------- per frame ----------------
   update(dt) {
     const now = performance.now();
@@ -262,24 +355,24 @@ export class Avatars {
 
   _updateOne(rp, dt, now) {
     if (rp._fresh) return;
-    const t = rp._t;
-    // a little dead-reckoning between packets (max ~0.2 s), then smooth toward the target
-    if (rp._age < 0.2) { t.x += rp._vel.x * dt; t.z += rp._vel.z * dt; }
+    const t = this._sample(rp, now) || rp._t;
     rp._age += dt;
     const p = rp.group.position;
     const dx = t.x - p.x, dz = t.z - p.z;
     if (dx * dx + dz * dz > 30 * 30) p.set(t.x, t.y, t.z);
     else {
-      const k = 1 - Math.exp(-14 * dt);
+      const k = 1 - Math.exp((rp._buf.length ? -30 : -14) * dt);
       p.x += dx * k; p.z += dz * k; p.y += (t.y - p.y) * k;
     }
-    rp.facing = angleLerp(rp.facing, t.f, 1 - Math.exp(-14 * dt));
+    rp.facing = angleLerp(rp.facing, t.f, 1 - Math.exp(-20 * dt));
     rp.group.rotation.y = rp.facing;
 
     const model = rp._model;
     if (rp.vehicle) {
       model.group.visible = false;
-      this._carFor(rp, rp.vehicle);
+      const car = this._carFor(rp, rp.vehicle);
+      // spin wheels / steer the front wheels like a local car
+      try { this.game.vehicles?.animateMesh?.(car, rp.vehicle.speed || 0, rp.vehicle.steer || 0, dt); } catch { /* cosmetic */ }
       rp._tag.sprite.position.y = 2.9;
       if (rp._emote) { endEmote(model); rp._emote = null; }
     } else {

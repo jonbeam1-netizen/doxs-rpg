@@ -57,6 +57,7 @@ export async function installNPCs(game) {
     knockout: () => combat.knockout(),
     inBrawl: () => combat.inBrawl(),
     get isDown() { return combat.isDown; },
+    get downed() { return !!combat.isDown || combat.kdT > 0; }, // KO'd or knocked flat (co-op mirrors the pose)
     get brawls() { return combat.brawls; },
     fx, sfx: (name, opts) => fx.sfx.play(name, opts),
     hitStop: (sec) => fx.hitStop(sec),
@@ -100,7 +101,7 @@ export async function installNPCs(game) {
         ctx.snapT = (ctx.snapT || 0) - dt;
         if (ctx.snapT <= 0) {
           ctx.snapT = 0.1;
-          try { net.broadcast(npcs.serialize()); } catch (e) { if (!ctx._ne) { console.error('[npc] snapshot failed', e); ctx._ne = true; } }
+          try { sendSnapshots(); } catch (e) { if (!ctx._ne) { console.error('[npc] snapshot failed', e); ctx._ne = true; } }
         }
       }
     },
@@ -108,6 +109,26 @@ export async function installNPCs(game) {
 
   // ---- networking
   const net = game.net;
+  // Host: one snapshot per client, culled to what's around that client (SNAP_R), ~10 Hz.
+  // Skipped (not queued) while that client's channel is backed up.
+  const SNAP_R = 140;
+  const views = new Map(); // peerId -> view state for npcs.serialize
+  ctx.snapSeq = 0;
+  function sendSnapshots() {
+    const seq = ctx.snapSeq++;
+    const meta = seq % 10 === 0, full = seq % 5 === 0; // full (with removals) 2x/s, look/name meta 1x/s
+    const peers = net.peers?.() || [];
+    for (const id of [...views.keys()]) if (!peers.some((p) => p.id === id)) views.delete(id);
+    for (const { id } of peers) {
+      let v = views.get(id);
+      if (!v) { v = { peer: id, r: SNAP_R, known: new Set(), sig: new Map() }; views.set(id, v); }
+      const rp = net.remotePlayers.get(id);
+      if (rp && !rp._fresh) { v.x = rp.pos.x; v.z = rp.pos.z; } else { v.x = null; v.z = null; }
+      v.meta = meta; v.full = full; v.tick = seq;
+      if (net.session?.isCongested?.(id)) continue;
+      net.sendTo(id, npcs.serialize(false, v));
+    }
+  }
   net.on('npc:snap', (msg) => { if (!net.isAuthority) npcs.applySnapshot(msg); });
   net.on('npc:damage', (msg, from) => {
     if (!net.isAuthority) return;
@@ -139,6 +160,7 @@ export async function installNPCs(game) {
   // late joiners get a full snapshot with looks/names right away
   game.bus.on('net:player-joined', ({ id } = {}) => {
     if (!net.isHost || !id) return;
+    views.delete(id); // (re)joiner starts from a clean slate
     try { net.sendTo(id, npcs.serialize(true)); } catch (e) { console.error('[npc] join snapshot failed', e); }
   });
   // leaving co-op: drop replicas

@@ -1,3 +1,4 @@
+import * as THREE from 'three';
 import { rand, chance, weightedPick, mulberry32, pick } from '../core/util.js';
 import { applyPose, findWallSpot, findSeat } from './crowd.js';
 
@@ -34,6 +35,9 @@ const DEALER_NAMES = {
 };
 const DEALER_PREF = ['liquor', 'pawn', 'bar', 'tattoo', 'gas', 'diner', 'junkyard', 'factory', 'nightclub', 'casino', 'store', 'fortune'];
 const SPAWN_MIN = 55, SPAWN_MAX = 85, DESPAWN = 130;
+// People only appear / vanish where the camera can't see it happen (or far enough that nobody can tell).
+const POP_SAFE = 115;
+const _frus = new THREE.Frustum(), _pm = new THREE.Matrix4(), _sph = new THREE.Sphere(new THREE.Vector3(), 1.4);
 
 function hashStr(s) { let h = 2166136261; for (const c of s) h = Math.imul(h ^ c.charCodeAt(0), 16777619); return h >>> 0; }
 
@@ -84,11 +88,15 @@ export class Ambient {
       } else dmin = Math.hypot(n.pos.x - lp.x, n.pos.z - lp.z);
       const busy = n.brawlId || (n.hostile && n.target && dmin < 70);
       if (dmin > DESPAWN && !busy) { npcs.remove(n); continue; }
-      if (n.leaving && dmin > 60) { npcs.remove(n); continue; }
+      // (only vanish off-camera when it's the local player who'd see it)
+      const hidden = ci !== 0 || !this._onScreen(n.pos.x, n.pos.z);
+      if (n.leaving && dmin > 60 && hidden) { npcs.remove(n); continue; }
       // walkers who wandered off the edge make room for a fresh mix of loungers
-      if (!n.networked && n.data.purpose && n.state === 'wander' && dmin > 80) { npcs.remove(n); continue; }
+      if (!n.networked && n.data.purpose && n.state === 'wander' && dmin > 80 && hidden) { npcs.remove(n); continue; }
       if (n.dead) continue;
-      if (n.networked) { if (dmin < 95) hostileNear[ci]++; } else if (dmin < 100) localCount++;
+      // (count around EVERY player, not just the nearest one: two players standing together used to
+      //  leave the second one's count at 0 forever, so street trash spawned without limit)
+      if (n.networked) { centers.forEach((c, i) => { if (Math.hypot(n.pos.x - c.x, n.pos.z - c.z) < 95) hostileNear[i]++; }); } else if (dmin < 100) localCount++;
     }
 
     // local peaceful population
@@ -104,7 +112,7 @@ export class Ambient {
     const fill = !this.filled;
     let spawned = 0;
     while (localCount < target && spawned < (fill ? 30 : 2)) {
-      const p = this._spawnPoint(lp, fill);
+      const p = this._spawnPoint(centers[0], fill);
       if (!p) break;
       const d = this._district(p.x, p.z);
       const table = (LOCAL[d] || LOCAL.downtown)[night ? 'night' : 'day'];
@@ -129,6 +137,20 @@ export class Ambient {
     }
   }
 
+  // Could the local camera see a person standing at (x,z)? (frustum test; far = never)
+  _onScreen(x, z) {
+    const cam = this.game.camera;
+    if (!cam) return false;
+    if (Math.hypot(x - cam.position.x, z - cam.position.z) > POP_SAFE) return false;
+    if (this._frusT !== this.game.elapsed) {
+      this._frusT = this.game.elapsed;
+      cam.updateMatrixWorld();
+      _frus.setFromProjectionMatrix(_pm.multiplyMatrices(cam.projectionMatrix, cam.matrixWorldInverse));
+    }
+    _sph.center.set(x, 1, z);
+    return _frus.intersectsSphere(_sph);
+  }
+
   _danger(d) {
     return ({ downtown: 2, hilltop: 1, rustyards: 3, gutterside: 4, dustbowl: 3, blackwater: 4 })[d] ?? 2;
   }
@@ -138,10 +160,13 @@ export class Ambient {
     const w = g.world;
     const min = fill ? 10 : SPAWN_MIN, max = fill ? 80 : SPAWN_MAX;
     const B = w?.bounds;
-    const ok = (x, z) => (!B || (x > B.minX + 2 && x < B.maxX - 2 && z > B.minZ + 2 && z < B.maxZ - 2)) && !g.physics.pointBlocked(x, z);
+    // (after the initial fill, new arrivals near the local player never pop in on camera)
+    const hide = !fill && c.local;
+    const ok = (x, z) => (!B || (x > B.minX + 2 && x < B.maxX - 2 && z > B.minZ + 2 && z < B.maxZ - 2)) && !g.physics.pointBlocked(x, z)
+      && !(hide && this._onScreen(x, z));
     // Preferred: a real sidewalk spot near the player. If the world can't find one, don't spawn.
     if (typeof w?.sidewalkPointNear === 'function') {
-      for (let i = 0; i < 3; i++) {
+      for (let i = 0; i < (hide ? 6 : 3); i++) {
         let p = null;
         try { p = w.sidewalkPointNear(c.x, c.z, min, max); } catch { p = null; }
         if (p && ok(p.x, p.z)) return p;

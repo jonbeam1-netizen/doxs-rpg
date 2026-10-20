@@ -1513,20 +1513,44 @@ export class NPCManager {
 
   // ------------------------------------------------------------ networking
   // Host -> clients. Only networked NPCs. Meta (look/name) every 10th snapshot.
-  serialize(forceMeta = false) {
-    const meta = (this.snapSeq++ % 10) === 0 || forceMeta;
+  // view (per-client interest management, host only): { peer, x, z, r, meta, known:Set } — only NPCs within r
+  // of that client (or fighting them) are sent, and look/name meta goes out the first time the client sees one.
+  serialize(forceMeta = false, view = null) {
+    const meta = forceMeta || (view ? !!view.meta : (this.snapSeq++ % 10) === 0);
     const n = [];
+    const next = view ? new Set() : null;
     for (const npc of this.map.values()) {
       if (!npc.networked || npc.replica) continue;
+      let far = false;
+      if (view && view.x != null) {
+        const dx = npc.pos.x - view.x, dz = npc.pos.z - view.z;
+        const mine = npc.target?.type === 'remote' && npc.target.id === view.peer;
+        const d2 = dx * dx + dz * dz;
+        if (d2 > view.r * view.r && !mine) continue;
+        far = !mine && d2 > 55 * 55; // far from that client: a third of the update rate is plenty
+      }
       const flags = (npc.dead ? 1 : 0) | (npc.hostile ? 2 : 0) | (npc.aiming ? 4 : 0) | (npc.ko ? 8 : 0) | (npc.knockdown > 0 ? 16 : 0)
         | (npc.atk?.phase === 'wind' ? 32 : 0) | (npc.guard > 0 ? 64 : 0) | (npc.boss?.enraged ? 128 : 0);
-      const rec = [npc.id, Math.round(npc.pos.x * 50) / 50, Math.round(npc.pos.z * 50) / 50, Math.round(npc.facing * 100) / 100,
+      const rec = [npc.id, Math.round(npc.pos.x * 50) / 50, Math.round(npc.pos.z * 50) / 50,
+        Math.round(Math.atan2(Math.sin(npc.facing), Math.cos(npc.facing)) * 100) / 100,
         Math.round(npc.hp), flags, npc.punchSeq, npc.shotSeq];
-      if (meta || !npc.metaSent) {
-        npc.metaSent = true;
-        rec.push({ k: npc.kind, r: npc.role, nm: npc.name, c: npc.color, h: npc.hat, hc: npc.hatColor, s: npc.scale, w: npc.weapon, m: npc.maxHp, f: npc.faction, b: npc.brawlId, bo: npc.boss?.name || undefined, ar: npc.arch, ti: npc.tier || 0 });
+      if (next) {
+        next.add(npc.id);
+        // delta: an NPC that hasn't changed since the last packet to this client is left out (except on full ticks)
+        const sig = rec.join(',');
+        if (!view.full && view.known.has(npc.id) && (view.sig.get(npc.id) === sig || (far && view.tick % 3 !== 0))) continue;
+        view.sig.set(npc.id, sig);
+      }
+      if (meta || (view ? !view.known.has(npc.id) : !npc.metaSent)) {
+        if (!view) npc.metaSent = true;
+        rec.push({ k: npc.kind, r: npc.role, nm: npc.name, c: npc.color, h: npc.hat, hc: npc.hatColor, s: Math.round((npc.scale || 1) * 100) / 100, w: npc.weapon, m: npc.maxHp, f: npc.faction, b: npc.brawlId, bo: npc.boss?.name || undefined, ar: npc.arch, ti: npc.tier || 0 });
       }
       n.push(rec);
+    }
+    if (view) {
+      for (const id of view.sig.keys()) if (!next.has(id)) view.sig.delete(id);
+      view.known = next;
+      return view.full ? { t: 'npc:snap', n, full: true } : { t: 'npc:snap', n };
     }
     return { t: 'npc:snap', n, full: true };
   }
@@ -1547,8 +1571,14 @@ export class NPCManager {
         npc.punchSeq = ps; npc.shotSeq = ss;
       } else if (meta && meta.w !== npc.weapon) this.setWeapon(npc, meta.w);
       if (meta) npc.brawlId = meta.b ?? npc.brawlId;
-      npc.net = npc.net || { x, z, f };
-      npc.net.x = x; npc.net.z = z; npc.net.f = f;
+      const nowT = this.t;
+      if (!npc.net) npc.net = { x, z, f, at: nowT, gap: 0.1 };
+      else {
+        // how often this replica actually gets updates (far ones only ~3x/s): smoothing follows that
+        const N = npc.net;
+        N.gap += (clamp(nowT - N.at, 0.05, 0.4) - N.gap) * 0.3;
+        N.x = x; N.z = z; N.f = f; N.at = nowT;
+      }
       if (hp < npc.hp && !(flags & 1)) npc.model.flash();
       npc.hp = hp;
       npc.predictedHp = undefined;
@@ -1590,7 +1620,7 @@ export class NPCManager {
   _updateReplica(npc, dt) {
     const n = npc.net;
     if (!n) return;
-    const k = 1 - Math.exp(-12 * dt);
+    const k = 1 - Math.exp(-clamp(1.2 / (n.gap || 0.1), 4, 12) * dt);
     const ox = npc.pos.x, oz = npc.pos.z;
     const dx = n.x - ox, dz = n.z - oz;
     if (dx * dx + dz * dz > 100) { npc.pos.x = n.x; npc.pos.z = n.z; }

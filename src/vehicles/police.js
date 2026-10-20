@@ -122,7 +122,17 @@ export class PoliceFleet {
       this._updateBlocks(dt);
       if (g.net.connected && g.net.isHost) {
         this.snapT -= dt;
-        if (this.snapT <= 0) { this.snapT = 0.1; try { g.net.broadcast(this.snapshot()); } catch (e) { if (!this._se) { console.error('[police] snap failed', e); this._se = true; } } }
+        if (this.snapT <= 0) {
+          this.snapT = 0.1;
+          try {
+            const snap = this.snapshot();
+            // nothing on the streets: a 1 Hz empty keep-alive is enough (clients drop stale replicas on it)
+            const empty = !snap.c.length && !snap.h.length && !snap.b.length;
+            if (empty) this.snapT = 1;
+            if (!empty || !this._lastSnapEmpty || (this._emptyN = (this._emptyN || 0) + 1) % 3 === 0) g.net.broadcast(snap);
+            this._lastSnapEmpty = empty;
+          } catch (e) { if (!this._se) { console.error('[police] snap failed', e); this._se = true; } }
+        }
       }
     } else {
       for (const h of this.helis.values()) this._lerpHeli(h, dt);

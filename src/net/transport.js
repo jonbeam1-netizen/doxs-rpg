@@ -16,6 +16,11 @@ export const ID_PREFIX = 'doxsrpg-';
 const JOIN_TIMEOUT = 15000;
 const SILENCE_TIMEOUT = 30000;
 const HEARTBEAT_MS = 2000;
+// Only the host may originate these (a client sending one is dropped, never relayed).
+const HOST_ONLY = new Set(['time', 'timeskip', 'npc:snap', 'police:snap', 'npc:kill', 'combat:hitPlayer',
+  'combat:brawlResult', 'police:tire', 'heist:payout']);
+// A client sending more than this many messages per second gets the excess dropped (normal play is ~20-40/s).
+const CLIENT_MSG_CAP = 120;
 
 function randId(n = 6) {
   const a = 'abcdefghjkmnpqrstuvwxyz23456789';
@@ -27,7 +32,7 @@ export const makePeerId = () => ID_PREFIX + randId();
 
 export function cleanName(s) {
   // eslint-disable-next-line no-control-regex
-  return String(s ?? '').replace(/[\u0000-\u001f\u007f]/g, '').trim().slice(0, 16) || 'Stranger';
+  return (typeof s === 'string' ? s : '').replace(/[\u0000-\u001f\u007f]/g, '').trim().slice(0, 16) || 'Stranger';
 }
 
 // PeerJS error -> something a human can read.
@@ -211,9 +216,10 @@ export class NetSession {
     this.conns.delete(id);
     this.ping.delete(id);
     if (!entry.welcomed) return;
+    const name = this.names.get(id) || entry.name; // latest name (renames ride along in 'ps')
     this.names.delete(id);
-    this._sendAll({ t: '_leave', id, name: entry.name, _f: this.peer?.id });
-    this.hooks.onPeerLeave?.(id, entry.name);
+    this._sendAll({ t: '_leave', id, name, _f: this.peer?.id });
+    this.hooks.onPeerLeave?.(id, name);
     this._sendRoster();
   }
 
@@ -381,7 +387,13 @@ export class NetSession {
 
   _congested(conn) {
     const dc = conn?.dataChannel;
-    return !!dc && dc.bufferedAmount > 512 * 1024;
+    return !!dc && dc.bufferedAmount > 256 * 1024;
+  }
+
+  // host: is that client's channel backed up? (client: the host channel)
+  isCongested(peerId) {
+    if (this.isHost) return this._congested(this.conns.get(peerId)?.conn);
+    return this._congested(this.hostConn);
   }
 
   _sendAll(msg, exceptId = null, volatile = false) {
@@ -433,6 +445,9 @@ export class NetSession {
       if (msg.t === '_hello') { this._welcome(entry, msg); return; }
       if (!entry.welcomed) return;
       if (msg.t === '_bye') { entry.byeSaid = true; return; }
+      // clients may only send these internal types, and never host-authority messages
+      if ((msg.t[0] === '_' && msg.t !== '_ping' && msg.t !== '_pong') || HOST_ONLY.has(msg.t)) return;
+      if (this._flooding(entry, now)) return;
       if (msg._to && msg._to !== this.peer.id) {
         const target = this.conns.get(msg._to);
         if (target?.welcomed) this._send(target.conn, msg);
@@ -448,6 +463,13 @@ export class NetSession {
     if (conn !== this.hostConn) return;
     this.hostLastSeen = now;
     this._deliver(msg, msg._f || this.hostId, conn);
+  }
+
+  _flooding(entry, now) {
+    if (!entry.rateT || now - entry.rateT > 1000) { entry.rateT = now; entry.rateN = 0; }
+    if (++entry.rateN <= CLIENT_MSG_CAP) return false;
+    if (entry.rateN === CLIENT_MSG_CAP + 1) console.warn('[net] dropping messages from a flooding client', entry.id);
+    return true;
   }
 
   _deliver(msg, from, conn) {

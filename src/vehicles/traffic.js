@@ -84,8 +84,44 @@ export class Traffic {
     return Math.round(n);
   }
 
+  // A curbside parking spot on a street that has a parking lane (world roads.info[i].park), tight
+  // against the curb (edge half-width - 1.25 m from the centerline), facing with that side's traffic,
+  // and clear of the junction boxes / crosswalks at both ends (info.clear[end].mark).
+  _curbSpot(minD, maxD) {
+    const G = this.graph();
+    const info = this.game.world?.roads?.info;
+    if (!G || !Array.isArray(info) || info.length !== G.edges.length) return null;
+    const pp = this.game.player.group.position;
+    for (let tries = 0; tries < 18; tries++) {
+      const i = (Math.random() * G.edges.length) | 0;
+      const e = info[i];
+      if (!e?.park || !(e.hw > 3)) continue; // ring roads, bridges, desert highways: no parking
+      const [a, b] = G.edges[i];
+      const A = G.nodes[a], B = G.nodes[b];
+      if (!A || !B) continue;
+      const dx = B.x - A.x, dz = B.z - A.z, len = Math.hypot(dx, dz);
+      const half = 2.6; // half a car length
+      const s0 = (e.clear?.[0]?.mark ?? 12) + 3 + half, s1 = len - (e.clear?.[1]?.mark ?? 12) - 3 - half;
+      if (s1 <= s0) continue;
+      const s = s0 + Math.random() * (s1 - s0);
+      const ux = dx / len, uz = dz / len;
+      const side = Math.random() < 0.5 ? 1 : -1; // +1 = the right-hand side for traffic going A -> B
+      const off = (e.hw - 1.25) * side;
+      const x = A.x + ux * s - uz * off, z = A.z + uz * s + ux * off;
+      const d = Math.hypot(x - pp.x, z - pp.z);
+      if (d < minD || d > maxD) continue;
+      if (this.game.physics.pointBlocked(x, z)) continue;
+      if (this.game.physics.resolveCircle(x, z, 1.1).hit) continue;
+      if (this.vm.carNear(x, z, 7)) continue;
+      const rot = side > 0 ? Math.atan2(ux, uz) : Math.atan2(-ux, -uz);
+      return { x, z, rot, ai: null };
+    }
+    return null;
+  }
+
   // Find a lane spot within [minD, maxD] of the player.
   _laneSpot(minD, maxD, curb = false) {
+    if (curb && Array.isArray(this.game.world?.roads?.info)) return this._curbSpot(minD, maxD);
     const G = this.graph();
     const pp = this.game.player.group.position;
     const w = this.game.world;
@@ -333,12 +369,13 @@ export class Traffic {
     const f = car.forward, p = car.group.position;
     let best = 99, type = null;
     const half = car.dims.L / 2;
-    const check = (x, z, r, t) => {
+    const check = (x, z, r, t, tight = false) => {
       const dx = x - p.x, dz = z - p.z;
       const fw = dx * f.x + dz * f.z;
       if (fw <= 0 || fw > 26) return;
       const lat = Math.abs(dx * -f.z + dz * f.x);
-      if (lat > 1.4 + r + fw * 0.03) return;
+      // parked cars at the curb only count if they actually poke into our lane
+      if (lat > (tight ? 1.15 + r : 1.4 + r + fw * 0.03)) return;
       const d = fw - r - half;
       if (d < best) { best = d; type = t; }
     };
@@ -348,7 +385,8 @@ export class Traffic {
       if (o === car || o.removed) continue;
       if (Math.abs(o.x - p.x) > 32 || Math.abs(o.z - p.z) > 32) continue;
       const of = o.forward;
-      for (const u of o.circles) check(o.x + of.x * u, o.z + of.z * u, o.radius, o === this.vm.current ? 'player' : 'car');
+      const parked = o.owner === 'civil' && !o.ai && o !== this.vm.current && Math.abs(o.speed || 0) < 0.5;
+      for (const u of o.circles) check(o.x + of.x * u, o.z + of.z * u, o.radius, o === this.vm.current ? 'player' : 'car', parked);
     }
     try {
       const list = g.npcs?.near?.(p.x + f.x * 9, p.z + f.z * 9, 10);

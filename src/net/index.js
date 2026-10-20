@@ -6,8 +6,9 @@ import { Chat } from './chat.js';
 // Co-op module. Mutates the existing game.net (NetBase) facade — never replaces it.
 //
 // Message types owned here:
-//   ps        player state ~15 Hz  {x,y,z,f,s,a,d,w,hp,maxHp,name,look,v}
-//   pa        attack animation      {d, ss}
+//   ps        player state ~15 Hz  {x,y,z,f,s,hp,mh,ts, w?,a?,d?,b?(block),k?(1 knocked flat/2 KO),v?{carId,color,speed,steer}}
+//             + name/look every 15th packet or on change. ts = sender ms & 0xffff (snapshot interpolation)
+//   pa        one-shot animation    {k?:'w'|'c'|'r'|'h' (wind-up/cancel/roll/flinch, default punch), d, ss?, sd?}
 //   time      host clock            {total}
 //   timereq   client -> host        {minutes}
 //   timeskip  host -> all           {by, name, minutes, total}
@@ -18,7 +19,10 @@ import { Chat } from './chat.js';
 //   net:player-joined {id, name}, net:player-left {id, name}
 const PS_HZ = 15;
 const TIME_SYNC_MS = 2000;
-const MAX_SKIP = 12 * 60;
+const MAX_SKIP = 36 * 60; // longest single skip a client may ask for (a 5-star jail stretch is 29 h)
+
+// Wire strings only: anything else (objects with booby-trapped toString, numbers, …) becomes ''.
+const str = (v) => (typeof v === 'string' ? v : '');
 
 function fmtDur(min) {
   const h = Math.floor(min / 60), m = Math.round(min % 60);
@@ -78,6 +82,7 @@ export async function installNet(game) {
       }
       game.bus.emit('net:player-joined', { id, name });
       if (net.isHost) sendTime();
+      try { session.broadcast(buildPs(true)); } catch { /* not started yet */ }
       refreshHud(); refreshInvite();
     },
     onPeerLeave: (id, name) => {
@@ -219,24 +224,35 @@ export async function installNet(game) {
   setInterval(sendTime, TIME_SYNC_MS);
 
   // Chat & emotes
+  // per-sender flood guard for chat / emotes / gifts toasts (6 per 4 s)
+  const flood = new Map();
+  const flooding = (from) => {
+    const now = performance.now();
+    const arr = (flood.get(from) || []).filter((t) => now - t < 4000);
+    arr.push(now);
+    flood.set(from, arr);
+    return arr.length > 6;
+  };
   net.on('chat', (m, from) => {
-    if (from === net.localId) return;
-    const text = String(m.text ?? '').slice(0, 160);
+    if (from === net.localId || flooding(from)) return;
+    // eslint-disable-next-line no-control-regex
+    const text = str(m.text).replace(/[\u0000-\u001f\u007f]/g, ' ').trim().slice(0, 160);
     if (!text) return;
     const name = nameOf(from) || cleanName(m.name);
     chat.say(name, text);
     avatars.bubble(from, text);
   });
   net.on('emote', (m, from) => {
-    if (from === net.localId || !EMOTES[m.e]) return;
+    if (from === net.localId || typeof m.e !== 'string' || !Object.hasOwn(EMOTES, m.e) || flooding(from)) return;
     avatars.emote(from, m.e);
-    const bark = String(m.bark ?? '').slice(0, 80);
+    const bark = str(m.bark).slice(0, 80);
     if (bark) avatars.bubble(from, bark, { italic: true, ms: 3000 });
     chat.emote(nameOf(from), EMOTES[m.e].verb);
   });
 
   // Gifts
   net.on('gift', (m, from) => {
+    if (from === net.localId || !session.names.has(from)) return;
     const amount = Math.floor(Number(m.amount));
     if (!(amount > 0) || amount > 1e9) return;
     const name = nameOf(from) || cleanName(m.from);
@@ -260,7 +276,7 @@ export async function installNet(game) {
     onSubmit: (text) => {
       if (text.startsWith('/')) {
         const cmd = text.slice(1).split(/\s+/)[0].toLowerCase();
-        if (EMOTES[cmd]) { doEmote(cmd); return; }
+        if (Object.hasOwn(EMOTES, cmd)) { doEmote(cmd); return; }
         if (cmd === 'help' || cmd === '?') { sys('Commands: /wave /dance /flip /players /help'); return; }
         if (cmd === 'players' || cmd === 'who') {
           if (!net.connected) { sys("It's just you. It's always been just you."); return; }
@@ -282,22 +298,38 @@ export async function installNet(game) {
   });
 
   // ------------------------------------------------------------------ local attack -> 'pa'
-  let lastPunchAt = 0;
-  function sendPunch(d) {
+  // The local stickman's one-shot animations (swings, kicks, wind-ups, rolls, flinches) are mirrored
+  // on remote screens via 'pa' {k, d, ss, sd}. Block / knockdown are continuous, so they ride in 'ps'.
+  const lastPa = {};
+  function sendPa(k, d, ss = null, extra = null) {
+    if (!net.connected) return;
     const now = performance.now();
-    if (now - lastPunchAt < 60) return;
-    lastPunchAt = now;
-    if (net.connected) session.broadcast({ t: 'pa', d: Number(d) || 0.28, ss: game.player?.swingStyle || null });
+    if (now - (lastPa[k] || 0) < (k === 'p' ? 60 : 90)) return; // anti-spam
+    lastPa[k] = now;
+    const m = { t: 'pa', d: Math.round((Number(d) || 0.28) * 100) / 100 };
+    if (k !== 'p') m.k = k;
+    if (ss) m.ss = String(ss).slice(0, 16);
+    if (extra) Object.assign(m, extra);
+    session.broadcast(m);
   }
-  function wrapPunch(model) {
+  const sendPunch = (d, ss) => sendPa('p', d, ss || game.player?.swingStyle || null);
+  function wrapModel(model) {
     if (!model || model._netWrapped || typeof model.punch !== 'function') return;
-    const orig = model.punch;
-    model.punch = (...args) => { const r = orig.apply(model, args); try { sendPunch(args[0]); } catch { /* ignore */ } return r; };
+    const wrap = (name, fn) => {
+      const orig = model[name];
+      if (typeof orig !== 'function') return;
+      model[name] = (...args) => { const r = orig.apply(model, args); try { fn(...args); } catch { /* ignore */ } return r; };
+    };
+    wrap('punch', (d, ss) => sendPunch(d, ss));
+    wrap('windup', (d, ss) => sendPa('w', d, ss));
+    wrap('cancelWindup', () => sendPa('c', 0.1));
+    wrap('roll', (d) => sendPa('r', d ?? 0.4));
+    wrap('hitReact', (side) => sendPa('h', 0.24, null, { sd: Math.sign(Number(side) || 0) }));
     model._netWrapped = true;
   }
-  wrapPunch(game.player?.model);
-  game.bus.on('player:model-rebuilt', ({ model } = {}) => wrapPunch(model || game.player?.model));
-  game.bus.on('player:attack', (d) => sendPunch(d?.duration));
+  wrapModel(game.player?.model);
+  game.bus.on('player:model-rebuilt', ({ model } = {}) => wrapModel(model || game.player?.model));
+  game.bus.on('player:attack', (d) => sendPunch(d?.duration, d?.swingStyle));
 
   // ------------------------------------------------------------------ per-frame system
   let psAcc = 0, hudAcc = 0;
@@ -315,23 +347,45 @@ export async function installNet(game) {
     },
   });
 
-  function buildPs() {
+  // Compact player state. Name + look only every PS_META_EVERY packets or when they change
+  // (receivers keep the last ones), booleans only when true.
+  let psSeq = 0, lastMetaKey = '';
+  const PS_META_EVERY = 15;
+  function buildPs(forceMeta = false) {
     const pl = game.player, p = game.state.p;
     const veh = pl?.vehicle;
     const src = veh?.group?.position || pl.group.position;
     let facing = pl.facing;
     if (veh?.group) facing = veh.group.rotation.y;
+    facing = Math.atan2(Math.sin(facing), Math.cos(facing));
     let v = null;
-    try { v = game.vehicles?.netState?.() || null; } catch { v = null; }
-    if (!veh) v = null;
+    if (veh) {
+      try {
+        const ns = game.vehicles?.netState?.();
+        if (ns) v = { carId: ns.carId, color: ns.color, speed: ns.speed, steer: ns.steer };
+      } catch { v = null; }
+    }
     const r2 = (n) => Math.round(n * 100) / 100;
-    return {
+    const m = {
       t: 'ps',
-      x: r2(src.x), y: r2(src.y), z: r2(src.z), f: Math.round(facing * 1000) / 1000,
+      x: r2(src.x), y: r2(src.y), z: r2(src.z), f: Math.round(facing * 100) / 100,
       s: Math.round((veh ? Math.abs(veh.speed ?? 0) : pl.speed) * 10) / 10,
-      a: !!pl.aiming, d: !!(pl.dead || p.hp <= 0), w: p.weapon || 'fists',
-      hp: Math.round(p.hp), maxHp: p.maxHp, name: myName(), look: p.look || null, v,
+      hp: Math.round(p.hp), mh: p.maxHp,
+      ts: Math.round(performance.now()) & 0xffff, // sender clock for snapshot interpolation
     };
+    if ((p.weapon || 'fists') !== 'fists') m.w = p.weapon;
+    if (pl.aiming) m.a = 1;
+    if (pl.dead || p.hp <= 0) m.d = 1;
+    if (v) m.v = v;
+    let cb = null;
+    try { cb = game.combat; } catch { cb = null; }
+    if (cb?.blocking) m.b = 1;
+    if (cb?.isDown) m.k = 2;          // KO'd: NPCs on the host stop targeting us
+    else if (cb?.downed) m.k = 1;     // knocked flat for a second
+    const name = myName(), look = p.look || null;
+    const key = name + '|' + JSON.stringify(look);
+    if (forceMeta || key !== lastMetaKey || psSeq++ % PS_META_EVERY === 0) { m.name = name; m.look = look; lastMetaKey = key; }
+    return m;
   }
 
   // ------------------------------------------------------------------ HUD
