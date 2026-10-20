@@ -810,3 +810,60 @@ body:has(.q-ending) #ui-root .ach-toast { top: auto; bottom: 24px; }
 }
 @media (pointer: coarse) { .map-btn { min-width: 44px; height: 44px; } }
 body.touch-ui .map-btn { min-width: 44px; height: 44px; }
+
+/* ---- Onboarding ---------------------------------------------------------------------------- */
+/* First-time tips (src/ui/coach.js): right column, under the quest tracker; toasts stack below. */
+#hud #coach {
+  position: absolute; top: var(--hud-r2, 400px); right: 12px; width: min(300px, 42vw);
+  display: flex; gap: 8px; align-items: baseline; padding: 7px 12px 8px;
+  background: linear-gradient(270deg, rgba(22,18,11,0.95), rgba(22,18,11,0.86));
+  border-right: 4px solid #e0b23a; box-shadow: 0 3px 12px rgba(0,0,0,0.45);
+  font-size: 17px; line-height: 1.3; text-align: left; pointer-events: none;
+}
+#coach .coach-k { flex: 0 0 auto; font-family: var(--font-title); font-size: 12px; color: #e0b23a; letter-spacing: 1px; }
+#coach kbd { font-size: 13px; min-width: 18px; margin-right: 2px; padding: 0 4px; }
+#coach .coach-gold { color: #f0c64a; }
+#coach .coach-red { color: var(--blood-bright); }
+#coach.in { animation: toastSlide 0.25s ease-out; }
+#coach.out { opacity: 0; transition: opacity 0.3s; }
+#coach.paused { opacity: 0; }
+#ui-root #toasts { top: var(--hud-r3, var(--hud-r2, 400px)); }
+@media (max-width: 700px) {
+  #hud #coach { right: auto; left: 50%; transform: translateX(-50%); width: 92vw; font-size: 15px; justify-content: center; text-align: center; }
+  #ui-root #toasts { top: var(--hud-r3, var(--hud-r2, 260px)); }
+}
+
+/* Title: quiet "How to play" link, device-aware key hints */
+.title-buttons .ui-btn.ghost { background: transparent; border-color: transparent; color: var(--bone-dim); font-size: 16px; padding: 4px; text-decoration: underline; text-underline-offset: 3px; }
+.title-buttons .ui-btn.ghost:hover { color: var(--bone); background: transparent; border-color: transparent; }
+.title-foot.tf-touch { display: none; }
+body.touch-ui .title-foot.tf-kb { display: none; }
+body.touch-ui .title-foot.tf-touch { display: flex; }
+.title-foot b { color: var(--bone); font-weight: 600; margin-right: 4px; }
+
+/* How to play card (title + pause menu) */
+.howto { font-size: 17px; line-height: 1.35; }
+.howto .ht-lead { margin: 0 0 8px; }
+.howto .ht-list { margin: 0 0 4px; padding-left: 18px; }
+.howto .ht-list li { margin: 3px 0; }
+.howto .ht-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin: 12px 0 6px; padding-bottom: 3px;
+  font-family: var(--font-title); color: var(--rust); font-size: 17px; border-bottom: 1px solid var(--panel-edge); }
+.howto .ht-tabs { display: flex; gap: 4px; font-family: var(--font-body); }
+.howto .ht-tab { background: transparent; border: 1px solid var(--panel-edge); color: var(--bone-dim); font: inherit; font-size: 14px; padding: 1px 8px; cursor: pointer; border-radius: 2px; }
+.howto .ht-tab.sel { color: var(--ink); background: var(--bone); border-color: var(--bone); }
+.howto .ht-grid { display: grid; grid-template-columns: auto 1fr; gap: 4px 14px; align-items: baseline; }
+.howto .ht-k { white-space: nowrap; text-align: right; }
+.howto .ht-k kbd { font-size: 14px; margin-right: 3px; }
+.howto .ht-d kbd { font-size: 13px; min-width: 16px; margin: 0 1px; padding: 0 4px; }
+.howto .ht-d { color: var(--bone-dim); }
+.howto .ht-coop { margin: 0; }
+@media (max-width: 520px) { .howto { font-size: 15px; } .howto .ht-grid { gap: 3px 10px; } .howto .ht-head { flex-wrap: wrap; } }
+
+/* F1 controls: grouped, two columns when there's room */
+.help-groups { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 0 24px; }
+.help-groups .ui-section { margin-top: 8px; }
+.help-groups .help-table td { padding-top: 3px; padding-bottom: 3px; }
+
+/* Creator: what the stats are for */
+.cr-legend { font-size: 14px; color: var(--bone-dim); margin: -2px 0 4px; }
+.cr-legend b { color: var(--bone); font-weight: 600; }

@@ -97,6 +97,7 @@ export function openCreator(game, layer, { name = 'Dox', look: initLook = null }
           <div class="chips"><button class="chip" data-k="hat" data-v="">Bare noggin</button>${HAT_TYPES.map((h) => `<button class="chip" data-k="hat" data-v="${h}">${HAT_NAMES[h] || h}</button>`).join('')}</div>
           <div class="swatches hatcol">${sw(HAT_COLORS, 'hatColor')}</div>
           <label>Background</label>
+          <div class="cr-legend"><b>STR</b> hits harder, muscle jobs · <b>INT</b> office jobs, school · <b>CHA</b> sales, dates, discounts · <b>Karma</b> be nice. Or don't.</div>
           <div class="bgs">${Object.entries(BACKGROUNDS).map(([k, b]) => `
             <button class="bg-card" data-k="bg" data-v="${k}"><b>${b.name}</b><span>${b.blurb}</span>
               <ul>${b.perks.map((x) => `<li${/^[−-]/.test(x) ? ' class="cr-minus"' : ''}>${x}</li>`).join('')}</ul></button>`).join('')}</div>

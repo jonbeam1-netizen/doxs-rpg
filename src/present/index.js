@@ -14,6 +14,7 @@ import { portraitElement, portraitCanvas } from './portrait.js';
 import { typewrite } from './typewriter.js';
 import { icon, TYPE_ICON } from './icons.js';
 import { Cinema } from './moment.js';
+import { installCoach } from '../ui/coach.js';
 
 const PALETTE = ['#141414', '#1c1c24', '#2a2420', '#3a2f25', '#2a3a4a', '#3a4a20', '#4a1a1a', '#5a1020', '#1f2a44', '#4a3f2a', '#333333', '#2e3a33', '#4a5a6a', '#5a4630', '#3d2b3d'];
 const HAT_COLORS = ['#2a2420', '#3a2a1a', '#1a1a1a', '#4a1a1a', '#2a3a4a', '#3a3a2a', '#5a4a3a'];
@@ -295,4 +296,7 @@ export async function installPresent(game) {
 
   // Dev sessions skip auto moments (tests drive the player), but the API still works.
   game.bus.on('game:start', () => { cinema.queue.length = 0; });
+
+  // First-time hints (src/ui/coach.js) ride along with the presentation layer.
+  try { installCoach(game); } catch (e) { console.error('[present] coach failed', e); }
 }

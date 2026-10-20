@@ -1,5 +1,6 @@
 import { esc, pick } from '../core/util.js';
 import { openCreator, applyBackground } from './creator.js';
+import { howToHtml, wireHowTo, inputMode } from './howto.js';
 
 // Title screen. Other modules can add buttons before it shows:
 //   game.titleButtons.push({ label, onClick(game, name, begin) })
@@ -44,6 +45,20 @@ export function showTitle(game) {
     });
   }
 
+  // The 30-second rundown (also in the pause menu).
+  function howTo() {
+    const m = document.createElement('div');
+    m.className = 'title-modal';
+    m.innerHTML = `<div class="ui-panel howto-modal" style="max-width:600px"><div class="ui-title">How to Play</div>${howToHtml(inputMode(game))}
+      <div class="ui-row" style="justify-content:flex-end;margin-top:12px"><button class="ui-btn primary" data-ok>Got it</button></div></div>`;
+    wireHowTo(m);
+    const done = () => { m.remove(); removeEventListener('keydown', onKey, true); };
+    const onKey = (e) => { if (e.key === 'Escape' || e.key === 'Enter') { e.stopPropagation(); e.preventDefault(); done(); } };
+    m.addEventListener('click', (e) => { if (e.target === m || e.target.closest('[data-ok]')) done(); });
+    addEventListener('keydown', onKey, true);
+    layer.appendChild(m);
+  }
+
   function render() {
     const hasSave = game.state.hasSave();
     layer.innerHTML = `
@@ -57,7 +72,8 @@ export function showTitle(game) {
           <input class="ui-input" id="title-name" maxlength="16" placeholder="Your name" value="${esc(lastName)}">
           <div id="title-buttons" class="title-buttons"></div>
         </div>
-        <div class="title-foot">${[['WASD', 'move'], ['Mouse', 'look'], ['E', 'use'], ['F', 'drive'], ['O', 'phone'], ['P', 'perks'], ['F1', 'help'], ['Esc', 'menu']].map(([k, d]) => `<span><kbd>${k}</kbd>${d}</span>`).join('')}</div>
+        <div class="title-foot tf-kb">${[['WASD', 'move'], ['Mouse', 'look'], ['E', 'use'], ['F', 'drive'], ['J', 'quests'], ['F1', 'help'], ['Esc', 'menu']].map(([k, d]) => `<span><kbd>${k}</kbd>${d}</span>`).join('')}</div>
+        <div class="title-foot tf-touch"><span><b>Left thumb</b> move</span><span><b>Right thumb</b> look</span><span><b>Use</b> talk / enter</span><span><b>•••</b> everything else</span></div>
       </div>`;
     const nameEl = layer.querySelector('#title-name');
     const btns = layer.querySelector('#title-buttons');
@@ -79,6 +95,7 @@ export function showTitle(game) {
       begin(true, n);
     }, !hasSave);
     for (const b of game.titleButtons || []) add(b.label, (n) => b.onClick(game, n, begin));
+    add('How to play', () => howTo()).classList.add('ghost');
 
     nameEl.addEventListener('keydown', (e) => { e.stopPropagation(); if (e.key === 'Enter') btns.firstChild?.click(); });
   }

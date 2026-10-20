@@ -1,5 +1,6 @@
 import { fmtMoney, esc } from '../core/util.js';
 import { xpForLevel } from '../core/state.js';
+import { openHowTo } from './howto.js';
 
 // DOM overlay UI: HUD, dialogs, panels, toasts.
 //
@@ -89,6 +90,10 @@ export class UI {
     const qt = document.getElementById('q-tracker');
     if (vis(qt) && qt.textContent.trim()) r = qt.getBoundingClientRect().bottom + 12;
     set('--hud-r2', r);
+    // first-time tip (src/ui/coach.js) sits right under the tracker; toasts go below it
+    const coach = document.getElementById('coach');
+    if (vis(coach) && !coach.classList.contains('out')) r = coach.getBoundingClientRect().bottom + 8;
+    set('--hud-r3', r);
     // top centre: radio / boss bar; things announced at the top go below them
     let c = 12;
     for (const id of ['hud-radio', 'npc-boss']) { const el = document.getElementById(id); if (vis(el)) c = Math.max(c, el.getBoundingClientRect().bottom + 8); }
@@ -376,14 +381,44 @@ export class UI {
   }
 
   // ---------------- Built-in screens ----------------
+  // Pause menu entries other modules add are sorted into: settings (own sub-menu), co-op-only (hidden
+  // while solo) and the rest. A module can say so with { group: 'settings' }; otherwise the label decides.
+  _menuGroup(b) {
+    if (b.group) return b.group;
+    if (/^(sound|music|volume|touch controls|graphics|story cinematics|tutorial hints|camera|mouse|invert|subtitles|hud)\b/i.test(String(b.label))) return 'settings';
+    if (/^(co-op only|not connected)$/i.test(String(b.hint ?? ''))) return 'coop-only';
+    return 'main';
+  }
+
+  openSettingsMenu() {
+    const g = this.game;
+    const items = this.menuButtons.filter((b) => this._menuGroup(b) === 'settings');
+    this.dialog({
+      title: 'Settings',
+      options: [
+        ...items.map((b) => ({
+          label: b.label, hint: b.hint,
+          // toggles reopen this menu so you see the new value; anything that opens its own panel doesn't
+          onSelect: () => { b.onClick(g); setTimeout(() => { if (!this.isBlocking()) this.openSettingsMenu(); }, 0); },
+        })),
+        { label: 'Back', onSelect: () => this.openPauseMenu() },
+      ],
+    });
+  }
+
   openPauseMenu() {
     const g = this.game;
+    const extra = this.menuButtons.filter((b) => this._menuGroup(b) === 'main');
+    const hasSettings = this.menuButtons.some((b) => this._menuGroup(b) === 'settings');
+    const coop = g.net?.connected ? this.menuButtons.filter((b) => this._menuGroup(b) === 'coop-only') : [];
     const opts = [
       { label: 'Resume' },
       { label: 'Save game', onSelect: () => g.state.save(false) },
-      { label: 'Character sheet', hint: 'Tab', onSelect: () => this.openCharacterSheet() },
+      { label: 'How to play', hint: 'the short version', onSelect: () => openHowTo(g) },
       { label: 'Controls', hint: 'F1', onSelect: () => this.showControls() },
-      ...this.menuButtons.map((b) => ({ label: b.label, hint: b.hint, onSelect: () => b.onClick(g) })),
+      ...(hasSettings ? [{ label: 'Settings', hint: 'sound, graphics, hints…', onSelect: () => this.openSettingsMenu() }] : []),
+      { label: 'Character sheet', hint: 'Tab', onSelect: () => this.openCharacterSheet() },
+      ...[...extra, ...coop].map((b) => ({ label: b.label, hint: b.hint, onSelect: () => b.onClick(g) })),
       {
         label: 'Quit to title', onSelect: async () => {
           if (await this.confirm('Save and quit to the title screen?')) { g.state.save(); location.reload(); }
@@ -394,47 +429,52 @@ export class UI {
   }
 
   showControls() {
-    const rows = [
-      ['<kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd>', 'Move (camera-relative) / drive'],
-      ['<kbd>Shift</kbd>', 'Run'],
-      ['<kbd>Space</kbd>', 'Jump / handbrake'],
-      ['<kbd>Mouse</kbd>', 'Look (click to lock the mouse, or hold middle or right mouse button and drag)'],
-      ['<kbd>←</kbd><kbd>→</kbd>', 'Turn the camera'],
-      ['<kbd>Wheel</kbd>', 'Zoom'],
-      ['<kbd>LMB</kbd>', 'Attack / shoot (tap for a 3-hit combo, hold for a heavy hit)'],
-      ['<kbd>RMB</kbd> tap / <kbd>B</kbd>', 'Kick (knocks people down)'],
-      ['<kbd>C</kbd>', 'Block — tap right before a hit to parry'],
-      ['<kbd>Z</kbd>', 'Dodge roll (or double-tap a direction mid-fight)'],
-      ['<kbd>Y</kbd>', 'Quick-heal with your best healing item'],
-      ['<kbd>MMB</kbd> tap', 'Lock on to a target'],
-      ['<kbd>V</kbd> / <kbd>X</kbd>', 'Heists: mask on/off · drop loot bag'],
-      ['<kbd>Q</kbd>', 'Switch weapon'],
-      ['<kbd>R</kbd>', 'Reload'],
-      ['<kbd>E</kbd>', 'Enter buildings, talk, use things'],
-      ['<kbd>F</kbd>', 'Get in / out of a vehicle'],
-      ['<kbd>H</kbd>', 'Horn (in a car) — scares pedestrians'],
-      ['<kbd>N</kbd>', 'Nitro (if installed)'],
-      ['<kbd>,</kbd><kbd>.</kbd>', 'Car radio: previous / next station'],
-      ['<kbd>O</kbd>', 'Phone — map, bank, taxi, dealer, texts, radio, camera, settings'],
-      ['<kbd>P</kbd>', 'Perks &amp; achievements'],
-      ['<kbd>Tab</kbd>', 'Character sheet'],
-      ['<kbd>I</kbd>', 'Inventory'],
-      ['<kbd>J</kbd>', 'Quest log'],
-      ['<kbd>M</kbd>', 'City map'],
-      ['<kbd>T</kbd>', 'Co-op chat'],
-      ['<kbd>K</kbd>', 'Co-op crew panel — send cash, spar, race, waypoint to a friend'],
-      ['<kbd>L</kbd>', 'Co-op: ping the spot you are looking at'],
-      ['<kbd>F</kbd> at a friend’s car', 'Ride shotgun (hold LMB with a gun to shoot out the window)'],
-      ['<kbd>1</kbd>-<kbd>9</kbd>', 'Pick a dialog option'],
-      ['<kbd>F1</kbd>', 'This help'],
-      ['<kbd>Esc</kbd>', 'Close / pause menu'],
-      ...this.helpKeys,
+    const k = (...keys) => keys.map((x) => `<kbd>${x}</kbd>`).join('');
+    const groups = [
+      ['Getting around', [
+        [k('W', 'A', 'S', 'D'), 'Move (camera-relative) / drive'],
+        [k('Shift'), 'Run'],
+        [k('Space'), 'Jump / handbrake'],
+        ['<kbd>Mouse</kbd>', 'Look (click to grab the mouse, or hold right / middle button and drag)'],
+        [k('←', '→') + ' ' + k('Wheel'), 'Turn the camera · zoom'],
+        [k('E'), 'Enter buildings, talk, use things'],
+        [k('F'), 'Get in / out of a vehicle'],
+        [k('H') + k('N'), 'Horn · nitro (if installed)'],
+        [k(',', '.'), 'Car radio: previous / next station'],
+      ]],
+      ['Fighting', [
+        ['<kbd>LMB</kbd>', 'Attack / shoot (tap for a 3-hit combo, hold for a heavy hit)'],
+        ['<kbd>RMB</kbd> tap / ' + k('B'), 'Kick (knocks people down)'],
+        [k('C'), 'Block. Tap right before a hit to parry'],
+        [k('Z'), 'Dodge roll (or double-tap a direction mid-fight)'],
+        [k('Y'), 'Quick-heal with your best healing item'],
+        ['<kbd>MMB</kbd> tap', 'Lock on to a target'],
+        [k('Q') + k('R'), 'Switch weapon · reload'],
+        [k('V') + k('X'), 'Heists: mask on/off · drop loot bag'],
+      ]],
+      ['Menus', [
+        [k('Tab'), 'Character sheet'],
+        [k('I'), 'Inventory'],
+        [k('J'), 'Quest log &amp; goals'],
+        [k('M'), 'City map'],
+        [k('O'), 'Phone: map, bank, taxi, dealer, texts, radio, camera, settings'],
+        [k('P'), 'Perks &amp; achievements'],
+        [k('1') + '-' + k('9'), 'Pick a dialog option'],
+        [k('F1') + k('Esc'), 'This help · close / pause menu'],
+      ]],
+      ['Co-op', [
+        [k('T'), 'Chat'],
+        [k('K'), 'Crew panel: send cash, spar, race, waypoint to a friend'],
+        [k('L'), 'Ping the spot you are looking at'],
+        [k('F') + ' at a friend’s car', 'Ride shotgun (hold LMB with a gun to shoot out the window)'],
+      ]],
     ];
+    if (this.helpKeys.length) groups.push(['Controller &amp; touch', this.helpKeys]);
     const entry = this.openPanel({
       title: 'How To Not Die (Controls)',
-      width: 620,
+      width: 860,
       className: 'help-modal',
-      body: `<table class="ui-table help-table">${rows.map(([k, d]) => `<tr><td class="keys">${k}</td><td>${d}</td></tr>`).join('')}</table>
+      body: `<div class="help-groups">${groups.map(([name, rows]) => `<section><div class="ui-section">${name}</div><table class="ui-table help-table">${rows.map(([kk, d]) => `<tr><td class="keys">${kk}</td><td>${d}</td></tr>`).join('')}</table></section>`).join('')}</div>
         <div class="ui-muted" style="margin-top:10px">Pro tip: everything in Rotwell is either for sale, on fire, or both.</div>`,
     });
     entry.isHelp = true;

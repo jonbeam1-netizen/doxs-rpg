@@ -91,14 +91,20 @@ async function boot() {
   // Put the player back where they saved (or at home) when a game starts.
   game.bus.on('game:start', ({ isNew }) => {
     const p = game.state.p;
+    let side = 0;
     if (!isNew && p.pos) game.player.spawn(p.pos.x, p.pos.z, p.pos.facing ?? 0);
     else {
       const home = game.locations.get(p.home);
-      // Face the building so the camera starts out on the street, not in a wall.
-      if (home) game.player.spawn(home.doorX, home.doorZ, Math.atan2(home.x - home.doorX, home.z - home.doorZ));
-      else game.player.spawn(sp.x, sp.z, sp.facing ?? 0);
+      // Step out of the door facing the street (where the first beacon is). The
+      // camera sits off to one side along the sidewalk so it isn't in the wall.
+      if (home) {
+        const out = Math.atan2(home.doorX - home.x, home.doorZ - home.z);
+        const r = game.physics.resolveCircle(home.doorX + Math.sin(out) * 3.5, home.doorZ + Math.cos(out) * 3.5, 0.6);
+        game.player.spawn(r.x, r.z, out);
+        side = 1.25;
+      } else game.player.spawn(sp.x, sp.z, sp.facing ?? 0);
     }
-    game.cameraRig.yaw = game.player.facing + Math.PI;
+    game.cameraRig.yaw = game.player.facing + Math.PI + side;
   });
 
   // Autosave every real minute and at each new day.
